@@ -1,0 +1,23 @@
+# Entorno virtual
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# macOS
+.DS_Store
+
+# Variables de entorno
+.env
+
+# Datos pesados / sensibles
+data/raw/
+data/interim/
+data/processed/
+
+# Outputs generados
+outputs/
+reports/

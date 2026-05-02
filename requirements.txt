@@ -1,0 +1,8 @@
+pandas
+numpy<2
+requests
+matplotlib
+scikit-learn
+torch
+yfinance
+tqdm

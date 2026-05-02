@@ -1,0 +1,162 @@
+"""Tests for the minimal returns dataset builder."""
+
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import pandas as pd
+
+from src.data.build_dataset import build_returns_dataset
+
+
+class BuildDatasetTests(unittest.TestCase):
+    def setUp(self):
+        self.assets = ["SPY", "TLT", "GLD", "BTC-USD", "CASH"]
+        self.frequency = "weekly"
+        self.start_date = "2020-01-01"
+        self.end_date = "2024-01-01"
+        self.prices = pd.DataFrame(
+            {
+                "SPY": [100.0, 101.0],
+                "TLT": [90.0, 91.0],
+                "GLD": [180.0, 181.0],
+                "BTC-USD": [30000.0, 30100.0],
+            },
+            index=pd.date_range("2020-01-03", periods=2, freq="W-FRI"),
+        )
+        self.returns = pd.DataFrame(
+            {
+                "SPY": [0.01],
+                "TLT": [0.01],
+                "GLD": [0.01],
+                "BTC-USD": [0.01],
+                "CASH": [0.0],
+            },
+            index=pd.date_range("2020-01-10", periods=1, freq="W-FRI"),
+        )
+
+    def test_build_returns_dataset_returns_dataframe(self):
+        with self._temporary_config() as config_path:
+            with self._patched_pipeline():
+                result = build_returns_dataset(config_path)
+
+        self.assertIsInstance(result, pd.DataFrame)
+
+    def test_build_returns_dataset_calls_download_prices_with_config_values(self):
+        with self._temporary_config() as config_path:
+            with self._patched_pipeline() as mocks:
+                build_returns_dataset(config_path)
+
+        mocks["download_prices"].assert_called_once_with(
+            self.assets,
+            self.start_date,
+            self.end_date,
+        )
+
+    def test_build_returns_dataset_calls_compute_returns_with_config_values(self):
+        with self._temporary_config() as config_path:
+            with self._patched_pipeline() as mocks:
+                build_returns_dataset(config_path)
+
+        mocks["compute_returns"].assert_called_once_with(
+            self.prices,
+            self.assets,
+            self.frequency,
+        )
+
+    def test_build_returns_dataset_preserves_cash_in_final_dataframe(self):
+        with self._temporary_config() as config_path:
+            with self._patched_pipeline():
+                result = build_returns_dataset(config_path)
+
+        self.assertIn("CASH", result.columns)
+
+    def _temporary_config(self):
+        config_text = f"""
+project:
+  name: portfolio_drl_td3_test
+  description: Temporary test config for dataset builder
+
+data:
+  assets:
+    - SPY
+    - TLT
+    - GLD
+    - BTC-USD
+    - CASH
+  frequency: {self.frequency}
+  start_date: {self.start_date}
+  end_date: {self.end_date}
+environment:
+  initial_cash: 100000
+  transaction_cost: 0.001
+  allow_short: false
+  max_weight_per_asset: 1.0
+
+reward:
+  lambda_return: 1.0
+  lambda_sharpe: 0.5
+  lambda_drawdown: 1.0
+  lambda_transaction_cost: 0.2
+  lambda_turnover: 0.1
+
+td3:
+  actor_learning_rate: 0.0003
+  critic_learning_rate: 0.0003
+  gamma: 0.99
+  tau: 0.005
+  policy_noise: 0.2
+  noise_clip: 0.5
+  policy_delay: 2
+  batch_size: 256
+  replay_buffer_size: 100000
+
+training:
+  seed: 42
+  episodes: 500
+  train_ratio: 0.7
+  validation_ratio: 0.15
+  test_ratio: 0.15
+"""
+        temp_dir = tempfile.TemporaryDirectory()
+        config_path = Path(temp_dir.name) / "config.yaml"
+        config_path.write_text(config_text, encoding="utf-8")
+
+        class TemporaryConfig:
+            def __enter__(self_inner):
+                return str(config_path)
+
+            def __exit__(self_inner, exc_type, exc_value, traceback):
+                temp_dir.cleanup()
+
+        return TemporaryConfig()
+
+    def _patched_pipeline(self):
+        download_patcher = patch(
+            "src.data.build_dataset.download_prices",
+            return_value=self.prices,
+        )
+        compute_patcher = patch(
+            "src.data.build_dataset.compute_returns",
+            return_value=self.returns,
+        )
+
+        class PatchedPipeline:
+            def __enter__(self_inner):
+                download_mock = download_patcher.start()
+                compute_mock = compute_patcher.start()
+                return {
+                    "download_prices": download_mock,
+                    "compute_returns": compute_mock,
+                }
+
+            def __exit__(self_inner, exc_type, exc_value, traceback):
+                compute_patcher.stop()
+                download_patcher.stop()
+
+        return PatchedPipeline()
+
+
+if __name__ == "__main__":
+    unittest.main()

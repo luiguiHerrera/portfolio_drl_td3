@@ -38,7 +38,7 @@ The initial universe is configured as:
 - `SPY`: U.S. equity market exposure;
 - `TLT`: long-duration U.S. Treasury exposure;
 - `GLD`: gold exposure;
-- `BTC-USD`: Bitcoin exposure.
+- `BTC`: Bitcoin exposure, implemented through the `BTC-USD` Yahoo Finance ticker;
 - `CASH`: synthetic cash allocation with zero return in the initial implementation.
 
 

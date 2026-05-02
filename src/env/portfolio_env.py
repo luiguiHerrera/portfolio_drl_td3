@@ -2,8 +2,9 @@
 
 This module defines a lightweight environment for validating portfolio mechanics
 before adding Gymnasium integration or TD3 training. The environment consumes a
-precomputed returns DataFrame and enforces long-only, fully invested portfolio
-weights through clipping and normalization.
+precomputed returns DataFrame for realized portfolio returns and an optional
+features DataFrame for agent observations. It enforces long-only, fully invested
+portfolio weights through clipping and normalization.
 """
 
 import numpy as np
@@ -18,6 +19,7 @@ class PortfolioEnv:
     def __init__(
         self,
         returns: pd.DataFrame,
+        features: pd.DataFrame | None = None,
         initial_cash: float = 100000.0,
         transaction_cost: float = 0.001,
     ):
@@ -26,9 +28,10 @@ class PortfolioEnv:
         if transaction_cost < 0:
             raise ValueError("transaction_cost must be non-negative.")
 
-        self.returns = returns
-        self.n_assets = len(returns.columns)
-        self.asset_names = list(returns.columns)
+        self.returns, self.features = self._align_returns_and_features(returns, features)
+        self.n_assets = len(self.returns.columns)
+        self.observation_dim = len(self.features.columns)
+        self.asset_names = list(self.returns.columns)
         self.initial_cash = initial_cash
         self.transaction_cost = transaction_cost
 
@@ -46,6 +49,9 @@ class PortfolioEnv:
 
     def step(self, action: np.ndarray):
         """Advance one period using the current weights, then rebalance."""
+        if self.current_step >= len(self.returns):
+            raise RuntimeError("Cannot call step() after the environment is done. Call reset().")
+
         weights = self._normalize_action(action)
         period_returns = self.returns.iloc[self.current_step].to_numpy(dtype=float)
 
@@ -59,7 +65,9 @@ class PortfolioEnv:
         self.current_step += 1
 
         done = self.current_step >= len(self.returns)
-        observation = np.zeros(self.n_assets, dtype=float) if done else self._get_observation()
+        observation = (
+            np.zeros(self.observation_dim, dtype=float) if done else self._get_observation()
+        )
         info = {
             "portfolio_value": self.portfolio_value,
             "portfolio_return": portfolio_return,
@@ -71,7 +79,7 @@ class PortfolioEnv:
         return observation, reward, done, info
 
     def _get_observation(self) -> np.ndarray:
-        return self.returns.iloc[self.current_step].to_numpy(dtype=float)
+        return self.features.iloc[self.current_step].to_numpy(dtype=float)
 
     def _equal_weights(self) -> np.ndarray:
         return np.full(self.n_assets, 1.0 / self.n_assets, dtype=float)
@@ -88,3 +96,25 @@ class PortfolioEnv:
             return self._equal_weights()
 
         return clipped_action / action_sum
+
+    def _align_returns_and_features(
+        self,
+        returns: pd.DataFrame,
+        features: pd.DataFrame | None,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        if features is None:
+            return returns, returns
+        if features.empty:
+            raise ValueError("features must not be empty.")
+
+        shared_index = returns.index[returns.index.isin(features.index)]
+        if shared_index.empty:
+            raise ValueError("returns and features must have at least one shared index.")
+
+        aligned_returns = returns.loc[shared_index]
+        aligned_features = features.loc[shared_index]
+
+        if aligned_returns.empty or aligned_features.empty:
+            raise ValueError("aligned returns and features must not be empty.")
+
+        return aligned_returns, aligned_features

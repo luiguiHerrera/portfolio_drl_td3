@@ -8,6 +8,7 @@ data:
     - TLT
     - GLD
     - BTC-USD
+    - CASH
   frequency: weekly
   start_date: null
   end_date: null

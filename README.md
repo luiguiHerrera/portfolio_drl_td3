@@ -11,7 +11,9 @@ discussion.
 The project now includes implemented and tested building blocks for
 configuration, data preparation, portfolio simulation, benchmark evaluation,
 replay memory, actor and critic networks, and the core TD3 sampled-batch update.
-It does not yet include a full training loop, empirical experiments, or
+It also includes a minimal in-memory training loop with validation and test
+evaluation. It does not yet include reproducible experiment execution,
+checkpointing, saved outputs, walk-forward validation, empirical analysis, or
 validated investment results.
 
 ## Research Objective
@@ -79,10 +81,14 @@ The implemented TD3 core currently includes:
 - target policy smoothing with projection back to long-only, fully invested
   weights;
 - NumPy replay buffer for off-policy transitions;
-- one sampled-batch `train_step` method.
+- one sampled-batch `train_step` method;
+- a minimal in-memory `train_td3` loop that connects prepared datasets,
+  `PortfolioEnv`, `ReplayBuffer`, and `TD3Agent`;
+- validation and test evaluation returned in memory through `evaluate_agent`.
 
-The project does not yet include a full training loop, environment rollout
-collection, checkpointing, experiment tracking, or empirical model evaluation.
+The project does not yet include experiment execution scripts, checkpointing,
+saved model artifacts, experiment tracking, walk-forward validation, or
+empirical analysis.
 
 ## Reward Function
 
@@ -180,6 +186,7 @@ portfolio_drl_td3/
 ├── src/
 │   ├── backtest/
 │   │   ├── benchmarks.py
+│   │   ├── evaluate_agent.py
 │   │   ├── evaluate_policy.py
 │   │   ├── markowitz.py
 │   │   └── risk_parity.py
@@ -235,10 +242,10 @@ are intended to be versioned.
    metrics.
 5. Completed: implement NumPy replay memory, PyTorch actor and critic networks,
    target networks, and core TD3 sampled-batch update logic.
-6. Next: implement a controlled training loop that connects prepared datasets,
-   `PortfolioEnv`, `ReplayBuffer`, and `TD3Agent`.
-7. Next: add model evaluation workflows, benchmark comparison tables, and
-   reproducible experiment outputs.
+6. Completed: implement a minimal in-memory training and validation/test
+   evaluation loop.
+7. Next: add controlled experiment execution, checkpointing, benchmark
+   comparison tables, and reproducible outputs.
 8. Later: implement walk-forward validation, sensitivity analysis, Markowitz,
    risk parity, plotting modules, and richer state features.
 
@@ -260,15 +267,18 @@ Implemented and tested components include:
 - minimal net-return reward;
 - equal-weight and buy-and-hold benchmark returns;
 - portfolio evaluation metrics;
+- agent episode evaluation utilities;
 - NumPy replay buffer;
 - PyTorch actor and critic networks;
-- TD3 agent core utilities and one sampled-batch update step.
+- TD3 agent core utilities and one sampled-batch update step;
+- minimal in-memory TD3 training loop;
+- in-memory validation and test evaluation returned by `train_td3`.
 
 Not implemented yet:
 
-- full TD3 training loop;
-- environment rollout collection for replay buffer population;
+- experiment execution workflow;
 - model checkpointing or experiment logging;
+- saved model, plot, report, or table outputs;
 - walk-forward validation execution;
 - sensitivity analysis execution;
 - Markowitz and risk parity benchmark logic;

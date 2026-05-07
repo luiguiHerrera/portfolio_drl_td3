@@ -16,6 +16,16 @@ evaluation. It does not yet include reproducible experiment execution,
 checkpointing, saved outputs, walk-forward validation, empirical analysis, or
 validated investment results.
 
+## Academic Review Status
+
+This repository currently provides a functional methodological prototype. The
+code implements the main TD3 components and a minimal in-memory training and
+validation/test evaluation pipeline. The current outputs should not be
+interpreted as empirical evidence, investment performance, or model superiority.
+
+The next academic decisions concern reward design, benchmark design, validation
+strategy, and the inclusion of econometric or macroeconomic state variables.
+
 ## Research Objective
 
 The research objective is to study whether a continuous-control reinforcement
@@ -167,6 +177,32 @@ The planned benchmark set also includes:
 Markowitz and risk parity modules are present as architectural placeholders but
 are not implemented yet.
 
+## Methodological Design Decisions
+
+- The portfolio is long-only and fully invested over `SPY`, `TLT`, `GLD`,
+  `BTC-USD`, and synthetic `CASH`.
+- `CASH` is included as an asset with zero return in the initial
+  implementation.
+- State features are separated from realized asset returns.
+- The agent observes features; portfolio returns and rewards are calculated
+  from realized returns.
+- Feature normalization is fitted only on the training data.
+- Validation and test splits are chronological.
+- TD3 is implemented directly in PyTorch rather than using Stable-Baselines3.
+
+## Next Research Questions
+
+- Should the reward function prioritize net return, dynamic Sharpe, drawdown
+  control, turnover reduction, or a weighted combination of these objectives?
+- Which benchmarks are academically appropriate: equal weight, buy-and-hold,
+  rolling Markowitz, risk parity, volatility targeting, or other allocation
+  baselines?
+- Which additional state variables should be included: macro indicators, VIX,
+  DXY, yield curve variables, credit spreads, or GARCH expected volatility?
+- What validation design is most defensible: fixed chronological split,
+  walk-forward validation, sensitivity analysis across seeds and costs, or a
+  combination of these approaches?
+
 ## Repository Structure
 
 ```text
@@ -226,8 +262,9 @@ portfolio_drl_td3/
 ```
 
 Data, generated outputs, saved models, and reports are kept outside version
-control by default. Source code, configuration, tests, and architectural modules
-are intended to be versioned.
+control by default. Training and evaluation diagnostics are currently returned
+in memory rather than saved to disk. Source code, configuration, tests, and
+architectural modules are intended to be versioned.
 
 ## Development Roadmap
 
@@ -272,19 +309,22 @@ Implemented and tested components include:
 - PyTorch actor and critic networks;
 - TD3 agent core utilities and one sampled-batch update step;
 - minimal in-memory TD3 training loop;
-- in-memory validation and test evaluation returned by `train_td3`.
+- in-memory validation and test evaluation returned by `train_td3`;
+- training and evaluation diagnostics returned in memory;
+- unit tests covering the implemented modules.
 
 Not implemented yet:
 
+- advanced reward with dynamic Sharpe, drawdown, and turnover terms;
+- Markowitz and risk parity benchmark logic;
+- walk-forward validation execution;
+- macroeconomic features;
+- GARCH expected volatility features;
 - experiment execution workflow;
 - model checkpointing or experiment logging;
 - saved model, plot, report, or table outputs;
-- walk-forward validation execution;
 - sensitivity analysis execution;
-- Markowitz and risk parity benchmark logic;
 - plotting and report generation;
-- macroeconomic features;
-- GARCH expected volatility features;
 - empirical results.
 
 ## Academic Notes

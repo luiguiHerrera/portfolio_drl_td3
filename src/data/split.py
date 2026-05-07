@@ -42,6 +42,8 @@ def _validate_split_inputs(
 
     if data.empty:
         raise ValueError("data must not be empty.")
+    if not data.index.is_monotonic_increasing:
+        raise ValueError("data index must be sorted in increasing chronological order.")
     if any(ratio <= 0.0 for ratio in ratios):
         raise ValueError("split ratios must be positive.")
     if not np.isclose(sum(ratios), 1.0):

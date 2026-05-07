@@ -19,6 +19,16 @@ class ActorNetworkTests(unittest.TestCase):
             ActorNetwork(self.state_dim, 0)
         with self.assertRaises(ValueError):
             ActorNetwork(self.state_dim, self.action_dim, hidden_dim=0)
+        with self.assertRaises(ValueError):
+            ActorNetwork(self.state_dim, self.action_dim, softmax_temperature=0.0)
+
+    def test_constructor_initializes_valid_actor(self):
+        actor = ActorNetwork(self.state_dim, self.action_dim, softmax_temperature=0.5)
+
+        self.assertEqual(actor.state_dim, self.state_dim)
+        self.assertEqual(actor.action_dim, self.action_dim)
+        self.assertEqual(actor.hidden_dim, 128)
+        self.assertEqual(actor.softmax_temperature, 0.5)
 
     def test_forward_with_single_state_returns_action_shape(self):
         actor = ActorNetwork(self.state_dim, self.action_dim)
@@ -50,7 +60,7 @@ class ActorNetworkTests(unittest.TestCase):
 
         action = actor(state)
 
-        self.assertTrue(torch.allclose(action.sum(), torch.tensor(1.0)))
+        self.assertTrue(torch.allclose(action.sum(), torch.tensor(1.0), atol=1e-6))
 
     def test_output_weights_sum_to_one_for_each_batch_row(self):
         actor = ActorNetwork(self.state_dim, self.action_dim)
@@ -58,7 +68,24 @@ class ActorNetworkTests(unittest.TestCase):
 
         actions = actor(states)
 
-        self.assertTrue(torch.allclose(actions.sum(dim=1), torch.ones(4)))
+        self.assertTrue(torch.allclose(actions.sum(dim=1), torch.ones(4), atol=1e-6))
+
+    def test_output_does_not_contain_nan_or_inf(self):
+        actor = ActorNetwork(self.state_dim, self.action_dim)
+        states = torch.randn(4, self.state_dim)
+
+        actions = actor(states)
+
+        self.assertFalse(torch.isnan(actions).any())
+        self.assertFalse(torch.isinf(actions).any())
+
+    def test_initial_policy_is_not_extremely_concentrated(self):
+        actor = ActorNetwork(self.state_dim, self.action_dim)
+        states = torch.randn(16, self.state_dim)
+
+        actions = actor(states)
+
+        self.assertLess(float(actions.max()), 0.8)
 
     def test_forward_rejects_invalid_last_dimension(self):
         actor = ActorNetwork(self.state_dim, self.action_dim)

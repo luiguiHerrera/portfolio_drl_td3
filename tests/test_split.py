@@ -38,6 +38,12 @@ class SplitTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             chronological_split(pd.DataFrame(), 0.6, 0.2, 0.2)
 
+    def test_rejects_unsorted_index(self):
+        unsorted_data = self.data.iloc[[0, 2, 1, 3, 4, 5, 6, 7, 8, 9]]
+
+        with self.assertRaises(ValueError):
+            chronological_split(unsorted_data, 0.6, 0.2, 0.2)
+
     def test_rejects_splits_that_produce_empty_partition(self):
         short_data = pd.DataFrame({"value": [1, 2]})
 

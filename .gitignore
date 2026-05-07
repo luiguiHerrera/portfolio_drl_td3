@@ -13,6 +13,9 @@ __pycache__/
 # Variables de entorno
 .env
 
+# Configuraciones locales
+configs/local/
+
 # Datos pesados / sensibles
 data/raw/
 data/interim/

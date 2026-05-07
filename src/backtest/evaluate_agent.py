@@ -92,4 +92,22 @@ def evaluate_agent(
             periods_per_year=periods_per_year,
             risk_free_rate=risk_free_rate,
         ),
+        "diagnostics": summarize_episode_diagnostics(episode),
+    }
+
+
+def summarize_episode_diagnostics(episode: dict) -> dict:
+    """Summarize episode-level allocation and transaction diagnostics."""
+    final_weights = {
+        asset_name: float(weight)
+        for asset_name, weight in episode["weights"].iloc[-1].items()
+    }
+
+    return {
+        "final_portfolio_value": float(episode["final_portfolio_value"]),
+        "average_turnover": float(episode["turnover"].mean()),
+        "average_transaction_cost": float(episode["transaction_costs"].mean()),
+        "final_weights": final_weights,
+        "max_weight": float(max(final_weights.values())),
+        "cash_weight": float(final_weights.get("CASH", 0.0)),
     }

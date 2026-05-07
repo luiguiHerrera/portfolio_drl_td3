@@ -69,16 +69,39 @@ class TrainTD3Tests(unittest.TestCase):
             self.assertIn("critic_1_loss", episode_log)
             self.assertIn("critic_2_loss", episode_log)
             self.assertIn("actor_loss", episode_log)
+            self.assertIn("average_turnover", episode_log)
+            self.assertIn("average_transaction_cost", episode_log)
+            self.assertIn("final_weights", episode_log)
+            self.assertIn("max_weight", episode_log)
+            self.assertIn("cash_weight", episode_log)
+
+    def test_episode_log_weight_diagnostics_are_well_formed(self):
+        result, _ = self._run_train_td3()
+        expected_assets = set(self.train_returns.columns)
+
+        for episode_log in result["episode_logs"]:
+            self.assertIsInstance(episode_log["final_weights"], dict)
+            self.assertEqual(set(episode_log["final_weights"].keys()), expected_assets)
+            self.assertGreaterEqual(episode_log["max_weight"], 0.0)
+            self.assertLessEqual(episode_log["max_weight"], 1.0)
+            self.assertGreaterEqual(episode_log["cash_weight"], 0.0)
+            self.assertLessEqual(episode_log["cash_weight"], 1.0)
 
     def test_validation_evaluation_contains_episode_and_metrics(self):
         result, _ = self._run_train_td3()
 
-        self.assertEqual(set(result["validation_evaluation"].keys()), {"episode", "metrics"})
+        self.assertEqual(
+            set(result["validation_evaluation"].keys()),
+            {"episode", "metrics", "diagnostics"},
+        )
 
     def test_test_evaluation_contains_episode_and_metrics(self):
         result, _ = self._run_train_td3()
 
-        self.assertEqual(set(result["test_evaluation"].keys()), {"episode", "metrics"})
+        self.assertEqual(
+            set(result["test_evaluation"].keys()),
+            {"episode", "metrics", "diagnostics"},
+        )
 
     def test_validation_and_test_metrics_contain_expected_keys(self):
         result, _ = self._run_train_td3()

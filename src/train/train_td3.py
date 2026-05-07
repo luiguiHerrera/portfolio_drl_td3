@@ -62,11 +62,17 @@ def train_td3(config_path: str) -> dict:
             "actor_loss": None,
         }
         info = {"portfolio_value": env.portfolio_value}
+        episode_turnover = []
+        episode_transaction_costs = []
+        episode_weights = []
 
         while not done:
             action = agent.select_action(state)
             next_state, reward, done, info = env.step(action)
             replay_buffer.add(state, action, reward, next_state, done)
+            episode_turnover.append(info["turnover"])
+            episode_transaction_costs.append(info["transaction_cost"])
+            episode_weights.append(info["weights"])
 
             if len(replay_buffer) >= td3_config["batch_size"]:
                 batch = replay_buffer.sample(td3_config["batch_size"])
@@ -76,12 +82,21 @@ def train_td3(config_path: str) -> dict:
             total_reward += reward
             steps += 1
 
+        final_weights = {
+            asset_name: float(weight)
+            for asset_name, weight in zip(env.asset_names, episode_weights[-1])
+        }
         episode_logs.append(
             {
                 "episode": episode,
                 "final_portfolio_value": info["portfolio_value"],
                 "total_reward": total_reward,
                 "steps": steps,
+                "average_turnover": sum(episode_turnover) / steps,
+                "average_transaction_cost": sum(episode_transaction_costs) / steps,
+                "final_weights": final_weights,
+                "max_weight": max(final_weights.values()),
+                "cash_weight": final_weights.get("CASH", 0.0),
                 "critic_1_loss": latest_losses["critic_1_loss"],
                 "critic_2_loss": latest_losses["critic_2_loss"],
                 "actor_loss": latest_losses["actor_loss"],

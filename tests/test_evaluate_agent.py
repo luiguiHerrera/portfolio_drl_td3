@@ -5,7 +5,11 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from src.backtest.evaluate_agent import evaluate_agent, run_policy_episode
+from src.backtest.evaluate_agent import (
+    evaluate_agent,
+    run_policy_episode,
+    summarize_episode_diagnostics,
+)
 
 
 class DummyAgent:
@@ -74,10 +78,10 @@ class EvaluateAgentTests(unittest.TestCase):
 
         self.assertFalse(episode["policy_returns"].equals(episode["rewards"]))
 
-    def test_evaluate_agent_returns_episode_and_metrics(self):
+    def test_evaluate_agent_returns_episode_metrics_and_diagnostics(self):
         result = evaluate_agent(DummyAgent(), self.returns, self.features)
 
-        self.assertEqual(set(result.keys()), {"episode", "metrics"})
+        self.assertEqual(set(result.keys()), {"episode", "metrics", "diagnostics"})
 
     def test_metrics_contain_expected_keys(self):
         result = evaluate_agent(DummyAgent(), self.returns, self.features)
@@ -90,6 +94,33 @@ class EvaluateAgentTests(unittest.TestCase):
         }
 
         self.assertEqual(set(result["metrics"].keys()), expected_metric_keys)
+
+    def test_summarize_episode_diagnostics_returns_expected_keys(self):
+        episode = run_policy_episode(DummyAgent(), self.returns, self.features)
+        diagnostics = summarize_episode_diagnostics(episode)
+        expected_keys = {
+            "final_portfolio_value",
+            "average_turnover",
+            "average_transaction_cost",
+            "final_weights",
+            "max_weight",
+            "cash_weight",
+        }
+
+        self.assertEqual(set(diagnostics.keys()), expected_keys)
+
+    def test_diagnostics_final_weights_and_cash_weight_are_well_formed(self):
+        result = evaluate_agent(DummyAgent(), self.returns, self.features)
+        diagnostics = result["diagnostics"]
+
+        self.assertIsInstance(diagnostics["final_weights"], dict)
+        self.assertEqual(set(diagnostics["final_weights"].keys()), set(self.returns.columns))
+        self.assertGreaterEqual(diagnostics["max_weight"], 0.0)
+        self.assertLessEqual(diagnostics["max_weight"], 1.0)
+        self.assertGreaterEqual(diagnostics["cash_weight"], 0.0)
+        self.assertLessEqual(diagnostics["cash_weight"], 1.0)
+        self.assertGreaterEqual(diagnostics["average_turnover"], 0.0)
+        self.assertGreaterEqual(diagnostics["average_transaction_cost"], 0.0)
 
 
 if __name__ == "__main__":

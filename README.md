@@ -2,222 +2,137 @@
 
 ## Overview
 
-This repository is an academic implementation project for a portfolio allocation
-agent based on Twin Delayed Deep Deterministic Policy Gradient (TD3). The goal is
-to build the main reinforcement learning components from scratch in PyTorch,
-with a modular structure that supports inspection, testing, and methodological
-discussion.
+This repository contains an academic PyTorch implementation of a
+Twin Delayed Deep Deterministic Policy Gradient (TD3) agent for dynamic
+portfolio allocation. The project is intended for Master's thesis research and
+focuses on transparent, modular implementation rather than production trading
+use.
 
-The project now includes implemented and tested building blocks for
-configuration, data preparation, portfolio simulation, benchmark evaluation,
-replay memory, actor and critic networks, and the core TD3 sampled-batch update.
-It also includes a minimal in-memory training loop with validation and test
-evaluation, plus a basic in-memory comparison against gross equal-weight,
-transaction-cost-aware equal-weight rebalanced, and buy-and-hold benchmarks. It
-also includes a minimal in-memory experiment runner that organizes training,
-validation, test, benchmark, and diagnostic outputs. It does not yet include
-reproducible experiment execution, checkpointing, saved outputs, walk-forward
-validation, empirical analysis, or validated investment results.
+The codebase implements the main components needed to study a continuous-action
+portfolio allocation agent under long-only, fully invested constraints. It is
+designed to support methodological discussion, testing, and future empirical
+experiments.
 
-## Academic Review Status
+## Current Scope
 
-This repository currently provides a functional methodological prototype. The
-code implements the main TD3 components and a minimal in-memory training and
-validation/test evaluation pipeline. The current outputs should not be
-interpreted as empirical evidence, investment performance, or model superiority.
+The repository currently provides a methodological prototype. It includes a
+minimal end-to-end training, evaluation, benchmark comparison, and CSV output
+workflow, but it does not provide validated investment results or empirical
+conclusions.
 
-The next academic decisions concern reward design, benchmark design, validation
-strategy, and the inclusion of econometric or macroeconomic state variables.
+No performance claim should be inferred from the current implementation. Future
+claims must be supported by reproducible out-of-sample experiments, benchmark
+comparison, sensitivity analysis, and appropriate validation design.
 
-## Research Objective
+## Implemented Components
 
-The research objective is to study whether a continuous-control reinforcement
-learning agent can learn dynamic portfolio allocation policies under realistic
-portfolio constraints and transaction frictions.
+### Data Pipeline
 
-The implementation is intended for a Master's thesis context, with emphasis on:
+- YAML configuration loading and validation.
+- Yahoo Finance download support for market assets.
+- Synthetic `CASH` asset handling with zero return.
+- Price preprocessing and weekly return construction.
+- Return-based feature engineering.
+- Chronological train, validation, and test splitting.
+- Train-only feature normalization.
+- Prepared dataset builder with aligned returns and features.
 
-- academic explainability of each model component;
-- robustness under chronological out-of-sample validation;
-- explicit control of overfitting risk;
-- comparison against classical portfolio construction benchmarks;
-- reproducibility through configuration, deterministic seeds, and documented
-  experiments.
+### Environment and Reward
 
-Stable-Baselines3 is intentionally not used at this stage. The TD3 agent is
-implemented directly in PyTorch to support understanding, auditability, and
-academic defense.
-
-## Initial Asset Universe
-
-The initial universe is configured as:
-
-- `SPY`: U.S. equity market exposure;
-- `TLT`: long-duration U.S. Treasury exposure;
-- `GLD`: gold exposure;
-- `BTC-USD`: Bitcoin exposure;
-- `CASH`: synthetic cash allocation with zero return in the initial
-  implementation.
-
-This universe is intentionally compact. It combines traditional assets and a
-high-volatility digital asset while keeping the first implementation tractable.
-`CASH` is not downloaded from Yahoo Finance; it is represented as a synthetic
-zero-return series aligned with the market assets.
-
-## Portfolio Constraints
-
-The initial portfolio setting is:
-
-- long-only;
-- fully invested across the selected asset universe, including `CASH`;
-- no short selling;
-- no leverage;
-- portfolio weights must be non-negative;
-- portfolio weights must sum to one.
-
-The actor maps state observations to portfolio weights. It produces logits
-internally and applies a softmax output so that actions are valid portfolio
-weights by construction.
-
-## TD3 Architecture
-
-The implemented TD3 core currently includes:
-
-- `ActorNetwork`: PyTorch MLP mapping state observations to softmax portfolio
-  weights;
-- `CriticNetwork`: PyTorch MLP estimating `Q(s, a)` from concatenated state and
-  action tensors;
-- twin critics and target critics inside `TD3Agent`;
-- actor and actor target networks;
-- hard target initialization and soft target updates;
-- delayed actor updates;
-- target policy smoothing with projection back to long-only, fully invested
-  weights;
-- NumPy replay buffer for off-policy transitions;
-- one sampled-batch `train_step` method;
-- a minimal in-memory `train_td3` loop that connects prepared datasets,
-  `PortfolioEnv`, `ReplayBuffer`, and `TD3Agent`;
-- validation and test evaluation returned in memory through `evaluate_agent`.
-
-The project does not yet include experiment execution scripts, checkpointing,
-saved model artifacts, experiment tracking, walk-forward validation, or
-empirical analysis.
-
-## Reward Function
-
-The current reward implementation is a minimal net-return baseline:
+- `PortfolioEnv` for long-only, fully invested portfolio simulation.
+- Separation between observed state features and realized asset returns.
+- Transaction-cost-aware portfolio value updates.
+- Minimal reward baseline:
 
 ```text
 reward = portfolio_return - transaction_cost
 ```
 
-The planned research reward design may extend this baseline with interpretable
-risk-control terms:
+### TD3 Model
 
-```text
-reward =
-    net return
-    + dynamic EWMA Sharpe component
-    - drawdown penalty
-    - transaction cost penalty
-    - turnover penalty
-```
+- NumPy replay buffer.
+- PyTorch `ActorNetwork` with softmax portfolio weights.
+- PyTorch `CriticNetwork`.
+- `TD3Agent` with twin critics, target networks, delayed actor updates, target
+  policy smoothing, and sampled-batch `train_step`.
+- Minimal `train_td3` loop connecting datasets, environment, replay buffer, and
+  TD3 agent.
 
-Those additional components are not implemented yet. They should be introduced
-only after the environment, data preparation, and basic training path are stable
-and testable.
+### Evaluation and Benchmarks
 
-## State Features
+- Agent policy episode evaluation.
+- Portfolio metrics including cumulative return, annualized return, annualized
+  volatility, Sharpe ratio, and maximum drawdown.
+- Basic benchmark comparison workflow.
+- Compact validation and test comparison summaries.
 
-The repository includes minimal return-based feature engineering:
+### Experiment Workflow
 
-- current weekly return;
-- 4-week rolling compounded momentum;
-- 12-week rolling compounded momentum;
-- 4-week rolling volatility;
-- 12-week rolling volatility.
+- Minimal in-memory experiment runner.
+- Run-and-save workflow for selected CSV outputs.
+- CSV saving utility with defensive validation before writing outputs.
+- No model, replay buffer, plot, report, or raw result persistence.
 
-Feature normalization is fit only on the training split to avoid data leakage.
-Realized asset returns are not normalized because they are used to compute
-portfolio returns and rewards.
+### Testing
 
-Future state features may include macroeconomic variables and GARCH-based
-expected volatility estimates. These are not implemented yet.
+- Unit tests cover implemented data, environment, benchmark, model, training,
+  experiment, and saving utilities.
 
-## Validation Strategy
+## Methodology
 
-Validation follows time-series constraints. Random shuffling is not appropriate
-for this setting.
+The initial allocation problem is defined over:
 
-The implemented data utilities include:
+- `SPY`: U.S. equity market exposure;
+- `TLT`: long-duration U.S. Treasury exposure;
+- `GLD`: gold exposure;
+- `BTC-USD`: Bitcoin exposure;
+- `CASH`: synthetic cash asset with zero return.
 
-- chronological train, validation, and test splitting;
-- train-only feature standardization;
-- aligned return and feature splits for model training and evaluation.
+The portfolio is long-only and fully invested across all assets, including
+`CASH`. Actor outputs are transformed into non-negative weights that sum to one.
 
-The planned validation strategy also includes:
-
-- walk-forward validation;
-- out-of-sample evaluation;
-- sensitivity analysis across seeds, reward weights, transaction costs, and
-  selected hyperparameters;
-- comparison against deterministic and classical finance benchmarks.
+State features are separated from realized returns: the agent observes features,
+while portfolio returns and rewards are computed from realized asset returns.
+Feature normalization is fitted only on the training split to reduce data
+leakage risk. Validation and test splits are chronological.
 
 ## Benchmarks
 
-The repository currently implements a basic in-memory comparison workflow that
-evaluates:
+The current benchmark workflow includes:
 
-- the TD3 agent policy;
-- a gross equal-weight portfolio reference;
-- a transaction-cost-aware equal-weight rebalanced portfolio;
-- a gross buy-and-hold portfolio.
+- gross equal-weight portfolio;
+- transaction-cost-aware equal-weight rebalanced portfolio;
+- gross buy-and-hold portfolio.
 
-It also includes:
+Benchmark comparison is performed in memory and produces metrics tables for the
+agent and benchmark policies. Transaction costs are currently modeled only for
+the equal-weight rebalanced benchmark. Markowitz and risk parity benchmarks are
+planned but not implemented yet.
 
-- equal-weight and buy-and-hold return calculations;
-- drift-based equal-weight rebalanced benchmark diagnostics, including turnover,
-  transaction costs, and target weights;
-- shared evaluation metrics such as cumulative return, annualized return,
-  annualized volatility, Sharpe ratio, maximum drawdown, and summary metrics.
+## Experiment Workflow
 
-Benchmark transaction costs are currently modeled only for the equal-weight
-rebalanced net benchmark. The equal-weight gross and buy-and-hold benchmarks
-remain gross-return references at this stage.
+`run_basic_experiment(config_path)` runs the minimal TD3 workflow and organizes
+results in memory. It returns:
 
-The planned benchmark set also includes:
+- training summary;
+- validation and test metrics tables;
+- validation and test comparison summaries;
+- validation and test diagnostics;
+- raw in-memory result.
 
-- rolling Markowitz mean-variance allocation;
-- risk parity allocation.
+`run_and_save_basic_experiment(config_path, output_dir, experiment_name)` runs
+the same experiment and saves selected CSV outputs. Saved files include:
 
-Markowitz and risk parity modules are present as architectural placeholders but
-are not implemented yet.
+- `training_summary.csv`;
+- `validation_metrics_table.csv`;
+- `test_metrics_table.csv`;
+- `validation_comparison_summary.csv`;
+- `test_comparison_summary.csv`;
+- `validation_diagnostics.csv`;
+- `test_diagnostics.csv`.
 
-## Methodological Design Decisions
-
-- The portfolio is long-only and fully invested over `SPY`, `TLT`, `GLD`,
-  `BTC-USD`, and synthetic `CASH`.
-- `CASH` is included as an asset with zero return in the initial
-  implementation.
-- State features are separated from realized asset returns.
-- The agent observes features; portfolio returns and rewards are calculated
-  from realized returns.
-- Feature normalization is fitted only on the training data.
-- Validation and test splits are chronological.
-- TD3 is implemented directly in PyTorch rather than using Stable-Baselines3.
-
-## Next Research Questions
-
-- Should the reward function prioritize net return, dynamic Sharpe, drawdown
-  control, turnover reduction, or a weighted combination of these objectives?
-- Which benchmarks are academically appropriate: equal weight, buy-and-hold,
-  rolling Markowitz, risk parity, volatility targeting, or other allocation
-  baselines?
-- Which additional state variables should be included: macro indicators, VIX,
-  DXY, yield curve variables, credit spreads, or GARCH expected volatility?
-- What validation design is most defensible: fixed chronological split,
-  walk-forward validation, sensitivity analysis across seeds and costs, or a
-  combination of these approaches?
+The workflow does not save `raw_result`, the agent, replay buffer, model
+checkpoints, plots, or reports.
 
 ## Repository Structure
 
@@ -237,132 +152,38 @@ portfolio_drl_td3/
 ├── reports/
 ├── src/
 │   ├── backtest/
-│   │   ├── benchmarks.py
-│   │   ├── compare_policies.py
-│   │   ├── evaluate_agent.py
-│   │   ├── evaluate_policy.py
-│   │   ├── markowitz.py
-│   │   └── risk_parity.py
 │   ├── data/
-│   │   ├── build_dataset.py
-│   │   ├── download.py
-│   │   ├── features.py
-│   │   ├── normalize.py
-│   │   ├── prepare_dataset.py
-│   │   ├── preprocess.py
-│   │   └── split.py
 │   ├── env/
-│   │   └── portfolio_env.py
 │   ├── experiments/
-│   │   ├── __init__.py
-│   │   └── run_basic_experiment.py
 │   ├── memory/
-│   │   └── replay_buffer.py
 │   ├── models/
-│   │   ├── actor.py
-│   │   ├── critic.py
-│   │   └── td3_agent.py
 │   ├── rewards/
-│   │   └── reward.py
 │   ├── train/
-│   │   └── train_td3.py
 │   ├── utils/
-│   │   ├── config.py
-│   │   └── seed.py
 │   ├── validation/
-│   │   ├── sensitivity_analysis.py
-│   │   └── walk_forward.py
 │   └── visualization/
-│       ├── plot_equity_curves.py
-│       ├── plot_reward_components.py
-│       └── plot_weights.py
 ├── tests/
 ├── requirements.txt
 └── README.md
 ```
 
-Data, generated outputs, saved models, and reports are kept outside version
-control by default. Training and evaluation diagnostics are currently returned
-in memory rather than saved to disk. Source code, configuration, tests, and
-architectural modules are intended to be versioned.
+Data, generated outputs, saved models, and reports are excluded from version
+control by default. Source code, configuration, and tests are intended to be
+versioned.
 
-## Development Roadmap
+## Roadmap
 
-1. Completed: define project configuration, reproducibility utilities, and base
-   documentation.
-2. Completed: implement minimal data download, preprocessing, return dataset
-   construction, feature engineering, chronological splitting, and train-only
-   feature normalization.
-3. Completed: implement a minimal portfolio environment that separates realized
-   returns from feature observations.
-4. Completed: implement basic benchmark return utilities and shared evaluation
-   metrics.
-5. Completed: implement NumPy replay memory, PyTorch actor and critic networks,
-   target networks, and core TD3 sampled-batch update logic.
-6. Completed: implement a minimal in-memory training and validation/test
-   evaluation loop.
-7. Completed: implement basic in-memory comparison against gross equal-weight,
-   transaction-cost-aware equal-weight rebalanced, and buy-and-hold benchmarks.
-8. Completed: implement a minimal in-memory experiment runner with compact
-   validation and test comparison summaries.
-9. Next: add controlled experiment execution scripts, checkpointing, experiment
-   logging, saved outputs, plots, reports, and CLI execution.
-10. Later: implement walk-forward validation, sensitivity analysis, Markowitz,
-    risk parity, plotting modules, and richer state features.
+- Extend the reward function with dynamic Sharpe, drawdown, transaction cost,
+  and turnover terms.
+- Implement Markowitz and risk parity benchmark logic.
+- Add walk-forward validation.
+- Run sensitivity analysis across seeds, costs, and hyperparameters.
+- Add macroeconomic and GARCH-based state features.
+- Add plotting and report generation.
+- Conduct reproducible empirical experiment analysis.
 
-## Current Status
+## Academic Disclaimer
 
-Implemented and tested components include:
-
-- YAML configuration loading and minimal schema validation;
-- reproducibility seed utility;
-- Yahoo Finance price download for market assets, excluding synthetic `CASH`;
-- return preprocessing with weekly resampling and zero-return `CASH`;
-- returns dataset builder;
-- return-based feature engineering;
-- chronological train, validation, and test splitting;
-- train-only standard feature normalization;
-- prepared dataset builder returning aligned returns and normalized features;
-- `PortfolioEnv` with separate realized returns and optional feature
-  observations;
-- minimal net-return reward;
-- equal-weight, equal-weight rebalanced, and buy-and-hold benchmark returns;
-- portfolio evaluation metrics;
-- agent episode evaluation utilities;
-- NumPy replay buffer;
-- PyTorch actor and critic networks;
-- TD3 agent core utilities and one sampled-batch update step;
-- minimal in-memory TD3 training loop;
-- in-memory validation and test evaluation returned by `train_td3`;
-- basic benchmark comparison workflow against gross equal-weight,
-  transaction-cost-aware equal-weight rebalanced, and buy-and-hold benchmarks;
-- minimal in-memory experiment runner;
-- compact validation and test comparison summaries;
-- training and evaluation diagnostics returned in memory;
-- unit tests covering the implemented modules.
-
-Not implemented yet:
-
-- advanced reward with dynamic Sharpe, drawdown, and turnover terms;
-- Markowitz and risk parity benchmark logic;
-- walk-forward validation execution;
-- macroeconomic features;
-- GARCH expected volatility features;
-- controlled experiment execution scripts;
-- model checkpointing or experiment logging;
-- saved model, plot, report, or table outputs;
-- sensitivity analysis execution;
-- plotting and report generation;
-- empirical results.
-
-## Academic Notes
-
-This project is designed as a research implementation rather than a production
-trading system. The code should support clear reasoning about assumptions,
-constraints, reward design, validation methodology, and failure modes.
-
-Any future empirical claim should be backed by reproducible experiments,
-chronological out-of-sample testing, benchmark comparison, and sensitivity
-analysis. Until those steps are implemented and executed, the repository should
-be understood as a tested methodological foundation, not as evidence of
-profitable or validated trading performance.
+This repository is research code, not production trading software or investment
+advice. Any empirical claim requires reproducible experiments, chronological
+out-of-sample testing, benchmark comparison, and sensitivity analysis.

@@ -14,9 +14,10 @@ replay memory, actor and critic networks, and the core TD3 sampled-batch update.
 It also includes a minimal in-memory training loop with validation and test
 evaluation, plus a basic in-memory comparison against gross equal-weight,
 transaction-cost-aware equal-weight rebalanced, and buy-and-hold benchmarks. It
-does not yet include reproducible experiment execution, checkpointing, saved
-outputs, walk-forward validation, empirical analysis, or validated investment
-results.
+also includes a minimal in-memory experiment runner that organizes training,
+validation, test, benchmark, and diagnostic outputs. It does not yet include
+reproducible experiment execution, checkpointing, saved outputs, walk-forward
+validation, empirical analysis, or validated investment results.
 
 ## Academic Review Status
 
@@ -252,6 +253,9 @@ portfolio_drl_td3/
 │   │   └── split.py
 │   ├── env/
 │   │   └── portfolio_env.py
+│   ├── experiments/
+│   │   ├── __init__.py
+│   │   └── run_basic_experiment.py
 │   ├── memory/
 │   │   └── replay_buffer.py
 │   ├── models/
@@ -299,10 +303,12 @@ architectural modules are intended to be versioned.
    evaluation loop.
 7. Completed: implement basic in-memory comparison against gross equal-weight,
    transaction-cost-aware equal-weight rebalanced, and buy-and-hold benchmarks.
-8. Next: add controlled experiment execution, checkpointing, benchmark
-   comparison tables, and reproducible outputs.
-9. Later: implement walk-forward validation, sensitivity analysis, Markowitz,
-   risk parity, plotting modules, and richer state features.
+8. Completed: implement a minimal in-memory experiment runner with compact
+   validation and test comparison summaries.
+9. Next: add controlled experiment execution scripts, checkpointing, experiment
+   logging, saved outputs, plots, reports, and CLI execution.
+10. Later: implement walk-forward validation, sensitivity analysis, Markowitz,
+    risk parity, plotting modules, and richer state features.
 
 ## Current Status
 
@@ -330,6 +336,8 @@ Implemented and tested components include:
 - in-memory validation and test evaluation returned by `train_td3`;
 - basic benchmark comparison workflow against gross equal-weight,
   transaction-cost-aware equal-weight rebalanced, and buy-and-hold benchmarks;
+- minimal in-memory experiment runner;
+- compact validation and test comparison summaries;
 - training and evaluation diagnostics returned in memory;
 - unit tests covering the implemented modules.
 
@@ -340,7 +348,7 @@ Not implemented yet:
 - walk-forward validation execution;
 - macroeconomic features;
 - GARCH expected volatility features;
-- experiment execution workflow;
+- controlled experiment execution scripts;
 - model checkpointing or experiment logging;
 - saved model, plot, report, or table outputs;
 - sensitivity analysis execution;

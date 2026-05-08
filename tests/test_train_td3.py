@@ -45,6 +45,8 @@ class TrainTD3Tests(unittest.TestCase):
             "test_features",
             "validation_evaluation",
             "test_evaluation",
+            "validation_comparison",
+            "test_comparison",
         }
 
         self.assertEqual(set(result.keys()), expected_keys)
@@ -120,6 +122,48 @@ class TrainTD3Tests(unittest.TestCase):
         self.assertEqual(
             set(result["test_evaluation"]["metrics"].keys()),
             expected_metric_keys,
+        )
+
+    def test_validation_and_test_comparisons_have_expected_top_level_keys(self):
+        result, _ = self._run_train_td3()
+        expected_keys = {"agent", "benchmarks", "metrics_table"}
+
+        self.assertEqual(set(result["validation_comparison"].keys()), expected_keys)
+        self.assertEqual(set(result["test_comparison"].keys()), expected_keys)
+
+    def test_validation_and_test_comparisons_include_basic_benchmarks(self):
+        result, _ = self._run_train_td3()
+        expected_benchmarks = {
+            "equal_weight_gross",
+            "equal_weight_rebalanced_net",
+            "buy_and_hold",
+        }
+
+        self.assertEqual(
+            set(result["validation_comparison"]["benchmarks"].keys()),
+            expected_benchmarks,
+        )
+        self.assertEqual(
+            set(result["test_comparison"]["benchmarks"].keys()),
+            expected_benchmarks,
+        )
+
+    def test_validation_and_test_metrics_tables_include_policy_rows(self):
+        result, _ = self._run_train_td3()
+        expected_rows = {
+            "agent",
+            "equal_weight_gross",
+            "equal_weight_rebalanced_net",
+            "buy_and_hold",
+        }
+
+        self.assertEqual(
+            set(result["validation_comparison"]["metrics_table"].index),
+            expected_rows,
+        )
+        self.assertEqual(
+            set(result["test_comparison"]["metrics_table"].index),
+            expected_rows,
         )
 
     def test_no_files_are_written(self):

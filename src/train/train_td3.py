@@ -7,6 +7,7 @@ files.
 """
 
 from src.backtest.evaluate_agent import evaluate_agent
+from src.backtest.compare_policies import compare_agent_to_basic_benchmarks
 from src.data.prepare_dataset import prepare_train_validation_test_datasets
 from src.env.portfolio_env import PortfolioEnv
 from src.memory.replay_buffer import ReplayBuffer
@@ -121,6 +122,18 @@ def train_td3(config_path: str) -> dict:
         datasets["test_features"],
         **evaluation_kwargs,
     )
+    validation_comparison = compare_agent_to_basic_benchmarks(
+        agent,
+        datasets["validation_returns"],
+        datasets["validation_features"],
+        **evaluation_kwargs,
+    )
+    test_comparison = compare_agent_to_basic_benchmarks(
+        agent,
+        datasets["test_returns"],
+        datasets["test_features"],
+        **evaluation_kwargs,
+    )
 
     return {
         "agent": agent,
@@ -134,4 +147,6 @@ def train_td3(config_path: str) -> dict:
         "test_features": datasets["test_features"],
         "validation_evaluation": validation_evaluation,
         "test_evaluation": test_evaluation,
+        "validation_comparison": validation_comparison,
+        "test_comparison": test_comparison,
     }

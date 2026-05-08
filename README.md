@@ -12,9 +12,11 @@ The project now includes implemented and tested building blocks for
 configuration, data preparation, portfolio simulation, benchmark evaluation,
 replay memory, actor and critic networks, and the core TD3 sampled-batch update.
 It also includes a minimal in-memory training loop with validation and test
-evaluation. It does not yet include reproducible experiment execution,
-checkpointing, saved outputs, walk-forward validation, empirical analysis, or
-validated investment results.
+evaluation, plus a basic in-memory comparison against gross equal-weight,
+transaction-cost-aware equal-weight rebalanced, and buy-and-hold benchmarks. It
+does not yet include reproducible experiment execution, checkpointing, saved
+outputs, walk-forward validation, empirical analysis, or validated investment
+results.
 
 ## Academic Review Status
 
@@ -162,12 +164,25 @@ The planned validation strategy also includes:
 
 ## Benchmarks
 
-The repository currently implements:
+The repository currently implements a basic in-memory comparison workflow that
+evaluates:
 
-- equal-weight return calculation;
-- buy-and-hold return calculation;
+- the TD3 agent policy;
+- a gross equal-weight portfolio reference;
+- a transaction-cost-aware equal-weight rebalanced portfolio;
+- a gross buy-and-hold portfolio.
+
+It also includes:
+
+- equal-weight and buy-and-hold return calculations;
+- drift-based equal-weight rebalanced benchmark diagnostics, including turnover,
+  transaction costs, and target weights;
 - shared evaluation metrics such as cumulative return, annualized return,
   annualized volatility, Sharpe ratio, maximum drawdown, and summary metrics.
+
+Benchmark transaction costs are currently modeled only for the equal-weight
+rebalanced net benchmark. The equal-weight gross and buy-and-hold benchmarks
+remain gross-return references at this stage.
 
 The planned benchmark set also includes:
 
@@ -222,6 +237,7 @@ portfolio_drl_td3/
 ├── src/
 │   ├── backtest/
 │   │   ├── benchmarks.py
+│   │   ├── compare_policies.py
 │   │   ├── evaluate_agent.py
 │   │   ├── evaluate_policy.py
 │   │   ├── markowitz.py
@@ -281,9 +297,11 @@ architectural modules are intended to be versioned.
    target networks, and core TD3 sampled-batch update logic.
 6. Completed: implement a minimal in-memory training and validation/test
    evaluation loop.
-7. Next: add controlled experiment execution, checkpointing, benchmark
+7. Completed: implement basic in-memory comparison against gross equal-weight,
+   transaction-cost-aware equal-weight rebalanced, and buy-and-hold benchmarks.
+8. Next: add controlled experiment execution, checkpointing, benchmark
    comparison tables, and reproducible outputs.
-8. Later: implement walk-forward validation, sensitivity analysis, Markowitz,
+9. Later: implement walk-forward validation, sensitivity analysis, Markowitz,
    risk parity, plotting modules, and richer state features.
 
 ## Current Status
@@ -302,7 +320,7 @@ Implemented and tested components include:
 - `PortfolioEnv` with separate realized returns and optional feature
   observations;
 - minimal net-return reward;
-- equal-weight and buy-and-hold benchmark returns;
+- equal-weight, equal-weight rebalanced, and buy-and-hold benchmark returns;
 - portfolio evaluation metrics;
 - agent episode evaluation utilities;
 - NumPy replay buffer;
@@ -310,6 +328,8 @@ Implemented and tested components include:
 - TD3 agent core utilities and one sampled-batch update step;
 - minimal in-memory TD3 training loop;
 - in-memory validation and test evaluation returned by `train_td3`;
+- basic benchmark comparison workflow against gross equal-weight,
+  transaction-cost-aware equal-weight rebalanced, and buy-and-hold benchmarks;
 - training and evaluation diagnostics returned in memory;
 - unit tests covering the implemented modules.
 

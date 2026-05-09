@@ -100,8 +100,20 @@ class EvaluateAgentTests(unittest.TestCase):
         diagnostics = summarize_episode_diagnostics(episode)
         expected_keys = {
             "final_portfolio_value",
+            "average_max_weight",
+            "final_max_weight",
+            "average_cash_weight",
+            "final_cash_weight",
+            "average_herfindahl_index",
+            "final_herfindahl_index",
+            "average_effective_number_of_assets",
+            "final_effective_number_of_assets",
+            "average_entropy",
+            "final_entropy",
             "average_turnover",
+            "final_turnover",
             "average_transaction_cost",
+            "final_transaction_cost",
             "final_weights",
             "max_weight",
             "cash_weight",
@@ -121,6 +133,21 @@ class EvaluateAgentTests(unittest.TestCase):
         self.assertLessEqual(diagnostics["cash_weight"], 1.0)
         self.assertGreaterEqual(diagnostics["average_turnover"], 0.0)
         self.assertGreaterEqual(diagnostics["average_transaction_cost"], 0.0)
+
+    def test_diagnostics_include_allocation_risk_keys(self):
+        result = evaluate_agent(DummyAgent(), self.returns, self.features)
+        diagnostics = result["diagnostics"]
+
+        self.assertIn("average_herfindahl_index", diagnostics)
+        self.assertIn("final_herfindahl_index", diagnostics)
+        self.assertIn("average_effective_number_of_assets", diagnostics)
+        self.assertIn("final_effective_number_of_assets", diagnostics)
+        self.assertIn("average_entropy", diagnostics)
+        self.assertIn("final_entropy", diagnostics)
+        self.assertIn("final_turnover", diagnostics)
+        self.assertIn("final_transaction_cost", diagnostics)
+        self.assertEqual(diagnostics["max_weight"], diagnostics["final_max_weight"])
+        self.assertEqual(diagnostics["cash_weight"], diagnostics["final_cash_weight"])
 
 
 if __name__ == "__main__":

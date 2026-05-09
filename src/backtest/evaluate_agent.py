@@ -7,6 +7,7 @@ plots.
 
 import pandas as pd
 
+from src.backtest.allocation_diagnostics import allocation_diagnostics
 from src.backtest.evaluate_policy import summary_metrics
 from src.env.portfolio_env import PortfolioEnv
 
@@ -102,12 +103,16 @@ def summarize_episode_diagnostics(episode: dict) -> dict:
         asset_name: float(weight)
         for asset_name, weight in episode["weights"].iloc[-1].items()
     }
+    allocation_summary = allocation_diagnostics(
+        episode["weights"],
+        turnover=episode["turnover"],
+        transaction_costs=episode["transaction_costs"],
+    )
 
     return {
         "final_portfolio_value": float(episode["final_portfolio_value"]),
-        "average_turnover": float(episode["turnover"].mean()),
-        "average_transaction_cost": float(episode["transaction_costs"].mean()),
+        **allocation_summary,
         "final_weights": final_weights,
-        "max_weight": float(max(final_weights.values())),
-        "cash_weight": float(final_weights.get("CASH", 0.0)),
+        "max_weight": allocation_summary["final_max_weight"],
+        "cash_weight": allocation_summary["final_cash_weight"],
     }

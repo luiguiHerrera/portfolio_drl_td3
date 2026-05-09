@@ -27,28 +27,8 @@ class SaveExperimentOutputsTests(unittest.TestCase):
                 "best_policy_by_sharpe": "buy_and_hold",
                 "best_sharpe_ratio": 0.8,
             },
-            "validation_diagnostics": {
-                "final_portfolio_value": 102000.0,
-                "average_turnover": 0.1,
-                "final_weights": {
-                    "SPY": 0.2,
-                    "TLT": 0.2,
-                    "GLD": 0.2,
-                    "BTC-USD": 0.2,
-                    "CASH": 0.2,
-                },
-            },
-            "test_diagnostics": {
-                "final_portfolio_value": 99000.0,
-                "average_turnover": 0.2,
-                "final_weights": {
-                    "SPY": 0.3,
-                    "TLT": 0.2,
-                    "GLD": 0.2,
-                    "BTC-USD": 0.1,
-                    "CASH": 0.2,
-                },
-            },
+            "validation_diagnostics": self._diagnostics(final_portfolio_value=102000.0),
+            "test_diagnostics": self._diagnostics(final_portfolio_value=99000.0),
             "raw_result": {"agent": object(), "replay_buffer": object()},
         }
 
@@ -124,6 +104,37 @@ class SaveExperimentOutputsTests(unittest.TestCase):
         self.assertTrue(expected_weight_columns.issubset(set(diagnostics.columns)))
         self.assertNotIn("final_weights", diagnostics.columns)
 
+    def test_saved_diagnostics_include_allocation_risk_columns(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = save_basic_experiment_outputs(self.experiment_result, temp_dir)
+
+            diagnostics = pd.read_csv(paths["validation_diagnostics"])
+
+        expected_columns = {
+            "average_max_weight",
+            "final_max_weight",
+            "average_cash_weight",
+            "final_cash_weight",
+            "average_herfindahl_index",
+            "final_herfindahl_index",
+            "average_effective_number_of_assets",
+            "final_effective_number_of_assets",
+            "average_entropy",
+            "final_entropy",
+            "average_turnover",
+            "final_turnover",
+            "average_transaction_cost",
+            "final_transaction_cost",
+            "max_weight",
+            "cash_weight",
+            "final_weight_SPY",
+            "final_weight_TLT",
+            "final_weight_GLD",
+            "final_weight_BTC-USD",
+            "final_weight_CASH",
+        }
+        self.assertTrue(expected_columns.issubset(set(diagnostics.columns)))
+
     def test_works_with_custom_output_dir_and_experiment_name(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             paths = save_basic_experiment_outputs(
@@ -198,6 +209,35 @@ class SaveExperimentOutputsTests(unittest.TestCase):
                 "buy_and_hold",
             ],
         )
+
+    @staticmethod
+    def _diagnostics(final_portfolio_value: float) -> dict:
+        return {
+            "final_portfolio_value": final_portfolio_value,
+            "average_max_weight": 0.35,
+            "final_max_weight": 0.40,
+            "average_cash_weight": 0.18,
+            "final_cash_weight": 0.20,
+            "average_herfindahl_index": 0.25,
+            "final_herfindahl_index": 0.28,
+            "average_effective_number_of_assets": 4.0,
+            "final_effective_number_of_assets": 3.57,
+            "average_entropy": 1.50,
+            "final_entropy": 1.45,
+            "average_turnover": 0.10,
+            "final_turnover": 0.12,
+            "average_transaction_cost": 0.001,
+            "final_transaction_cost": 0.0012,
+            "max_weight": 0.40,
+            "cash_weight": 0.20,
+            "final_weights": {
+                "SPY": 0.2,
+                "TLT": 0.2,
+                "GLD": 0.2,
+                "BTC-USD": 0.2,
+                "CASH": 0.2,
+            },
+        }
 
 
 if __name__ == "__main__":

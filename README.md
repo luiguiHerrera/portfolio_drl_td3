@@ -63,6 +63,8 @@ reward = portfolio_return - transaction_cost
 - Agent policy episode evaluation.
 - Portfolio metrics including cumulative return, annualized return, annualized
   volatility, Sharpe ratio, and maximum drawdown.
+- Allocation risk diagnostics including max weight, cash weight, Herfindahl
+  index, effective number of assets, entropy, turnover, and transaction cost.
 - Basic benchmark comparison workflow.
 - Compact validation and test comparison summaries.
 
@@ -117,7 +119,8 @@ results in memory. It returns:
 - training summary;
 - validation and test metrics tables;
 - validation and test comparison summaries;
-- validation and test diagnostics;
+- validation and test diagnostics, including allocation concentration and
+  transaction-cost diagnostics;
 - raw in-memory result.
 
 `run_and_save_basic_experiment(config_path, output_dir, experiment_name)` runs
@@ -130,6 +133,9 @@ the same experiment and saves selected CSV outputs. Saved files include:
 - `test_comparison_summary.csv`;
 - `validation_diagnostics.csv`;
 - `test_diagnostics.csv`.
+
+Diagnostic CSV outputs preserve allocation risk fields and flattened final
+portfolio weights.
 
 The workflow does not save `raw_result`, the agent, replay buffer, model
 checkpoints, plots, or reports.

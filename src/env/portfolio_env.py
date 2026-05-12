@@ -48,7 +48,7 @@ class PortfolioEnv:
         return self._get_observation()
 
     def step(self, action: np.ndarray):
-        """Advance one period using the current weights, then rebalance."""
+        """Advance one period using weights selected for this period."""
         if self.current_step >= len(self.returns):
             raise RuntimeError("Cannot call step() after the environment is done. Call reset().")
 
@@ -57,7 +57,7 @@ class PortfolioEnv:
 
         turnover = float(np.sum(np.abs(weights - self.previous_weights)))
         realized_transaction_cost = float(self.transaction_cost * turnover)
-        portfolio_return = float(np.dot(self.previous_weights, period_returns))
+        portfolio_return = float(np.dot(weights, period_returns))
         reward = compute_net_return_reward(portfolio_return, realized_transaction_cost)
 
         self.portfolio_value *= 1.0 + reward

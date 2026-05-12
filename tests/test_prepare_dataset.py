@@ -24,10 +24,10 @@ class PrepareDatasetTests(unittest.TestCase):
         )
         self.raw_features = pd.DataFrame(
             {
-                "feature_a": [1.0, 2.0, 3.0, 4.0, 5.0],
-                "feature_b": [10.0, 12.0, 14.0, 16.0, 18.0],
+                "feature_a": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "feature_b": [10.0, 12.0, 14.0, 16.0, 18.0, 20.0],
             },
-            index=self.returns.index[1:],
+            index=self.returns.index,
         )
 
     def test_prepare_dataset_returns_all_expected_keys(self):
@@ -47,9 +47,36 @@ class PrepareDatasetTests(unittest.TestCase):
     def test_features_are_normalized_while_returns_are_not(self):
         result = self._run_prepare_dataset()
 
-        expected_train_returns = self.returns.loc[self.raw_features.index[:3]]
+        shifted_features = self.raw_features.shift(1).dropna()
+        expected_train_returns = self.returns.loc[shifted_features.index[:3]]
         pd.testing.assert_frame_equal(result["train_returns"], expected_train_returns)
-        self.assertFalse(result["train_features"].equals(self.raw_features.iloc[:3]))
+        self.assertFalse(result["train_features"].equals(shifted_features.iloc[:3]))
+
+    def test_features_are_shifted_before_alignment_with_returns(self):
+        result = self._run_prepare_dataset()
+        shifted_features = self.raw_features.shift(1).dropna()
+        aligned_returns = self.returns.loc[shifted_features.index]
+        result_features = pd.concat(
+            [
+                result["train_features"],
+                result["validation_features"],
+                result["test_features"],
+            ]
+        )
+        result_returns = pd.concat(
+            [
+                result["train_returns"],
+                result["validation_returns"],
+                result["test_returns"],
+            ]
+        )
+
+        self.assertTrue(result_features.index.equals(aligned_returns.index))
+        self.assertTrue(result_returns.index.equals(result_features.index))
+        pd.testing.assert_series_equal(
+            result["feature_scaler"]["mean"],
+            shifted_features.iloc[:3].mean(),
+        )
 
     def test_returns_and_features_indexes_match_within_each_split(self):
         result = self._run_prepare_dataset()
@@ -62,7 +89,7 @@ class PrepareDatasetTests(unittest.TestCase):
 
     def test_scaler_is_fit_from_train_features_only(self):
         result = self._run_prepare_dataset()
-        expected_train_features = self.raw_features.iloc[:3]
+        expected_train_features = self.raw_features.shift(1).dropna().iloc[:3]
 
         pd.testing.assert_series_equal(
             result["feature_scaler"]["mean"],

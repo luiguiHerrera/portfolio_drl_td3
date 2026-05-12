@@ -41,7 +41,8 @@ comparison, sensitivity analysis, and appropriate validation design.
 
 - `PortfolioEnv` for long-only, fully invested portfolio simulation.
 - Separation between observed state features and realized asset returns.
-- Transaction-cost-aware portfolio value updates.
+- Rewards computed from current action weights and realized returns, net of
+  transaction costs from previous to current weights.
 - Minimal reward baseline:
 
 ```text
@@ -93,10 +94,13 @@ The initial allocation problem is defined over:
 The portfolio is long-only and fully invested across all assets, including
 `CASH`. Actor outputs are transformed into non-negative weights that sum to one.
 
-State features are separated from realized returns: the agent observes features,
-while portfolio returns and rewards are computed from realized asset returns.
-Feature normalization is fitted only on the training split to reduce data
-leakage risk. Validation and test splits are chronological.
+State features are separated from realized returns. At date `t`, features are
+shifted so the agent observes information available through `t-1`, then selects
+portfolio weights for period `t`. Realized returns at `t` are observed after the
+decision, and portfolio return and reward are computed from those current action
+weights net of transaction cost. Feature normalization is fitted only on the
+training split to reduce data leakage risk. Validation and test splits are
+chronological.
 
 ## Benchmarks
 

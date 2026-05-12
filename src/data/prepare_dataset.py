@@ -21,7 +21,11 @@ def prepare_train_validation_test_datasets(config_path: str) -> dict:
 
     returns = build_returns_dataset(config_path)
     raw_features = build_features(returns)
-    aligned_returns, aligned_features = _align_returns_and_features(returns, raw_features)
+    features_available_before_return = raw_features.shift(1).dropna()
+    aligned_returns, aligned_features = _align_returns_and_features(
+        returns,
+        features_available_before_return,
+    )
 
     train_features, validation_features, test_features = chronological_split(
         aligned_features,

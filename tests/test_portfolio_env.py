@@ -78,6 +78,26 @@ class PortfolioEnvTests(unittest.TestCase):
         self.assertAlmostEqual(info["portfolio_return"], expected_return)
         self.assertAlmostEqual(reward, expected_return)
 
+    def test_step_portfolio_return_depends_on_current_action(self):
+        returns = pd.DataFrame(
+            {
+                "SPY": [0.10],
+                "TLT": [0.00],
+                "GLD": [0.00],
+                "BTC-USD": [0.00],
+                "CASH": [0.00],
+            },
+            index=pd.date_range("2024-01-05", periods=1, freq="W-FRI"),
+        )
+        env = PortfolioEnv(returns, transaction_cost=0.0)
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        self.assertAlmostEqual(info["portfolio_return"], 0.10)
+        self.assertAlmostEqual(reward, 0.10)
+        self.assertNotAlmostEqual(info["portfolio_return"], returns.iloc[0].mean())
+
     def test_done_observation_uses_feature_dimension(self):
         env = PortfolioEnv(self.returns, features=self.features)
         env.reset()

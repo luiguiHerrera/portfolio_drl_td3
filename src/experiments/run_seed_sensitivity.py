@@ -188,19 +188,54 @@ def _build_seed_row(
 
 
 def _build_summary(results: pd.DataFrame) -> pd.DataFrame:
+    mean_test_agent_sharpe = results["test_agent_sharpe_ratio"].mean()
+    std_test_agent_sharpe = results["test_agent_sharpe_ratio"].std()
+    min_test_agent_sharpe = results["test_agent_sharpe_ratio"].min()
+    mean_test_agent_sortino = results["test_agent_sortino_ratio"].mean()
+    std_test_agent_sortino = results["test_agent_sortino_ratio"].std()
+    mean_test_agent_information_ratio = results[
+        "test_agent_information_ratio_vs_equal_weight_rebalanced_net"
+    ].mean()
+    std_test_agent_information_ratio = results[
+        "test_agent_information_ratio_vs_equal_weight_rebalanced_net"
+    ].std()
+    mean_test_agent_capm_alpha = results["test_agent_capm_alpha_vs_SPY"].mean()
+    std_test_agent_capm_alpha = results["test_agent_capm_alpha_vs_SPY"].std()
+    worst_test_agent_sharpe = min_test_agent_sharpe
+
     summary = {
         "n_seeds": len(results),
-        "mean_test_agent_sharpe": results["test_agent_sharpe_ratio"].mean(),
-        "mean_test_agent_sortino": results["test_agent_sortino_ratio"].mean(),
+        "mean_test_agent_sharpe": mean_test_agent_sharpe,
+        "mean_test_agent_sortino": mean_test_agent_sortino,
         "mean_test_agent_calmar": results["test_agent_calmar_ratio"].mean(),
-        "mean_test_agent_information_ratio_vs_equal_weight_rebalanced_net": results[
-            "test_agent_information_ratio_vs_equal_weight_rebalanced_net"
-        ].mean(),
+        "mean_test_agent_information_ratio_vs_equal_weight_rebalanced_net": (
+            mean_test_agent_information_ratio
+        ),
         "mean_test_agent_capm_beta_vs_SPY": results["test_agent_capm_beta_vs_SPY"].mean(),
-        "mean_test_agent_capm_alpha_vs_SPY": results["test_agent_capm_alpha_vs_SPY"].mean(),
-        "std_test_agent_sharpe": results["test_agent_sharpe_ratio"].std(),
-        "min_test_agent_sharpe": results["test_agent_sharpe_ratio"].min(),
+        "mean_test_agent_capm_alpha_vs_SPY": mean_test_agent_capm_alpha,
+        "std_test_agent_sharpe": std_test_agent_sharpe,
+        "min_test_agent_sharpe": min_test_agent_sharpe,
         "max_test_agent_sharpe": results["test_agent_sharpe_ratio"].max(),
+        "robust_test_agent_sharpe_score_05": (
+            mean_test_agent_sharpe - 0.5 * std_test_agent_sharpe
+        ),
+        "robust_test_agent_sharpe_score_10": (
+            mean_test_agent_sharpe - 1.0 * std_test_agent_sharpe
+        ),
+        "std_test_agent_sortino": std_test_agent_sortino,
+        "robust_test_agent_sortino_score_05": (
+            mean_test_agent_sortino - 0.5 * std_test_agent_sortino
+        ),
+        "std_test_agent_information_ratio_vs_equal_weight_rebalanced_net": (
+            std_test_agent_information_ratio
+        ),
+        "robust_test_agent_information_ratio_score_05": (
+            mean_test_agent_information_ratio - 0.5 * std_test_agent_information_ratio
+        ),
+        "std_test_agent_capm_alpha_vs_SPY": std_test_agent_capm_alpha,
+        "robust_test_agent_capm_alpha_score_05": (
+            mean_test_agent_capm_alpha - 0.5 * std_test_agent_capm_alpha
+        ),
         "mean_test_agent_cumulative_return": results[
             "test_agent_cumulative_return"
         ].mean(),
@@ -215,6 +250,18 @@ def _build_summary(results: pd.DataFrame) -> pd.DataFrame:
         "win_rate_best_policy_agent": (
             results["test_best_policy_by_sharpe"] == "agent"
         ).mean(),
+        "worst_test_agent_sharpe": worst_test_agent_sharpe,
+        "worst_test_agent_cumulative_return": results["test_agent_cumulative_return"].min(),
+        "worst_test_agent_max_drawdown": results["test_agent_max_drawdown"].min(),
+        "positive_sharpe_rate": (results["test_agent_sharpe_ratio"] > 0).mean(),
+        "positive_sortino_rate": (results["test_agent_sortino_ratio"] > 0).mean(),
+        "positive_capm_alpha_rate": (results["test_agent_capm_alpha_vs_SPY"] > 0).mean(),
+        "positive_information_ratio_rate": (
+            results["test_agent_information_ratio_vs_equal_weight_rebalanced_net"] > 0
+        ).mean(),
+        "mean_minus_worst_sharpe_gap": (
+            mean_test_agent_sharpe - worst_test_agent_sharpe
+        ),
     }
 
     return pd.DataFrame([summary])

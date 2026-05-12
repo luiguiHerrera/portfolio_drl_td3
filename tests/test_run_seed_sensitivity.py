@@ -119,6 +119,83 @@ class RunSeedSensitivityTests(unittest.TestCase):
         }
         self.assertTrue(expected_columns.issubset(set(result["summary"].columns)))
 
+    def test_summary_contains_robust_selection_metrics(self):
+        with self._temporary_config() as config_path, tempfile.TemporaryDirectory() as temp_dir:
+            with self._patched_runner():
+                result = run_seed_sensitivity(config_path, output_dir=temp_dir, seeds=[7, 21])
+
+        expected_columns = {
+            "robust_test_agent_sharpe_score_05",
+            "robust_test_agent_sharpe_score_10",
+            "std_test_agent_sortino",
+            "robust_test_agent_sortino_score_05",
+            "std_test_agent_information_ratio_vs_equal_weight_rebalanced_net",
+            "robust_test_agent_information_ratio_score_05",
+            "std_test_agent_capm_alpha_vs_SPY",
+            "robust_test_agent_capm_alpha_score_05",
+            "worst_test_agent_sharpe",
+            "worst_test_agent_cumulative_return",
+            "worst_test_agent_max_drawdown",
+            "positive_sharpe_rate",
+            "positive_sortino_rate",
+            "positive_capm_alpha_rate",
+            "positive_information_ratio_rate",
+            "mean_minus_worst_sharpe_gap",
+        }
+        self.assertTrue(expected_columns.issubset(set(result["summary"].columns)))
+
+    def test_summary_robust_sharpe_scores_use_mean_minus_std_penalties(self):
+        with self._temporary_config() as config_path, tempfile.TemporaryDirectory() as temp_dir:
+            with self._patched_runner():
+                result = run_seed_sensitivity(config_path, output_dir=temp_dir, seeds=[7, 21])
+
+        summary = result["summary"].iloc[0]
+        expected_score_05 = (
+            summary["mean_test_agent_sharpe"] - 0.5 * summary["std_test_agent_sharpe"]
+        )
+        expected_score_10 = (
+            summary["mean_test_agent_sharpe"] - 1.0 * summary["std_test_agent_sharpe"]
+        )
+        self.assertAlmostEqual(summary["robust_test_agent_sharpe_score_05"], expected_score_05)
+        self.assertAlmostEqual(summary["robust_test_agent_sharpe_score_10"], expected_score_10)
+
+    def test_summary_positive_sharpe_rate_is_between_zero_and_one(self):
+        with self._temporary_config() as config_path, tempfile.TemporaryDirectory() as temp_dir:
+            with self._patched_runner():
+                result = run_seed_sensitivity(config_path, output_dir=temp_dir, seeds=[7, 21])
+
+        positive_rate = result["summary"].iloc[0]["positive_sharpe_rate"]
+
+        self.assertGreaterEqual(positive_rate, 0.0)
+        self.assertLessEqual(positive_rate, 1.0)
+
+    def test_summary_worst_case_fields_match_results(self):
+        with self._temporary_config() as config_path, tempfile.TemporaryDirectory() as temp_dir:
+            with self._patched_runner():
+                result = run_seed_sensitivity(config_path, output_dir=temp_dir, seeds=[7, 21])
+
+        summary = result["summary"].iloc[0]
+        results = result["results"]
+
+        self.assertEqual(
+            summary["worst_test_agent_sharpe"],
+            results["test_agent_sharpe_ratio"].min(),
+        )
+        self.assertEqual(
+            summary["worst_test_agent_max_drawdown"],
+            results["test_agent_max_drawdown"].min(),
+        )
+
+    def test_summary_mean_minus_worst_sharpe_gap_matches_components(self):
+        with self._temporary_config() as config_path, tempfile.TemporaryDirectory() as temp_dir:
+            with self._patched_runner():
+                result = run_seed_sensitivity(config_path, output_dir=temp_dir, seeds=[7, 21])
+
+        summary = result["summary"].iloc[0]
+        expected_gap = summary["mean_test_agent_sharpe"] - summary["worst_test_agent_sharpe"]
+
+        self.assertAlmostEqual(summary["mean_minus_worst_sharpe_gap"], expected_gap)
+
     def test_saves_results_csv(self):
         with self._temporary_config() as config_path, tempfile.TemporaryDirectory() as temp_dir:
             with self._patched_runner():

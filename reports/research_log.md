@@ -190,3 +190,82 @@ which limitations remain unresolved.
 - How it will be reported: As a robustness check showing that preliminary
   out-of-sample success is seed-sensitive and requires further methodological
   refinement before making performance claims.
+
+## Entry X — Robust Seed Sensitivity for Experiment E
+
+**Date:** 2026-05-12
+
+**Configuration:**
+- Base config: `configs/local/smoke_risk_aware.yaml`
+- Episodes: 100
+- Batch size: 64
+- Actor learning rate: 0.0003
+- Critic learning rate: 0.0003
+- Seeds: 7, 21, 42, 73, 101
+
+**Main robust summary:**
+- Mean test Sharpe: 0.0520
+- Standard deviation test Sharpe: 0.7905
+- Robust Sharpe score 0.5: -0.3432
+- Robust Sharpe score 1.0: -0.7385
+- Mean test Sortino: 0.0704
+- Robust Sortino score 0.5: -0.6285
+- Mean Information Ratio vs equal-weight rebalanced net: -0.9199
+- Robust Information Ratio score 0.5: -1.4453
+- Mean CAPM alpha vs SPY: -0.1387
+- Robust CAPM alpha score 0.5: -0.2780
+- Positive Sharpe rate: 0.40
+- Positive CAPM alpha rate: 0.40
+- Positive Information Ratio rate: 0.20
+- Win rate as best policy: 0.00
+- Win rate vs best individual buy-and-hold: 0.00
+
+**Interpretation:**
+The robust seed sensitivity analysis confirms that Experiment E is not stable across random seeds. Although some seeds produce positive Sharpe and alpha, the robust scores are negative once dispersion is penalized. The agent does not become the best policy in any seed and does not beat the best individual buy-and-hold benchmark by Sharpe.
+
+**Research implication:**
+The current TD3 setup should not be presented as empirically superior. Its value at this stage is methodological: the framework now detects instability, seed dependence, benchmark weakness, and lack of robust alpha generation.
+
+## Entry X — Hyperparameter × Seed Robustness Grid
+
+**Date:** 2026-05-13
+
+**Objective:**  
+Evaluate TD3 hyperparameter configurations across multiple random seeds using robust performance scores, instead of selecting models from single-seed results.
+
+**Setup:**
+- Base config: `configs/local/smoke_risk_aware.yaml`
+- Experiments: A-H
+- Seeds: 7, 21, 42, 73, 101
+- Output: `outputs/tables/td3_hyperparameter_seed_grid_AH_5seeds/`
+
+**Main result:**  
+The best-ranked configuration by robust Sharpe was Experiment H:
+
+- Description: `higher_learning_rate`
+- Episodes: 100
+- Batch size: 32
+- Actor learning rate: 0.0005
+- Critic learning rate: 0.0005
+- Mean test Sharpe: 0.5830
+- Standard deviation test Sharpe: 0.5889
+- Robust Sharpe score 0.5: 0.2886
+- Robust Sharpe score 1.0: -0.0059
+- Mean Sortino: 0.9692
+- Robust Sortino score 0.5: 0.3509
+- Mean Information Ratio vs equal-weight rebalanced net: -0.4100
+- Robust Information Ratio score 0.5: -0.7678
+- Mean CAPM alpha vs SPY: 0.0367
+- Robust CAPM alpha score 0.5: -0.0933
+- Positive Sharpe rate: 0.80
+- Positive Sortino rate: 0.80
+- Positive CAPM alpha rate: 0.60
+- Positive Information Ratio rate: 0.20
+- Win rate as best policy: 0.00
+- Win rate vs best individual buy-and-hold by Sharpe: 0.00
+
+**Interpretation:**  
+Experiment H is the strongest relative candidate under the current design, but the evidence is still not sufficient to claim robust superiority. Its robust Sharpe score under a mild penalty is positive, but the stronger robust Sharpe score is approximately zero. Information ratio and robust CAPM alpha remain negative, and the agent never wins against all benchmark policies.
+
+**Research implication:**  
+The next stage should use Experiment H as the reference TD3 configuration for further methodological improvements, but not as a final empirical result. The current framework is now useful because it identifies instability, benchmark weakness, and seed sensitivity directly.

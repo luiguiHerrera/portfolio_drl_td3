@@ -141,6 +141,14 @@ def _build_seed_row(
         "test_agent_cumulative_return": test_metrics.loc["agent", "cumulative_return"],
         "test_agent_sharpe_ratio": test_metrics.loc["agent", "sharpe_ratio"],
         "test_agent_max_drawdown": test_metrics.loc["agent", "max_drawdown"],
+        "test_agent_sortino_ratio": test_metrics.loc["agent", "sortino_ratio"],
+        "test_agent_calmar_ratio": test_metrics.loc["agent", "calmar_ratio"],
+        "test_agent_information_ratio_vs_equal_weight_rebalanced_net": test_metrics.loc[
+            "agent",
+            "information_ratio_vs_equal_weight_rebalanced_net",
+        ],
+        "test_agent_capm_beta_vs_SPY": test_metrics.loc["agent", "capm_beta_vs_SPY"],
+        "test_agent_capm_alpha_vs_SPY": test_metrics.loc["agent", "capm_alpha_vs_SPY"],
         "test_average_turnover": test_diagnostics["average_turnover"],
         "test_average_effective_number_of_assets": test_diagnostics[
             "average_effective_number_of_assets"
@@ -183,6 +191,13 @@ def _build_summary(results: pd.DataFrame) -> pd.DataFrame:
     summary = {
         "n_seeds": len(results),
         "mean_test_agent_sharpe": results["test_agent_sharpe_ratio"].mean(),
+        "mean_test_agent_sortino": results["test_agent_sortino_ratio"].mean(),
+        "mean_test_agent_calmar": results["test_agent_calmar_ratio"].mean(),
+        "mean_test_agent_information_ratio_vs_equal_weight_rebalanced_net": results[
+            "test_agent_information_ratio_vs_equal_weight_rebalanced_net"
+        ].mean(),
+        "mean_test_agent_capm_beta_vs_SPY": results["test_agent_capm_beta_vs_SPY"].mean(),
+        "mean_test_agent_capm_alpha_vs_SPY": results["test_agent_capm_alpha_vs_SPY"].mean(),
         "std_test_agent_sharpe": results["test_agent_sharpe_ratio"].std(),
         "min_test_agent_sharpe": results["test_agent_sharpe_ratio"].min(),
         "max_test_agent_sharpe": results["test_agent_sharpe_ratio"].max(),

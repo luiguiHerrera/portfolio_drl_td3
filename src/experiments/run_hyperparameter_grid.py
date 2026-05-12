@@ -218,7 +218,7 @@ def _build_aggregate_row(
 
 
 def _policy_metrics(prefix: str, metrics_table: pd.DataFrame, policy_name: str) -> dict:
-    return {
+    metrics = {
         f"{prefix}_cumulative_return": metrics_table.loc[policy_name, "cumulative_return"],
         f"{prefix}_annualized_return": metrics_table.loc[policy_name, "annualized_return"],
         f"{prefix}_annualized_volatility": metrics_table.loc[
@@ -228,6 +228,18 @@ def _policy_metrics(prefix: str, metrics_table: pd.DataFrame, policy_name: str) 
         f"{prefix}_sharpe_ratio": metrics_table.loc[policy_name, "sharpe_ratio"],
         f"{prefix}_max_drawdown": metrics_table.loc[policy_name, "max_drawdown"],
     }
+    optional_columns = (
+        "sortino_ratio",
+        "calmar_ratio",
+        "information_ratio_vs_equal_weight_rebalanced_net",
+        "capm_beta_vs_SPY",
+        "capm_alpha_vs_SPY",
+    )
+    for column in optional_columns:
+        if column in metrics_table.columns:
+            metrics[f"{prefix}_{column}"] = metrics_table.loc[policy_name, column]
+
+    return metrics
 
 
 def _comparison_summary(prefix: str, summary: dict) -> dict:
@@ -287,7 +299,7 @@ def _allocation_diagnostics(prefix: str, diagnostics: dict) -> dict:
 
 
 def _benchmark_test_metrics(test_metrics: pd.DataFrame) -> dict:
-    return {
+    metrics = {
         "test_equal_weight_gross_cumulative_return": test_metrics.loc[
             "equal_weight_gross",
             "cumulative_return",
@@ -313,3 +325,16 @@ def _benchmark_test_metrics(test_metrics: pd.DataFrame) -> dict:
             "sharpe_ratio",
         ],
     }
+    for policy_name in ("equal_weight_rebalanced_net",):
+        for column in ("sortino_ratio", "calmar_ratio"):
+            if column in test_metrics.columns:
+                metrics[f"test_{policy_name}_{column}"] = test_metrics.loc[policy_name, column]
+
+    for policy_name in ("buy_hold_SPY", "buy_hold_GLD", "buy_hold_BTC-USD"):
+        if policy_name in test_metrics.index:
+            metrics[f"test_{policy_name}_sharpe_ratio"] = test_metrics.loc[
+                policy_name,
+                "sharpe_ratio",
+            ]
+
+    return metrics

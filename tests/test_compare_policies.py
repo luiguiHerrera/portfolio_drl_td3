@@ -139,9 +139,32 @@ class ComparePoliciesTests(unittest.TestCase):
             "annualized_volatility",
             "sharpe_ratio",
             "max_drawdown",
+            "sortino_ratio",
+            "calmar_ratio",
+            "tracking_error_vs_equal_weight_rebalanced_net",
+            "information_ratio_vs_equal_weight_rebalanced_net",
+            "capm_beta_vs_SPY",
+            "capm_alpha_vs_SPY",
         }
 
         self.assertEqual(set(result["metrics_table"].columns), expected_columns)
+
+    def test_agent_row_includes_capm_metrics_when_spy_exists(self):
+        result = compare_agent_to_basic_benchmarks(self.agent, self.returns, self.features)
+
+        self.assertFalse(pd.isna(result["metrics_table"].loc["agent", "capm_beta_vs_SPY"]))
+        self.assertFalse(pd.isna(result["metrics_table"].loc["agent", "capm_alpha_vs_SPY"]))
+
+    def test_equal_weight_rebalanced_net_tracking_error_vs_itself_is_zero(self):
+        result = compare_agent_to_basic_benchmarks(self.agent, self.returns, self.features)
+
+        self.assertAlmostEqual(
+            result["metrics_table"].loc[
+                "equal_weight_rebalanced_net",
+                "tracking_error_vs_equal_weight_rebalanced_net",
+            ],
+            0.0,
+        )
 
     def test_agent_metrics_are_based_on_financial_net_returns(self):
         agent = RotatingDummyAgent(action_dim=len(self.returns.columns))

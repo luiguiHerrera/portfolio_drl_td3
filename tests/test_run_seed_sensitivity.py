@@ -83,6 +83,20 @@ class RunSeedSensitivityTests(unittest.TestCase):
 
         self.assertEqual(len(result["results"]), len(seeds))
 
+    def test_results_include_selected_extended_metrics(self):
+        with self._temporary_config() as config_path, tempfile.TemporaryDirectory() as temp_dir:
+            with self._patched_runner():
+                result = run_seed_sensitivity(config_path, output_dir=temp_dir, seeds=[7, 21])
+
+        expected_columns = {
+            "test_agent_sortino_ratio",
+            "test_agent_calmar_ratio",
+            "test_agent_information_ratio_vs_equal_weight_rebalanced_net",
+            "test_agent_capm_beta_vs_SPY",
+            "test_agent_capm_alpha_vs_SPY",
+        }
+        self.assertTrue(expected_columns.issubset(set(result["results"].columns)))
+
     def test_summary_contains_win_rates(self):
         with self._temporary_config() as config_path, tempfile.TemporaryDirectory() as temp_dir:
             with self._patched_runner():
@@ -90,6 +104,20 @@ class RunSeedSensitivityTests(unittest.TestCase):
 
         self.assertIn("win_rate_vs_best_individual_buyhold_by_sharpe", result["summary"].columns)
         self.assertIn("win_rate_best_policy_agent", result["summary"].columns)
+
+    def test_summary_contains_extended_metric_means(self):
+        with self._temporary_config() as config_path, tempfile.TemporaryDirectory() as temp_dir:
+            with self._patched_runner():
+                result = run_seed_sensitivity(config_path, output_dir=temp_dir, seeds=[7, 21])
+
+        expected_columns = {
+            "mean_test_agent_sortino",
+            "mean_test_agent_calmar",
+            "mean_test_agent_information_ratio_vs_equal_weight_rebalanced_net",
+            "mean_test_agent_capm_beta_vs_SPY",
+            "mean_test_agent_capm_alpha_vs_SPY",
+        }
+        self.assertTrue(expected_columns.issubset(set(result["summary"].columns)))
 
     def test_saves_results_csv(self):
         with self._temporary_config() as config_path, tempfile.TemporaryDirectory() as temp_dir:
@@ -155,6 +183,16 @@ class RunSeedSensitivityTests(unittest.TestCase):
                 "annualized_volatility": [0.10, 0.11, 0.12],
                 "sharpe_ratio": [agent_sharpe, 0.9, 0.8],
                 "max_drawdown": [-0.08, -0.10, -0.12],
+                "sortino_ratio": [agent_sharpe + 0.1, 1.0, 0.9],
+                "calmar_ratio": [agent_sharpe + 0.2, 1.1, 1.0],
+                "tracking_error_vs_equal_weight_rebalanced_net": [0.08, 0.0, 0.09],
+                "information_ratio_vs_equal_weight_rebalanced_net": [
+                    agent_sharpe - 0.9,
+                    0.0,
+                    -0.1,
+                ],
+                "capm_beta_vs_SPY": [0.9, 0.8, 1.0],
+                "capm_alpha_vs_SPY": [0.02, 0.01, 0.03],
             },
             index=["agent", "equal_weight_gross", "buy_hold_GLD"],
         )

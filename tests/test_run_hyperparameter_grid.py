@@ -145,6 +145,11 @@ class RunHyperparameterGridTests(unittest.TestCase):
             "test_agent_vs_best_individual_buyhold_sharpe_diff",
             "validation_best_individual_buyhold_by_sharpe",
             "validation_agent_vs_best_individual_buyhold_sharpe_diff",
+            "test_agent_sortino_ratio",
+            "test_agent_calmar_ratio",
+            "test_agent_information_ratio_vs_equal_weight_rebalanced_net",
+            "test_agent_capm_beta_vs_SPY",
+            "test_agent_capm_alpha_vs_SPY",
         }
         self.assertTrue(expected_columns.issubset(set(result["aggregate_results"].columns)))
 
@@ -257,6 +262,24 @@ class RunHyperparameterGridTests(unittest.TestCase):
                 "annualized_volatility": [0.05, 0.06, 0.05, 0.07, 0.08],
                 "sharpe_ratio": [agent_sharpe, 0.8, 0.7, 0.6, 0.9],
                 "max_drawdown": [-0.02, -0.03, -0.04, -0.05, -0.06],
+                "sortino_ratio": [agent_sharpe + 0.1, 0.9, 0.8, 0.7, 1.0],
+                "calmar_ratio": [agent_sharpe + 0.2, 1.0, 0.9, 0.8, 1.1],
+                "tracking_error_vs_equal_weight_rebalanced_net": [
+                    0.10,
+                    0.08,
+                    0.0,
+                    0.09,
+                    0.11,
+                ],
+                "information_ratio_vs_equal_weight_rebalanced_net": [
+                    agent_sharpe - 0.7,
+                    0.1,
+                    0.0,
+                    -0.1,
+                    0.2,
+                ],
+                "capm_beta_vs_SPY": [0.9, 0.8, 0.7, 0.6, 1.0],
+                "capm_alpha_vs_SPY": [0.02, 0.01, 0.00, -0.01, 0.03],
             },
             index=[
                 "agent",

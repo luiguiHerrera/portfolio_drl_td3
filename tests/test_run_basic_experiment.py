@@ -127,8 +127,13 @@ class RunBasicExperimentTests(unittest.TestCase):
                 "agent_max_drawdown",
                 "agent_vs_equal_weight_rebalanced_net_sharpe_diff",
                 "agent_vs_buy_and_hold_sharpe_diff",
+                "best_individual_buyhold_by_sharpe",
+                "best_individual_buyhold_sharpe_ratio",
+                "best_individual_buyhold_cumulative_return",
+                "agent_vs_best_individual_buyhold_sharpe_diff",
                 "agent_vs_equal_weight_rebalanced_net_cumulative_return_diff",
                 "agent_vs_buy_and_hold_cumulative_return_diff",
+                "agent_vs_best_individual_buyhold_cumulative_return_diff",
             },
         )
 
@@ -141,7 +146,7 @@ class RunBasicExperimentTests(unittest.TestCase):
     def test_summarize_metrics_table_ranks_agent_by_sharpe(self):
         summary = summarize_metrics_table(self.validation_metrics_table)
 
-        self.assertEqual(summary["agent_rank_by_sharpe"], 2)
+        self.assertEqual(summary["agent_rank_by_sharpe"], 3)
 
     def test_summarize_metrics_table_computes_agent_differences(self):
         summary = summarize_metrics_table(self.validation_metrics_table)
@@ -163,9 +168,36 @@ class RunBasicExperimentTests(unittest.TestCase):
             0.03 - 0.01,
         )
 
+    def test_summarize_metrics_table_identifies_best_individual_buyhold_by_sharpe(self):
+        summary = summarize_metrics_table(self.validation_metrics_table)
+
+        self.assertEqual(summary["best_individual_buyhold_by_sharpe"], "buy_hold_SPY")
+        self.assertEqual(summary["best_individual_buyhold_sharpe_ratio"], 1.2)
+        self.assertEqual(summary["best_individual_buyhold_cumulative_return"], 0.06)
+
+    def test_summarize_metrics_table_computes_agent_vs_best_individual_buyhold_diffs(self):
+        summary = summarize_metrics_table(self.validation_metrics_table)
+
+        self.assertAlmostEqual(
+            summary["agent_vs_best_individual_buyhold_sharpe_diff"],
+            1.0 - 1.2,
+        )
+        self.assertAlmostEqual(
+            summary["agent_vs_best_individual_buyhold_cumulative_return_diff"],
+            0.03 - 0.06,
+        )
+
     def test_run_basic_experiment_returns_comparison_summaries(self):
         result = self._run_experiment()
 
+        self.assertIn(
+            "best_individual_buyhold_by_sharpe",
+            result["validation_comparison_summary"],
+        )
+        self.assertIn(
+            "agent_vs_best_individual_buyhold_sharpe_diff",
+            result["test_comparison_summary"],
+        )
         self.assertEqual(
             result["validation_comparison_summary"],
             summarize_metrics_table(self.validation_metrics_table),
@@ -209,17 +241,19 @@ class RunBasicExperimentTests(unittest.TestCase):
     def _metrics_table() -> pd.DataFrame:
         return pd.DataFrame(
             {
-                "cumulative_return": [0.03, 0.02, 0.04, 0.01],
-                "annualized_return": [0.10, 0.08, 0.12, 0.05],
-                "annualized_volatility": [0.05, 0.06, 0.04, 0.07],
-                "sharpe_ratio": [1.0, 0.8, 1.5, 0.4],
-                "max_drawdown": [-0.02, -0.03, -0.01, -0.04],
+                "cumulative_return": [0.03, 0.02, 0.04, 0.01, 0.06, 0.005],
+                "annualized_return": [0.10, 0.08, 0.12, 0.05, 0.16, 0.02],
+                "annualized_volatility": [0.05, 0.06, 0.04, 0.07, 0.08, 0.01],
+                "sharpe_ratio": [1.0, 0.8, 1.5, 0.4, 1.2, 0.1],
+                "max_drawdown": [-0.02, -0.03, -0.01, -0.04, -0.05, 0.0],
             },
             index=[
                 "agent",
                 "equal_weight_gross",
                 "equal_weight_rebalanced_net",
                 "buy_and_hold",
+                "buy_hold_SPY",
+                "buy_hold_CASH",
             ],
         )
 

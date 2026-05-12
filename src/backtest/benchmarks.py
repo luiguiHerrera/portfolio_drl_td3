@@ -36,6 +36,17 @@ def buy_and_hold_returns(
     return pd.Series(portfolio_returns, index=returns.index, name="buy_and_hold")
 
 
+def individual_buy_and_hold_returns(returns: pd.DataFrame) -> dict[str, pd.Series]:
+    """Return one gross buy-and-hold return series per individual asset."""
+    if returns.empty:
+        raise ValueError("returns must not be empty.")
+
+    return {
+        f"buy_hold_{asset}": returns[asset].rename(f"buy_hold_{asset}")
+        for asset in returns.columns
+    }
+
+
 def equal_weight_rebalanced_benchmark(
     returns: pd.DataFrame,
     transaction_cost: float = 0.0,

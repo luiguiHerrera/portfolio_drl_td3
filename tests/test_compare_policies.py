@@ -61,7 +61,16 @@ class ComparePoliciesTests(unittest.TestCase):
 
         self.assertEqual(
             set(result["benchmarks"].keys()),
-            {"equal_weight_gross", "equal_weight_rebalanced_net", "buy_and_hold"},
+            {
+                "equal_weight_gross",
+                "equal_weight_rebalanced_net",
+                "buy_and_hold",
+                "buy_hold_SPY",
+                "buy_hold_TLT",
+                "buy_hold_GLD",
+                "buy_hold_BTC-USD",
+                "buy_hold_CASH",
+            },
         )
         self.assertEqual(
             set(result["benchmarks"]["equal_weight_gross"].keys()),
@@ -100,7 +109,26 @@ class ComparePoliciesTests(unittest.TestCase):
 
         self.assertEqual(
             set(result["metrics_table"].index),
-            {"agent", "equal_weight_gross", "equal_weight_rebalanced_net", "buy_and_hold"},
+            {
+                "agent",
+                "equal_weight_gross",
+                "equal_weight_rebalanced_net",
+                "buy_and_hold",
+                "buy_hold_SPY",
+                "buy_hold_TLT",
+                "buy_hold_GLD",
+                "buy_hold_BTC-USD",
+                "buy_hold_CASH",
+            },
+        )
+
+    def test_individual_buy_hold_spy_returns_match_asset_returns(self):
+        result = compare_agent_to_basic_benchmarks(self.agent, self.returns, self.features)
+        agent_index = result["agent"]["episode"]["financial_net_returns"].index
+
+        pd.testing.assert_series_equal(
+            result["benchmarks"]["buy_hold_SPY"]["returns"],
+            self.returns.loc[agent_index, "SPY"].rename("buy_hold_SPY"),
         )
 
     def test_metrics_table_contains_expected_metric_columns(self):

@@ -77,6 +77,9 @@ Dynamic Sharpe reward terms are not implemented yet.
   index, effective number of assets, entropy, turnover, and transaction cost.
 - Basic benchmark comparison workflow.
 - Compact validation and test comparison summaries.
+- Individual buy-and-hold asset benchmarks for checking whether the agent adds
+  dynamic allocation value beyond concentrated exposure to a single winning
+  asset.
 
 ### Experiment Workflow
 
@@ -117,12 +120,18 @@ The current benchmark workflow includes:
 
 - gross equal-weight portfolio;
 - transaction-cost-aware equal-weight rebalanced portfolio;
-- gross buy-and-hold portfolio.
+- gross buy-and-hold portfolio;
+- individual buy-and-hold asset benchmarks for `SPY`, `TLT`, `GLD`,
+  `BTC-USD`, and `CASH`.
 
 Benchmark comparison is performed in memory and produces metrics tables for the
-agent and benchmark policies. Transaction costs are currently modeled only for
-the equal-weight rebalanced benchmark. Markowitz and risk parity benchmarks are
-planned but not implemented yet.
+agent and benchmark policies. Individual asset buy-and-hold benchmarks are
+included because the TD3 agent can become highly concentrated; comparing against
+single-asset buy-and-hold returns helps assess whether it adds dynamic
+allocation value or primarily replicates exposure to a winning asset.
+Transaction costs are currently modeled only for the equal-weight rebalanced
+benchmark. Markowitz and risk parity benchmarks are planned but not implemented
+yet.
 
 ## Experiment Workflow
 
@@ -135,6 +144,9 @@ results in memory. It returns:
 - validation and test diagnostics, including allocation concentration and
   transaction-cost diagnostics;
 - raw in-memory result.
+
+Comparison summaries include the best individual buy-and-hold benchmark by
+Sharpe ratio and the agent's metric differences versus that benchmark.
 
 `run_and_save_basic_experiment(config_path, output_dir, experiment_name)` runs
 the same experiment and saves selected CSV outputs. Saved files include:

@@ -241,6 +241,21 @@ def _comparison_summary(prefix: str, summary: dict) -> dict:
         f"{prefix}_agent_vs_buy_and_hold_sharpe_diff": summary[
             "agent_vs_buy_and_hold_sharpe_diff"
         ],
+        f"{prefix}_best_individual_buyhold_by_sharpe": summary[
+            "best_individual_buyhold_by_sharpe"
+        ],
+        f"{prefix}_best_individual_buyhold_sharpe_ratio": summary[
+            "best_individual_buyhold_sharpe_ratio"
+        ],
+        f"{prefix}_best_individual_buyhold_cumulative_return": summary[
+            "best_individual_buyhold_cumulative_return"
+        ],
+        f"{prefix}_agent_vs_best_individual_buyhold_sharpe_diff": summary[
+            "agent_vs_best_individual_buyhold_sharpe_diff"
+        ],
+        f"{prefix}_agent_vs_best_individual_buyhold_cumulative_return_diff": summary[
+            "agent_vs_best_individual_buyhold_cumulative_return_diff"
+        ],
         f"{prefix}_agent_vs_equal_weight_rebalanced_net_cumulative_return_diff": summary[
             "agent_vs_equal_weight_rebalanced_net_cumulative_return_diff"
         ],

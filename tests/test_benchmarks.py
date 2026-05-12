@@ -9,6 +9,7 @@ from src.backtest.benchmarks import (
     buy_and_hold_returns,
     equal_weight_rebalanced_benchmark,
     equal_weight_returns,
+    individual_buy_and_hold_returns,
 )
 
 
@@ -84,6 +85,30 @@ class BenchmarkTests(unittest.TestCase):
         result = buy_and_hold_returns(self.returns)
 
         self.assertFalse(result.isna().any())
+
+    def test_individual_buy_and_hold_returns_one_entry_per_asset(self):
+        result = individual_buy_and_hold_returns(self.returns)
+
+        self.assertEqual(len(result), len(self.returns.columns))
+
+    def test_individual_buy_and_hold_returns_expected_keys(self):
+        result = individual_buy_and_hold_returns(self.returns)
+
+        self.assertEqual(
+            set(result.keys()),
+            {"buy_hold_SPY", "buy_hold_TLT", "buy_hold_GLD", "buy_hold_BTC-USD", "buy_hold_CASH"},
+        )
+
+    def test_individual_buy_and_hold_returns_match_asset_columns(self):
+        result = individual_buy_and_hold_returns(self.returns)
+
+        for asset in self.returns.columns:
+            expected = self.returns[asset].rename(f"buy_hold_{asset}")
+            assert_series_equal(result[f"buy_hold_{asset}"], expected)
+
+    def test_individual_buy_and_hold_returns_rejects_empty_returns(self):
+        with self.assertRaises(ValueError):
+            individual_buy_and_hold_returns(pd.DataFrame())
 
     def test_equal_weight_rebalanced_benchmark_returns_expected_keys(self):
         result = equal_weight_rebalanced_benchmark(self.returns)

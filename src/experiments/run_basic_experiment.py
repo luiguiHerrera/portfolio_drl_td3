@@ -40,6 +40,21 @@ def summarize_metrics_table(metrics_table: pd.DataFrame) -> dict:
     agent_rank_by_sharpe = int(sharpe_ranking.index.get_loc("agent") + 1)
     agent_sharpe_ratio = float(metrics_table.loc["agent", "sharpe_ratio"])
     agent_cumulative_return = float(metrics_table.loc["agent", "cumulative_return"])
+    individual_buyhold_rows = [
+        policy_name for policy_name in metrics_table.index if policy_name.startswith("buy_hold_")
+    ]
+    if not individual_buyhold_rows:
+        raise KeyError("metrics_table must include individual buy-hold rows.")
+
+    individual_buyhold_metrics = metrics_table.loc[individual_buyhold_rows]
+    individual_buyhold_sharpe_ranking = individual_buyhold_metrics["sharpe_ratio"].sort_values(
+        ascending=False
+    )
+    best_individual_buyhold_by_sharpe = individual_buyhold_sharpe_ranking.index[0]
+    best_individual_buyhold_sharpe_ratio = float(individual_buyhold_sharpe_ranking.iloc[0])
+    best_individual_buyhold_cumulative_return = float(
+        metrics_table.loc[best_individual_buyhold_by_sharpe, "cumulative_return"]
+    )
 
     return {
         "best_policy_by_sharpe": best_policy_by_sharpe,
@@ -52,10 +67,17 @@ def summarize_metrics_table(metrics_table: pd.DataFrame) -> dict:
         - float(metrics_table.loc["equal_weight_rebalanced_net", "sharpe_ratio"]),
         "agent_vs_buy_and_hold_sharpe_diff": agent_sharpe_ratio
         - float(metrics_table.loc["buy_and_hold", "sharpe_ratio"]),
+        "best_individual_buyhold_by_sharpe": best_individual_buyhold_by_sharpe,
+        "best_individual_buyhold_sharpe_ratio": best_individual_buyhold_sharpe_ratio,
+        "best_individual_buyhold_cumulative_return": best_individual_buyhold_cumulative_return,
+        "agent_vs_best_individual_buyhold_sharpe_diff": agent_sharpe_ratio
+        - best_individual_buyhold_sharpe_ratio,
         "agent_vs_equal_weight_rebalanced_net_cumulative_return_diff": agent_cumulative_return
         - float(metrics_table.loc["equal_weight_rebalanced_net", "cumulative_return"]),
         "agent_vs_buy_and_hold_cumulative_return_diff": agent_cumulative_return
         - float(metrics_table.loc["buy_and_hold", "cumulative_return"]),
+        "agent_vs_best_individual_buyhold_cumulative_return_diff": agent_cumulative_return
+        - best_individual_buyhold_cumulative_return,
     }
 
 

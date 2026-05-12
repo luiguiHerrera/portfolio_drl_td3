@@ -14,6 +14,7 @@ from src.backtest.benchmarks import (
     buy_and_hold_returns,
     equal_weight_rebalanced_benchmark,
     equal_weight_returns,
+    individual_buy_and_hold_returns,
 )
 from src.backtest.evaluate_agent import evaluate_agent
 from src.backtest.evaluate_policy import summary_metrics
@@ -49,6 +50,7 @@ def compare_agent_to_basic_benchmarks(
     )
     equal_weight_rebalanced_net_series = equal_weight_rebalanced["net_returns"]
     buy_and_hold_series = buy_and_hold_returns(aligned_returns)
+    individual_buy_hold_series = individual_buy_and_hold_returns(aligned_returns)
 
     agent_metrics = agent_evaluation["metrics"]
     equal_weight_gross_metrics = summary_metrics(
@@ -66,14 +68,31 @@ def compare_agent_to_basic_benchmarks(
         periods_per_year=periods_per_year,
         risk_free_rate=risk_free_rate,
     )
+    individual_buy_hold_metrics = {
+        policy_name: summary_metrics(
+            policy_returns,
+            periods_per_year=periods_per_year,
+            risk_free_rate=risk_free_rate,
+        )
+        for policy_name, policy_returns in individual_buy_hold_series.items()
+    }
     metrics_table = pd.DataFrame(
         {
             "agent": agent_metrics,
             "equal_weight_gross": equal_weight_gross_metrics,
             "equal_weight_rebalanced_net": equal_weight_rebalanced_net_metrics,
             "buy_and_hold": buy_and_hold_metrics,
+            **individual_buy_hold_metrics,
         }
     ).T
+
+    individual_buy_hold_benchmarks = {
+        policy_name: {
+            "returns": policy_returns,
+            "metrics": individual_buy_hold_metrics[policy_name],
+        }
+        for policy_name, policy_returns in individual_buy_hold_series.items()
+    }
 
     return {
         "agent": agent_evaluation,
@@ -95,6 +114,7 @@ def compare_agent_to_basic_benchmarks(
                 "returns": buy_and_hold_series,
                 "metrics": buy_and_hold_metrics,
             },
+            **individual_buy_hold_benchmarks,
         },
         "metrics_table": metrics_table,
     }

@@ -141,6 +141,10 @@ class RunHyperparameterGridTests(unittest.TestCase):
             "test_agent_cumulative_return",
             "test_average_effective_number_of_assets",
             "test_equal_weight_rebalanced_net_sharpe_ratio",
+            "test_best_individual_buyhold_by_sharpe",
+            "test_agent_vs_best_individual_buyhold_sharpe_diff",
+            "validation_best_individual_buyhold_by_sharpe",
+            "validation_agent_vs_best_individual_buyhold_sharpe_diff",
         }
         self.assertTrue(expected_columns.issubset(set(result["aggregate_results"].columns)))
 
@@ -248,17 +252,18 @@ class RunHyperparameterGridTests(unittest.TestCase):
     def _metrics_table(agent_sharpe: float, agent_cumulative_return: float) -> pd.DataFrame:
         return pd.DataFrame(
             {
-                "cumulative_return": [agent_cumulative_return, 0.02, 0.015, 0.01],
-                "annualized_return": [0.10, 0.08, 0.07, 0.06],
-                "annualized_volatility": [0.05, 0.06, 0.05, 0.07],
-                "sharpe_ratio": [agent_sharpe, 0.8, 0.7, 0.6],
-                "max_drawdown": [-0.02, -0.03, -0.04, -0.05],
+                "cumulative_return": [agent_cumulative_return, 0.02, 0.015, 0.01, 0.025],
+                "annualized_return": [0.10, 0.08, 0.07, 0.06, 0.09],
+                "annualized_volatility": [0.05, 0.06, 0.05, 0.07, 0.08],
+                "sharpe_ratio": [agent_sharpe, 0.8, 0.7, 0.6, 0.9],
+                "max_drawdown": [-0.02, -0.03, -0.04, -0.05, -0.06],
             },
             index=[
                 "agent",
                 "equal_weight_gross",
                 "equal_weight_rebalanced_net",
                 "buy_and_hold",
+                "buy_hold_SPY",
             ],
         )
 
@@ -270,6 +275,11 @@ class RunHyperparameterGridTests(unittest.TestCase):
             "agent_rank_by_sharpe": 1 if agent_sharpe > 0.8 else 3,
             "agent_vs_equal_weight_rebalanced_net_sharpe_diff": agent_sharpe - 0.7,
             "agent_vs_buy_and_hold_sharpe_diff": agent_sharpe - 0.6,
+            "best_individual_buyhold_by_sharpe": "buy_hold_SPY",
+            "best_individual_buyhold_sharpe_ratio": 0.9,
+            "best_individual_buyhold_cumulative_return": 0.025,
+            "agent_vs_best_individual_buyhold_sharpe_diff": agent_sharpe - 0.9,
+            "agent_vs_best_individual_buyhold_cumulative_return_diff": 0.01 - 0.025,
             "agent_vs_equal_weight_rebalanced_net_cumulative_return_diff": 0.01,
             "agent_vs_buy_and_hold_cumulative_return_diff": 0.02,
         }

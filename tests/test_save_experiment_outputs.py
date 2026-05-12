@@ -22,10 +22,14 @@ class SaveExperimentOutputsTests(unittest.TestCase):
             "validation_comparison_summary": {
                 "best_policy_by_sharpe": "agent",
                 "best_sharpe_ratio": 1.2,
+                "best_individual_buyhold_by_sharpe": "buy_hold_SPY",
+                "agent_vs_best_individual_buyhold_sharpe_diff": 0.1,
             },
             "test_comparison_summary": {
                 "best_policy_by_sharpe": "buy_and_hold",
                 "best_sharpe_ratio": 0.8,
+                "best_individual_buyhold_by_sharpe": "buy_hold_SPY",
+                "agent_vs_best_individual_buyhold_sharpe_diff": -0.2,
             },
             "validation_diagnostics": self._diagnostics(final_portfolio_value=102000.0),
             "test_diagnostics": self._diagnostics(final_portfolio_value=99000.0),
@@ -84,9 +88,19 @@ class SaveExperimentOutputsTests(unittest.TestCase):
             "equal_weight_gross",
             "equal_weight_rebalanced_net",
             "buy_and_hold",
+            "buy_hold_SPY",
         ]
         self.assertEqual(list(validation_metrics.index), expected_index)
         self.assertEqual(list(test_metrics.index), expected_index)
+
+    def test_saved_test_comparison_summary_includes_individual_buyhold_fields(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = save_basic_experiment_outputs(self.experiment_result, temp_dir)
+
+            summary = pd.read_csv(paths["test_comparison_summary"])
+
+        self.assertIn("best_individual_buyhold_by_sharpe", summary.columns)
+        self.assertIn("agent_vs_best_individual_buyhold_sharpe_diff", summary.columns)
 
     def test_saved_diagnostics_flatten_final_weights(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -196,17 +210,18 @@ class SaveExperimentOutputsTests(unittest.TestCase):
     def _metrics_table() -> pd.DataFrame:
         return pd.DataFrame(
             {
-                "cumulative_return": [0.01, 0.02, 0.015, 0.018],
-                "annualized_return": [0.10, 0.12, 0.11, 0.09],
-                "annualized_volatility": [0.05, 0.06, 0.055, 0.07],
-                "sharpe_ratio": [1.0, 0.8, 0.9, 0.7],
-                "max_drawdown": [-0.02, -0.03, -0.025, -0.04],
+                "cumulative_return": [0.01, 0.02, 0.015, 0.018, 0.03],
+                "annualized_return": [0.10, 0.12, 0.11, 0.09, 0.13],
+                "annualized_volatility": [0.05, 0.06, 0.055, 0.07, 0.08],
+                "sharpe_ratio": [1.0, 0.8, 0.9, 0.7, 1.1],
+                "max_drawdown": [-0.02, -0.03, -0.025, -0.04, -0.05],
             },
             index=[
                 "agent",
                 "equal_weight_gross",
                 "equal_weight_rebalanced_net",
                 "buy_and_hold",
+                "buy_hold_SPY",
             ],
         )
 

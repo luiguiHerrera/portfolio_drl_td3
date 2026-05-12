@@ -137,6 +137,11 @@ class TrainTD3Tests(unittest.TestCase):
             "equal_weight_gross",
             "equal_weight_rebalanced_net",
             "buy_and_hold",
+            "buy_hold_SPY",
+            "buy_hold_TLT",
+            "buy_hold_GLD",
+            "buy_hold_BTC-USD",
+            "buy_hold_CASH",
         }
 
         self.assertEqual(
@@ -155,6 +160,11 @@ class TrainTD3Tests(unittest.TestCase):
             "equal_weight_gross",
             "equal_weight_rebalanced_net",
             "buy_and_hold",
+            "buy_hold_SPY",
+            "buy_hold_TLT",
+            "buy_hold_GLD",
+            "buy_hold_BTC-USD",
+            "buy_hold_CASH",
         }
 
         self.assertEqual(

@@ -10,6 +10,7 @@ from src.backtest.evaluate_agent import (
     run_policy_episode,
     summarize_episode_diagnostics,
 )
+from src.backtest.evaluate_policy import cumulative_return
 
 
 class DummyAgent:
@@ -48,10 +49,13 @@ class EvaluateAgentTests(unittest.TestCase):
         episode = run_policy_episode(DummyAgent(), self.returns, self.features)
         expected_keys = {
             "policy_returns",
+            "financial_net_returns",
             "rewards",
             "portfolio_values",
             "turnover",
             "transaction_costs",
+            "drawdown",
+            "concentration",
             "weights",
             "final_portfolio_value",
         }
@@ -62,11 +66,21 @@ class EvaluateAgentTests(unittest.TestCase):
         episode = run_policy_episode(DummyAgent(), self.returns, self.features)
 
         self.assertEqual(len(episode["policy_returns"]), len(self.returns))
+        self.assertEqual(len(episode["financial_net_returns"]), len(self.returns))
 
     def test_weights_dataframe_has_asset_columns(self):
         episode = run_policy_episode(DummyAgent(), self.returns, self.features)
 
         self.assertEqual(list(episode["weights"].columns), list(self.returns.columns))
+
+    def test_episode_contains_drawdown_and_concentration_series(self):
+        episode = run_policy_episode(DummyAgent(), self.returns, self.features)
+
+        self.assertIsInstance(episode["financial_net_returns"], pd.Series)
+        self.assertIsInstance(episode["drawdown"], pd.Series)
+        self.assertIsInstance(episode["concentration"], pd.Series)
+        self.assertEqual(len(episode["drawdown"]), len(self.returns))
+        self.assertEqual(len(episode["concentration"]), len(self.returns))
 
     def test_policy_returns_differ_from_rewards_when_transaction_costs_apply(self):
         episode = run_policy_episode(
@@ -82,6 +96,44 @@ class EvaluateAgentTests(unittest.TestCase):
         result = evaluate_agent(DummyAgent(), self.returns, self.features)
 
         self.assertEqual(set(result.keys()), {"episode", "metrics", "diagnostics"})
+
+    def test_evaluate_agent_accepts_reward_config(self):
+        result = evaluate_agent(
+            DummyAgent(),
+            self.returns,
+            self.features,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 1.0,
+                "lambda_turnover": 0.1,
+                "lambda_concentration": 0.1,
+                "lambda_drawdown": 0.1,
+            },
+        )
+
+        self.assertEqual(set(result.keys()), {"episode", "metrics", "diagnostics"})
+        self.assertIn("drawdown", result["episode"])
+        self.assertIn("concentration", result["episode"])
+
+    def test_evaluate_agent_metrics_use_financial_net_returns(self):
+        result = evaluate_agent(
+            DummyAgent(),
+            self.returns,
+            self.features,
+            transaction_cost=0.01,
+        )
+        policy_returns = result["episode"]["policy_returns"]
+        financial_net_returns = result["episode"]["financial_net_returns"]
+
+        self.assertFalse(policy_returns.equals(financial_net_returns))
+        self.assertAlmostEqual(
+            result["metrics"]["cumulative_return"],
+            cumulative_return(financial_net_returns),
+        )
+        self.assertNotAlmostEqual(
+            result["metrics"]["cumulative_return"],
+            cumulative_return(policy_returns),
+        )
 
     def test_metrics_contain_expected_keys(self):
         result = evaluate_agent(DummyAgent(), self.returns, self.features)

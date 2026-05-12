@@ -34,6 +34,14 @@ REQUIRED_FIELDS = (
 )
 SUPPORTED_FREQUENCIES = {"daily", "weekly"}
 RATIO_SUM_TOLERANCE = 1e-8
+OPTIONAL_REWARD_LAMBDAS = (
+    "lambda_return",
+    "lambda_sharpe",
+    "lambda_drawdown",
+    "lambda_transaction_cost",
+    "lambda_turnover",
+    "lambda_concentration",
+)
 
 
 def load_config(path: str) -> dict:
@@ -101,6 +109,13 @@ def _validate_environment(config: dict) -> None:
 def _validate_reward(config: dict) -> None:
     if not isinstance(config["reward"], dict):
         raise ValueError("Config field reward must be a mapping.")
+
+    for field_name in OPTIONAL_REWARD_LAMBDAS:
+        if field_name in config["reward"]:
+            _validate_non_negative_number(
+                config["reward"][field_name],
+                f"reward.{field_name}",
+            )
 
 
 def _validate_td3(config: dict) -> None:

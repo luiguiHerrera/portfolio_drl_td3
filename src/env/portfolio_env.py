@@ -10,7 +10,20 @@ portfolio weights through clipping and normalization.
 import numpy as np
 import pandas as pd
 
-from src.rewards.reward import compute_net_return_reward
+from src.rewards.reward import (
+    compute_risk_aware_reward,
+    concentration_penalty,
+    drawdown_penalty,
+)
+
+
+DEFAULT_REWARD_CONFIG = {
+    "lambda_return": 1.0,
+    "lambda_transaction_cost": 1.0,
+    "lambda_turnover": 0.0,
+    "lambda_concentration": 0.0,
+    "lambda_drawdown": 0.0,
+}
 
 
 class PortfolioEnv:
@@ -22,6 +35,7 @@ class PortfolioEnv:
         features: pd.DataFrame | None = None,
         initial_cash: float = 100000.0,
         transaction_cost: float = 0.001,
+        reward_config: dict | None = None,
     ):
         if returns.empty:
             raise ValueError("returns must not be empty.")
@@ -34,15 +48,20 @@ class PortfolioEnv:
         self.asset_names = list(self.returns.columns)
         self.initial_cash = initial_cash
         self.transaction_cost = transaction_cost
+        self.reward_config = (
+            DEFAULT_REWARD_CONFIG.copy() if reward_config is None else reward_config.copy()
+        )
 
         self.current_step = 0
         self.portfolio_value = initial_cash
+        self.peak_portfolio_value = initial_cash
         self.previous_weights = self._equal_weights()
 
     def reset(self) -> np.ndarray:
         """Reset environment state and return the initial observation."""
         self.current_step = 0
         self.portfolio_value = self.initial_cash
+        self.peak_portfolio_value = self.initial_cash
         self.previous_weights = self._equal_weights()
 
         return self._get_observation()
@@ -58,9 +77,23 @@ class PortfolioEnv:
         turnover = float(np.sum(np.abs(weights - self.previous_weights)))
         realized_transaction_cost = float(self.transaction_cost * turnover)
         portfolio_return = float(np.dot(weights, period_returns))
-        reward = compute_net_return_reward(portfolio_return, realized_transaction_cost)
+        financial_net_return = portfolio_return - realized_transaction_cost
+        new_portfolio_value = self.portfolio_value * (1.0 + financial_net_return)
+        updated_peak_portfolio_value = max(self.peak_portfolio_value, new_portfolio_value)
+        drawdown = drawdown_penalty(new_portfolio_value, updated_peak_portfolio_value)
+        concentration = concentration_penalty(weights)
+        reward = compute_risk_aware_reward(
+            portfolio_return=portfolio_return,
+            transaction_cost=realized_transaction_cost,
+            turnover=turnover,
+            weights=weights,
+            portfolio_value=new_portfolio_value,
+            peak_portfolio_value=updated_peak_portfolio_value,
+            reward_config=self.reward_config,
+        )
 
-        self.portfolio_value *= 1.0 + reward
+        self.portfolio_value = new_portfolio_value
+        self.peak_portfolio_value = updated_peak_portfolio_value
         self.previous_weights = weights
         self.current_step += 1
 
@@ -71,9 +104,14 @@ class PortfolioEnv:
         info = {
             "portfolio_value": self.portfolio_value,
             "portfolio_return": portfolio_return,
+            "financial_net_return": financial_net_return,
             "transaction_cost": realized_transaction_cost,
             "turnover": turnover,
             "weights": weights,
+            "drawdown": drawdown,
+            "concentration": concentration,
+            "reward": reward,
+            "peak_portfolio_value": self.peak_portfolio_value,
         }
 
         return observation, reward, done, info

@@ -78,6 +78,125 @@ class PortfolioEnvTests(unittest.TestCase):
         self.assertAlmostEqual(info["portfolio_return"], expected_return)
         self.assertAlmostEqual(reward, expected_return)
 
+    def test_default_reward_config_preserves_net_return_behavior(self):
+        env = PortfolioEnv(self.returns, transaction_cost=0.01)
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        self.assertAlmostEqual(
+            reward,
+            info["portfolio_return"] - info["transaction_cost"],
+        )
+
+    def test_custom_reward_config_turnover_penalty_reduces_reward(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "lambda_turnover": 0.5,
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        self.assertAlmostEqual(reward, info["portfolio_return"] - 0.5 * info["turnover"])
+
+    def test_custom_reward_config_concentration_penalty_reduces_reward(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "lambda_concentration": 0.1,
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        self.assertAlmostEqual(
+            reward,
+            info["portfolio_return"] - 0.1 * info["concentration"],
+        )
+
+    def test_info_includes_risk_aware_reward_fields(self):
+        env = PortfolioEnv(self.returns)
+        env.reset()
+
+        _, reward, _, info = env.step(np.full(5, 1.0))
+
+        self.assertIn("financial_net_return", info)
+        self.assertIn("drawdown", info)
+        self.assertIn("concentration", info)
+        self.assertIn("reward", info)
+        self.assertIn("peak_portfolio_value", info)
+        self.assertAlmostEqual(info["reward"], reward)
+
+    def test_portfolio_value_updates_with_financial_net_return_not_risk_reward(self):
+        returns = pd.DataFrame(
+            {
+                "SPY": [0.10],
+                "TLT": [0.00],
+                "GLD": [0.00],
+                "BTC-USD": [0.00],
+                "CASH": [0.00],
+            },
+            index=pd.date_range("2024-01-05", periods=1, freq="W-FRI"),
+        )
+        env = PortfolioEnv(
+            returns,
+            initial_cash=100000.0,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "lambda_concentration": 0.2,
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        self.assertAlmostEqual(info["financial_net_return"], 0.10)
+        self.assertAlmostEqual(reward, -0.10)
+        self.assertAlmostEqual(info["portfolio_value"], 110000.0)
+
+    def test_peak_portfolio_value_updates_after_gains(self):
+        env = PortfolioEnv(self.returns, initial_cash=100000.0, transaction_cost=0.0)
+        env.reset()
+
+        _, _, _, info = env.step(np.full(5, 1.0))
+
+        self.assertGreater(info["peak_portfolio_value"], 100000.0)
+        self.assertAlmostEqual(info["peak_portfolio_value"], info["portfolio_value"])
+
+    def test_drawdown_is_based_on_financial_portfolio_value(self):
+        returns = pd.DataFrame(
+            {
+                "SPY": [0.10, -0.20, 0.00],
+                "TLT": [0.00, 0.00, 0.00],
+                "GLD": [0.00, 0.00, 0.00],
+                "BTC-USD": [0.00, 0.00, 0.00],
+                "CASH": [0.00, 0.00, 0.00],
+            },
+            index=pd.date_range("2024-01-05", periods=3, freq="W-FRI"),
+        )
+        env = PortfolioEnv(returns, initial_cash=100000.0, transaction_cost=0.0)
+        env.reset()
+
+        env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+        env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+        _, _, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        self.assertAlmostEqual(info["portfolio_value"], 88000.0)
+        self.assertAlmostEqual(info["peak_portfolio_value"], 110000.0)
+        self.assertAlmostEqual(info["drawdown"], 0.2)
+
     def test_step_portfolio_return_depends_on_current_action(self):
         returns = pd.DataFrame(
             {

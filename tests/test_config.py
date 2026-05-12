@@ -197,6 +197,46 @@ class ConfigTests(unittest.TestCase):
             ):
                 load_config(str(config_path))
 
+    def test_load_config_rejects_negative_reward_lambda(self):
+        config = _valid_config()
+        config["reward"]["lambda_turnover"] = -0.1
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(
+                ValueError,
+                "reward.lambda_turnover must be greater than or equal to 0",
+            ):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_non_numeric_reward_lambda(self):
+        config = _valid_config()
+        config["reward"]["lambda_transaction_cost"] = "0.2"
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(
+                ValueError,
+                "reward.lambda_transaction_cost must be numeric",
+            ):
+                load_config(str(config_path))
+
+    def test_load_config_accepts_missing_lambda_concentration(self):
+        config = _valid_config()
+        config["reward"].pop("lambda_concentration", None)
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertNotIn("lambda_concentration", loaded_config["reward"])
+
+    def test_load_config_accepts_non_negative_lambda_concentration(self):
+        config = _valid_config()
+        config["reward"]["lambda_concentration"] = 0.3
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["reward"]["lambda_concentration"], 0.3)
+
     def _temporary_config(self, config: dict):
         temp_dir = tempfile.TemporaryDirectory()
         config_path = Path(temp_dir.name) / "config.yaml"

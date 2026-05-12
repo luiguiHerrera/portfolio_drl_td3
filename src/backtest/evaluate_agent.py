@@ -18,6 +18,7 @@ def run_policy_episode(
     features: pd.DataFrame,
     initial_cash: float = 100000.0,
     transaction_cost: float = 0.001,
+    reward_config: dict | None = None,
 ) -> dict:
     """Run one policy episode and collect realized portfolio diagnostics."""
     env = PortfolioEnv(
@@ -25,14 +26,18 @@ def run_policy_episode(
         features=features,
         initial_cash=initial_cash,
         transaction_cost=transaction_cost,
+        reward_config=reward_config,
     )
     state = env.reset()
     done = False
     rewards = []
     policy_returns = []
+    financial_net_returns = []
     portfolio_values = []
     turnover = []
     transaction_costs = []
+    drawdown = []
+    concentration = []
     weights = []
 
     while not done:
@@ -41,9 +46,12 @@ def run_policy_episode(
 
         rewards.append(reward)
         policy_returns.append(info["portfolio_return"])
+        financial_net_returns.append(info["financial_net_return"])
         portfolio_values.append(info["portfolio_value"])
         turnover.append(info["turnover"])
         transaction_costs.append(info["transaction_cost"])
+        drawdown.append(info["drawdown"])
+        concentration.append(info["concentration"])
         weights.append(info["weights"])
         state = next_state
 
@@ -51,6 +59,11 @@ def run_policy_episode(
 
     return {
         "policy_returns": pd.Series(policy_returns, index=episode_index, name="policy_returns"),
+        "financial_net_returns": pd.Series(
+            financial_net_returns,
+            index=episode_index,
+            name="financial_net_returns",
+        ),
         "rewards": pd.Series(rewards, index=episode_index, name="rewards"),
         "portfolio_values": pd.Series(
             portfolio_values,
@@ -62,6 +75,12 @@ def run_policy_episode(
             transaction_costs,
             index=episode_index,
             name="transaction_costs",
+        ),
+        "drawdown": pd.Series(drawdown, index=episode_index, name="drawdown"),
+        "concentration": pd.Series(
+            concentration,
+            index=episode_index,
+            name="concentration",
         ),
         "weights": pd.DataFrame(weights, index=episode_index, columns=env.asset_names),
         "final_portfolio_value": portfolio_values[-1],
@@ -76,6 +95,7 @@ def evaluate_agent(
     risk_free_rate: float = 0.0,
     initial_cash: float = 100000.0,
     transaction_cost: float = 0.001,
+    reward_config: dict | None = None,
 ) -> dict:
     """Evaluate an agent episode and compute return-based summary metrics."""
     episode = run_policy_episode(
@@ -84,12 +104,13 @@ def evaluate_agent(
         features=features,
         initial_cash=initial_cash,
         transaction_cost=transaction_cost,
+        reward_config=reward_config,
     )
 
     return {
         "episode": episode,
         "metrics": summary_metrics(
-            episode["policy_returns"],
+            episode["financial_net_returns"],
             periods_per_year=periods_per_year,
             risk_free_rate=risk_free_rate,
         ),

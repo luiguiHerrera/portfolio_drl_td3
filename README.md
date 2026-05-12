@@ -41,13 +41,20 @@ comparison, sensitivity analysis, and appropriate validation design.
 
 - `PortfolioEnv` for long-only, fully invested portfolio simulation.
 - Separation between observed state features and realized asset returns.
-- Rewards computed from current action weights and realized returns, net of
-  transaction costs from previous to current weights.
-- Minimal reward baseline:
+- Financial portfolio value is updated with net realized return:
+  `financial_net_return = portfolio_return - transaction_cost`.
+- The learning reward is a separate configurable risk-aware signal:
 
 ```text
-reward = portfolio_return - transaction_cost
+reward =
+    lambda_return * portfolio_return
+    - lambda_transaction_cost * transaction_cost
+    - lambda_turnover * turnover
+    - lambda_concentration * concentration
+    - lambda_drawdown * drawdown
 ```
+
+Dynamic Sharpe reward terms are not implemented yet.
 
 ### TD3 Model
 
@@ -64,6 +71,8 @@ reward = portfolio_return - transaction_cost
 - Agent policy episode evaluation.
 - Portfolio metrics including cumulative return, annualized return, annualized
   volatility, Sharpe ratio, and maximum drawdown.
+- Agent performance metrics use financial net returns after transaction costs;
+  gross policy returns remain available as diagnostics.
 - Allocation risk diagnostics including max weight, cash weight, Herfindahl
   index, effective number of assets, entropy, turnover, and transaction cost.
 - Basic benchmark comparison workflow.

@@ -31,6 +31,7 @@ def train_td3(config_path: str) -> dict:
         features=datasets["train_features"],
         initial_cash=environment_config["initial_cash"],
         transaction_cost=environment_config["transaction_cost"],
+        reward_config=config["reward"],
     )
     state_dim = env.observation_dim
     action_dim = env.n_assets
@@ -107,6 +108,7 @@ def train_td3(config_path: str) -> dict:
     evaluation_kwargs = {
         "initial_cash": environment_config["initial_cash"],
         "transaction_cost": environment_config["transaction_cost"],
+        "reward_config": config["reward"],
         "periods_per_year": 52,
         "risk_free_rate": 0.0,
     }

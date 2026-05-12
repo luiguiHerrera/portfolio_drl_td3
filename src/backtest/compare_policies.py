@@ -27,6 +27,7 @@ def compare_agent_to_basic_benchmarks(
     risk_free_rate: float = 0.0,
     initial_cash: float = 100000.0,
     transaction_cost: float = 0.001,
+    reward_config: dict | None = None,
 ) -> dict:
     """Compare an agent policy against basic in-memory portfolio benchmarks."""
     agent_evaluation = evaluate_agent(
@@ -37,8 +38,9 @@ def compare_agent_to_basic_benchmarks(
         risk_free_rate=risk_free_rate,
         initial_cash=initial_cash,
         transaction_cost=transaction_cost,
+        reward_config=reward_config,
     )
-    agent_returns = agent_evaluation["episode"]["policy_returns"]
+    agent_returns = agent_evaluation["episode"]["financial_net_returns"]
     aligned_returns = returns.loc[agent_returns.index]
     equal_weight_gross_series = equal_weight_returns(aligned_returns)
     equal_weight_rebalanced = equal_weight_rebalanced_benchmark(
@@ -48,11 +50,7 @@ def compare_agent_to_basic_benchmarks(
     equal_weight_rebalanced_net_series = equal_weight_rebalanced["net_returns"]
     buy_and_hold_series = buy_and_hold_returns(aligned_returns)
 
-    agent_metrics = summary_metrics(
-        agent_returns,
-        periods_per_year=periods_per_year,
-        risk_free_rate=risk_free_rate,
-    )
+    agent_metrics = agent_evaluation["metrics"]
     equal_weight_gross_metrics = summary_metrics(
         equal_weight_gross_series,
         periods_per_year=periods_per_year,

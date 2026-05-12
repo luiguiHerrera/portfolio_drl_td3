@@ -1,0 +1,91 @@
+"""Tests for portfolio reward functions."""
+
+import unittest
+
+import numpy as np
+
+from src.rewards.reward import (
+    compute_net_return_reward,
+    compute_risk_aware_reward,
+    concentration_penalty,
+    drawdown_penalty,
+)
+
+
+class RewardTests(unittest.TestCase):
+    def test_net_return_reward_still_works(self):
+        self.assertAlmostEqual(compute_net_return_reward(0.05, 0.01), 0.04)
+
+    def test_concentration_penalty_equal_weights(self):
+        self.assertAlmostEqual(concentration_penalty(np.full(5, 0.2)), 0.2)
+
+    def test_concentration_penalty_fully_concentrated(self):
+        self.assertAlmostEqual(concentration_penalty(np.array([1.0, 0.0, 0.0])), 1.0)
+
+    def test_concentration_penalty_rejects_negative_weights(self):
+        with self.assertRaisesRegex(ValueError, "weights must be non-negative"):
+            concentration_penalty(np.array([0.5, -0.1, 0.6]))
+
+    def test_concentration_penalty_rejects_weights_not_summing_to_one(self):
+        with self.assertRaisesRegex(ValueError, "weights must sum to 1"):
+            concentration_penalty(np.array([0.2, 0.2, 0.2]))
+
+    def test_drawdown_penalty_returns_zero_at_peak(self):
+        self.assertAlmostEqual(drawdown_penalty(100000.0, 100000.0), 0.0)
+
+    def test_drawdown_penalty_returns_positive_drawdown_below_peak(self):
+        self.assertAlmostEqual(drawdown_penalty(90000.0, 100000.0), 0.1)
+
+    def test_drawdown_penalty_returns_zero_above_peak(self):
+        self.assertAlmostEqual(drawdown_penalty(110000.0, 100000.0), 0.0)
+
+    def test_compute_risk_aware_reward_matches_expected_formula(self):
+        weights = np.array([0.5, 0.5])
+        reward = compute_risk_aware_reward(
+            portfolio_return=0.04,
+            transaction_cost=0.01,
+            turnover=0.3,
+            weights=weights,
+            portfolio_value=90000.0,
+            peak_portfolio_value=100000.0,
+            reward_config={
+                "lambda_return": 1.5,
+                "lambda_transaction_cost": 0.2,
+                "lambda_turnover": 0.1,
+                "lambda_concentration": 0.4,
+                "lambda_drawdown": 0.5,
+                "lambda_sharpe": 99.0,
+            },
+        )
+
+        expected_reward = 1.5 * 0.04 - 0.2 * 0.01 - 0.1 * 0.3 - 0.4 * 0.5 - 0.5 * 0.1
+        self.assertAlmostEqual(reward, expected_reward)
+
+    def test_compute_risk_aware_reward_default_lambdas_equal_net_return_reward(self):
+        reward = compute_risk_aware_reward(
+            portfolio_return=0.04,
+            transaction_cost=0.01,
+            turnover=0.3,
+            weights=np.array([0.5, 0.5]),
+            portfolio_value=100000.0,
+            peak_portfolio_value=100000.0,
+            reward_config={},
+        )
+
+        self.assertAlmostEqual(reward, compute_net_return_reward(0.04, 0.01))
+
+    def test_compute_risk_aware_reward_rejects_negative_lambda(self):
+        with self.assertRaisesRegex(ValueError, "lambda_turnover"):
+            compute_risk_aware_reward(
+                portfolio_return=0.04,
+                transaction_cost=0.01,
+                turnover=0.3,
+                weights=np.array([0.5, 0.5]),
+                portfolio_value=100000.0,
+                peak_portfolio_value=100000.0,
+                reward_config={"lambda_turnover": -0.1},
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

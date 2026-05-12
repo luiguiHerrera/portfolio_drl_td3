@@ -115,19 +115,30 @@ class ComparePoliciesTests(unittest.TestCase):
 
         self.assertEqual(set(result["metrics_table"].columns), expected_columns)
 
-    def test_agent_metrics_are_based_on_policy_returns_not_rewards(self):
+    def test_agent_metrics_are_based_on_financial_net_returns(self):
         agent = RotatingDummyAgent(action_dim=len(self.returns.columns))
         result = compare_agent_to_basic_benchmarks(
             agent,
             self.returns,
             self.features,
             transaction_cost=0.01,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 1.0,
+                "lambda_turnover": 0.1,
+            },
         )
         policy_returns = result["agent"]["episode"]["policy_returns"]
+        financial_net_returns = result["agent"]["episode"]["financial_net_returns"]
         rewards = result["agent"]["episode"]["rewards"]
 
+        self.assertFalse(policy_returns.equals(financial_net_returns))
         self.assertFalse(policy_returns.equals(rewards))
         self.assertAlmostEqual(
+            result["metrics_table"].loc["agent", "cumulative_return"],
+            cumulative_return(financial_net_returns),
+        )
+        self.assertNotAlmostEqual(
             result["metrics_table"].loc["agent", "cumulative_return"],
             cumulative_return(policy_returns),
         )

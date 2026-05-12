@@ -24,6 +24,9 @@ REQUIRED_FIELDS = (
     ("td3", "policy_noise"),
     ("td3", "noise_clip"),
     ("td3", "policy_delay"),
+    ("td3", "batch_size"),
+    ("td3", "replay_buffer_size"),
+    ("training", "seed"),
     ("training", "train_ratio"),
     ("training", "validation_ratio"),
     ("training", "test_ratio"),
@@ -110,10 +113,13 @@ def _validate_td3(config: dict) -> None:
     _validate_non_negative_number(td3["policy_noise"], "td3.policy_noise")
     _validate_non_negative_number(td3["noise_clip"], "td3.noise_clip")
 
-    policy_delay = td3["policy_delay"]
-    if not isinstance(policy_delay, int) or isinstance(policy_delay, bool) or policy_delay < 1:
+    _validate_integer_at_least_one(td3["policy_delay"], "td3.policy_delay")
+    _validate_integer_at_least_one(td3["batch_size"], "td3.batch_size")
+    _validate_integer_at_least_one(td3["replay_buffer_size"], "td3.replay_buffer_size")
+
+    if td3["replay_buffer_size"] < td3["batch_size"]:
         raise ValueError(
-            "Config field td3.policy_delay must be an integer greater than or equal to 1."
+            "Config field td3.replay_buffer_size must be greater than or equal to td3.batch_size."
         )
 
 
@@ -124,11 +130,8 @@ def _validate_training(config: dict) -> None:
     _validate_positive_number(training["validation_ratio"], "training.validation_ratio")
     _validate_positive_number(training["test_ratio"], "training.test_ratio")
 
-    episodes = training["episodes"]
-    if not isinstance(episodes, int) or isinstance(episodes, bool) or episodes < 1:
-        raise ValueError(
-            "Config field training.episodes must be an integer greater than or equal to 1."
-        )
+    _validate_integer(training["seed"], "training.seed")
+    _validate_integer_at_least_one(training["episodes"], "training.episodes")
 
     _validate_ratio_sum(config)
 
@@ -178,3 +181,16 @@ def _validate_number_in_range(value, field_name: str, lower: float, upper: float
         raise ValueError(f"Config field {field_name} must be numeric.")
     if value <= lower or value > upper:
         raise ValueError(f"Config field {field_name} must be in the range ({lower}, {upper}].")
+
+
+def _validate_integer(value, field_name: str) -> None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"Config field {field_name} must be an integer.")
+
+
+def _validate_integer_at_least_one(value, field_name: str) -> None:
+    _validate_integer(value, field_name)
+    if value < 1:
+        raise ValueError(
+            f"Config field {field_name} must be an integer greater than or equal to 1."
+        )

@@ -25,6 +25,39 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(KeyError, "Missing required config field: td3.gamma"):
                 load_config(str(config_path))
 
+    def test_load_config_rejects_missing_training_seed(self):
+        config = _valid_config()
+        del config["training"]["seed"]
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(
+                KeyError,
+                "Missing required config field: training.seed",
+            ):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_missing_td3_batch_size(self):
+        config = _valid_config()
+        del config["td3"]["batch_size"]
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(
+                KeyError,
+                "Missing required config field: td3.batch_size",
+            ):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_missing_td3_replay_buffer_size(self):
+        config = _valid_config()
+        del config["td3"]["replay_buffer_size"]
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(
+                KeyError,
+                "Missing required config field: td3.replay_buffer_size",
+            ):
+                load_config(str(config_path))
+
     def test_load_config_rejects_empty_assets(self):
         config = _valid_config()
         config["data"]["assets"] = []
@@ -112,6 +145,56 @@ class ConfigTests(unittest.TestCase):
 
         with self._temporary_config(config) as config_path:
             with self.assertRaisesRegex(ValueError, "td3.policy_delay must be an integer"):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_non_integer_training_seed(self):
+        config = _valid_config()
+        config["training"]["seed"] = 42.5
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "training.seed must be an integer"):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_bool_training_seed(self):
+        config = _valid_config()
+        config["training"]["seed"] = True
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "training.seed must be an integer"):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_td3_batch_size_less_than_one(self):
+        config = _valid_config()
+        config["td3"]["batch_size"] = 0
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(
+                ValueError,
+                "td3.batch_size must be an integer greater than or equal to 1",
+            ):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_td3_replay_buffer_size_less_than_one(self):
+        config = _valid_config()
+        config["td3"]["replay_buffer_size"] = 0
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(
+                ValueError,
+                "td3.replay_buffer_size must be an integer greater than or equal to 1",
+            ):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_replay_buffer_smaller_than_batch_size(self):
+        config = _valid_config()
+        config["td3"]["batch_size"] = 256
+        config["td3"]["replay_buffer_size"] = 255
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(
+                ValueError,
+                "td3.replay_buffer_size must be greater than or equal to td3.batch_size",
+            ):
                 load_config(str(config_path))
 
     def _temporary_config(self, config: dict):

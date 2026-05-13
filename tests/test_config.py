@@ -260,9 +260,69 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded_config["features"]["version"], "v2")
 
+    def test_load_config_accepts_valid_v3_features_section(self):
+        config = _valid_config()
+        config["features"] = {
+            "version": "v3",
+            "market_asset": "SPY",
+            "short_window": 4,
+            "long_window": 12,
+            "ewma_span": 12,
+        }
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["features"]["version"], "v3")
+
+    def test_load_config_accepts_v3_macro_path_and_macro_date_column(self):
+        config = _valid_config()
+        config["features"] = {
+            "version": "v3",
+            "market_asset": "SPY",
+            "macro_path": "data/macro/local_macro.csv",
+            "macro_date_column": "observation_date",
+        }
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["features"]["macro_path"], "data/macro/local_macro.csv")
+        self.assertEqual(loaded_config["features"]["macro_date_column"], "observation_date")
+
+    def test_load_config_rejects_v3_empty_macro_path(self):
+        config = _valid_config()
+        config["features"] = {"version": "v3", "macro_path": ""}
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "features.macro_path"):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_v3_empty_macro_date_column(self):
+        config = _valid_config()
+        config["features"] = {"version": "v3", "macro_date_column": ""}
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "features.macro_date_column"):
+                load_config(str(config_path))
+
+    def test_load_config_v2_does_not_require_macro_path(self):
+        config = _valid_config()
+        config["features"] = {
+            "version": "v2",
+            "market_asset": "SPY",
+            "macro_path": "",
+        }
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["features"]["version"], "v2")
+        self.assertEqual(loaded_config["features"]["macro_path"], "")
+
     def test_load_config_rejects_unsupported_feature_version(self):
         config = _valid_config()
-        config["features"] = {"version": "v3"}
+        config["features"] = {"version": "v4"}
 
         with self._temporary_config(config) as config_path:
             with self.assertRaisesRegex(ValueError, "features.version"):

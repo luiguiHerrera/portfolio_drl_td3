@@ -397,3 +397,41 @@ feature availability.
 **Next decision:**  
 After commit, run walk-forward and walk-forward-seed validation using V2 before
 any tuning or performance claim.
+
+## Entry X — Feature Set V3 Local Macro Smoke Validation
+
+**Date:** 2026-05-13
+
+**Research question:**  
+Can local macro features be added end-to-end to the configured dataset pipeline
+without introducing missing values, date leakage, or live-data dependencies?
+
+**Decision implemented:**  
+Added V3 local macro CSV plumbing and validated it with a synthetic weekly macro
+fixture covering 2020-01-03 through 2024-12-27.
+
+**Technical result:**  
+The V3 macro smoke workflow produced `train_features` shape (165, 61),
+`validation_features` shape (35, 61), and `test_features` shape (37, 61).
+`missing_values_zero = True`, and the final test date was 2024-12-27.
+
+**Methodological interpretation:**  
+The pipeline can now carry macro/regime variables into the state representation
+in a reproducible way, but this does not prove better performance.
+
+**Safeguards:**  
+No live downloads were added. Macro alignment uses forward fill only, with no
+backfill. Unavailable rolling macro regimes remain NaN and are removed
+downstream by `dropna`. The external one-period feature shift still applies.
+
+**Tests:**  
+The full unit test suite passed: 398 tests OK.
+
+**Risk:**  
+The macro fixture is synthetic and must not be interpreted as real macro
+evidence. Real macro data still needs proper sourcing, release-lag treatment,
+and validation.
+
+**Next step:**  
+Build and validate a real macro dataset with release-date awareness before
+using V3 for empirical claims.

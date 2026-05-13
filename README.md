@@ -114,26 +114,41 @@ weights net of transaction cost. Feature normalization is fitted only on the
 training split to reduce data leakage risk. Validation and test splits are
 chronological.
 
-Feature Set V1 remains the default when no `features` section is provided in
-the configuration. Feature Set V2 is available as opt-in infrastructure:
+### Feature Sets
+
+The feature pipeline is versioned so new state variables can be tested without
+changing older experiments.
+
+- V1 is the default return-based feature set.
+- V2 is opt-in and adds richer return, risk, and simple regime features.
+- V3 is opt-in and extends V2 with optional local macro CSV features.
+
+V3 does not download macro data. It only reads a local CSV when `macro_path` is
+configured, which keeps the run reproducible and avoids hidden live-data
+dependencies. Macro observations are aligned by date, forward-filled only, and
+then shifted externally by one period during dataset preparation. Backfill is
+not allowed because it can introduce information that was not available at the
+decision time.
 
 ```yaml
 features:
-  version: v2
+  version: v3
   market_asset: SPY
   short_window: 4
   long_window: 12
   ewma_span: 12
+  macro_path: tests/fixtures/macro_weekly_2020_2024_test.csv
+  macro_date_column: date
 ```
 
-V2 adds return-derived state variables including momentum, volatility, EWMA
-volatility, beta and correlation versus the selected market asset, rolling
-drawdown, and simple market-regime indicators. Raw features are still shifted
-externally by one period during dataset preparation to avoid look-ahead bias.
+The synthetic macro fixture is only for testing the plumbing. It is not
+evidence about the usefulness of macro variables. This project is not trying to
+win a backtest by adding more columns; the goal is a controlled research
+pipeline where each signal can be tested, challenged, and removed if it fails
+validation.
+
 After return construction, date boundaries are clipped so final model returns
-respect `data.start_date` and `data.end_date`. Feature Set V2 is implemented
-infrastructure and should not be interpreted as evidence of performance
-superiority.
+respect `data.start_date` and `data.end_date`.
 
 ## Benchmarks
 

@@ -160,8 +160,8 @@ def _validate_features(config: dict) -> None:
         raise ValueError("Config field features must be a mapping.")
 
     version = features.get("version", "v1")
-    if version not in {"v1", "v2"}:
-        raise ValueError("Config field features.version must be one of: v1, v2.")
+    if version not in {"v1", "v2", "v3"}:
+        raise ValueError("Config field features.version must be one of: v1, v2, v3.")
     if version == "v1":
         return
 
@@ -182,6 +182,19 @@ def _validate_features(config: dict) -> None:
             "Config field features.long_window must be greater than or equal to "
             "features.short_window."
         )
+    if version == "v3":
+        macro_path = features.get("macro_path")
+        macro_date_column = features.get("macro_date_column")
+        if macro_path is not None and (
+            not isinstance(macro_path, str) or not macro_path.strip()
+        ):
+            raise ValueError("Config field features.macro_path must be a non-empty string.")
+        if macro_date_column is not None and (
+            not isinstance(macro_date_column, str) or not macro_date_column.strip()
+        ):
+            raise ValueError(
+                "Config field features.macro_date_column must be a non-empty string."
+            )
 
 
 def _validate_assets(config: dict) -> None:

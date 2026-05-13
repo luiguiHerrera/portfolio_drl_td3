@@ -54,6 +54,13 @@ class SaveExperimentOutputsTests(unittest.TestCase):
             },
         )
 
+    def test_does_not_fail_when_policy_history_is_absent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = save_basic_experiment_outputs(self.experiment_result, temp_dir)
+
+        self.assertNotIn("validation_policy_history", paths)
+        self.assertNotIn("test_policy_history", paths)
+
     def test_creates_experiment_output_directory(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             paths = save_basic_experiment_outputs(self.experiment_result, temp_dir)
@@ -148,6 +155,24 @@ class SaveExperimentOutputsTests(unittest.TestCase):
             "final_weight_CASH",
         }
         self.assertTrue(expected_columns.issubset(set(diagnostics.columns)))
+
+    def test_saves_policy_history_csvs_when_present(self):
+        experiment_result = dict(self.experiment_result)
+        experiment_result["validation_policy_history"] = self._policy_history()
+        experiment_result["test_policy_history"] = self._policy_history()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = save_basic_experiment_outputs(experiment_result, temp_dir)
+
+            self.assertTrue(Path(paths["validation_policy_history"]).is_file())
+            self.assertTrue(Path(paths["test_policy_history"]).is_file())
+            validation_history = pd.read_csv(paths["validation_policy_history"])
+            test_history = pd.read_csv(paths["test_policy_history"])
+
+        self.assertIn("date", validation_history.columns)
+        self.assertIn("weight_SPY", validation_history.columns)
+        self.assertEqual(len(validation_history), 2)
+        self.assertEqual(len(test_history), 2)
 
     def test_works_with_custom_output_dir_and_experiment_name(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -253,6 +278,26 @@ class SaveExperimentOutputsTests(unittest.TestCase):
                 "CASH": 0.2,
             },
         }
+
+    @staticmethod
+    def _policy_history() -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "date": pd.date_range("2024-01-05", periods=2, freq="W-FRI"),
+                "portfolio_return": [0.01, 0.02],
+                "portfolio_value": [101000.0, 103020.0],
+                "drawdown": [0.0, 0.0],
+                "turnover": [0.1, 0.2],
+                "transaction_cost": [0.0001, 0.0002],
+                "max_weight": [0.3, 0.4],
+                "cash_weight": [0.2, 0.1],
+                "weight_SPY": [0.2, 0.4],
+                "weight_TLT": [0.2, 0.2],
+                "weight_GLD": [0.2, 0.1],
+                "weight_BTC-USD": [0.2, 0.2],
+                "weight_CASH": [0.2, 0.1],
+            }
+        )
 
 
 if __name__ == "__main__":

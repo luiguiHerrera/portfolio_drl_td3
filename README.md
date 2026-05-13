@@ -218,9 +218,29 @@ the same experiment and saves selected CSV outputs. Saved files include:
 - `test_comparison_summary.csv`;
 - `validation_diagnostics.csv`;
 - `test_diagnostics.csv`.
+- `validation_policy_history.csv`;
+- `test_policy_history.csv`.
 
 Diagnostic CSV outputs preserve allocation risk fields and flattened final
 portfolio weights.
+
+Policy history CSVs preserve per-period behavior for validation and test
+evaluations: portfolio return, financial net return, portfolio value, drawdown,
+turnover, transaction cost, max weight, cash weight, and `weight_<ASSET>`
+columns. The policy behavior diagnostics module can use these files to analyze
+dominant assets, concentration, transitions, holding periods, and conditional
+performance. This is diagnostic only; it does not change the TD3 agent, reward,
+environment, features, or benchmarks. Concentration is treated as behavior to
+analyze, not automatic failure.
+
+The project also includes a mandate risk diagnostics module for analyzing saved
+metrics and diagnostics against configurable client-style limits. Concentration
+is not treated as automatically bad; it is evaluated as a risk exposure against
+explicit mandate constraints such as `max_drawdown_limit`,
+`max_volatility_limit`, `max_weight_limit`, `min_effective_assets`, and
+`max_turnover_limit`. The current implementation uses manually provided limits
+only. Future work may map suitability or appropriateness test results into
+these quantitative mandate limits.
 
 An explicit walk-forward validation workflow is also implemented for manually
 defined chronological folds. Each fold trains on its own train window, validates

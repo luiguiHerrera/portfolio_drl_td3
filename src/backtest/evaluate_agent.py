@@ -115,7 +115,31 @@ def evaluate_agent(
             risk_free_rate=risk_free_rate,
         ),
         "diagnostics": summarize_episode_diagnostics(episode),
+        "policy_history": build_policy_history(episode),
     }
+
+
+def build_policy_history(episode: dict) -> pd.DataFrame:
+    """Build per-period portfolio behavior history from an evaluated episode."""
+    history = pd.DataFrame(
+        {
+            "date": episode["financial_net_returns"].index,
+            "portfolio_return": episode["policy_returns"].to_numpy(),
+            "financial_net_return": episode["financial_net_returns"].to_numpy(),
+            "portfolio_value": episode["portfolio_values"].to_numpy(),
+            "drawdown": episode["drawdown"].to_numpy(),
+            "turnover": episode["turnover"].to_numpy(),
+            "transaction_cost": episode["transaction_costs"].to_numpy(),
+        },
+        index=episode["financial_net_returns"].index,
+    )
+    weights = episode["weights"].add_prefix("weight_")
+    history["max_weight"] = weights.max(axis=1).to_numpy()
+    history["cash_weight"] = (
+        weights["weight_CASH"].to_numpy() if "weight_CASH" in weights else 0.0
+    )
+
+    return pd.concat([history, weights], axis=1)
 
 
 def summarize_episode_diagnostics(episode: dict) -> dict:

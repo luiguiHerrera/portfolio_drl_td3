@@ -60,6 +60,16 @@ def save_basic_experiment_outputs(
         _flatten_diagnostics(experiment_result["test_diagnostics"]),
         experiment_output_dir / "test_diagnostics.csv",
     )
+    if experiment_result.get("validation_policy_history") is not None:
+        paths["validation_policy_history"] = _save_dataframe_without_index(
+            experiment_result["validation_policy_history"],
+            experiment_output_dir / "validation_policy_history.csv",
+        )
+    if experiment_result.get("test_policy_history") is not None:
+        paths["test_policy_history"] = _save_dataframe_without_index(
+            experiment_result["test_policy_history"],
+            experiment_output_dir / "test_policy_history.csv",
+        )
 
     return paths
 
@@ -100,6 +110,11 @@ def _validate_experiment_result(experiment_result: dict) -> None:
 
 def _save_dataframe(dataframe: pd.DataFrame, path: Path) -> str:
     dataframe.to_csv(path)
+    return str(path)
+
+
+def _save_dataframe_without_index(dataframe: pd.DataFrame, path: Path) -> str:
+    dataframe.to_csv(path, index=False)
     return str(path)
 
 

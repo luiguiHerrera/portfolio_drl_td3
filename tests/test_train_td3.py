@@ -94,7 +94,7 @@ class TrainTD3Tests(unittest.TestCase):
 
         self.assertEqual(
             set(result["validation_evaluation"].keys()),
-            {"episode", "metrics", "diagnostics"},
+            {"episode", "metrics", "diagnostics", "policy_history"},
         )
 
     def test_test_evaluation_contains_episode_and_metrics(self):
@@ -102,7 +102,7 @@ class TrainTD3Tests(unittest.TestCase):
 
         self.assertEqual(
             set(result["test_evaluation"].keys()),
-            {"episode", "metrics", "diagnostics"},
+            {"episode", "metrics", "diagnostics", "policy_history"},
         )
 
     def test_validation_and_test_metrics_contain_expected_keys(self):

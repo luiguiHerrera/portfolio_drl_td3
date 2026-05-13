@@ -95,7 +95,10 @@ class EvaluateAgentTests(unittest.TestCase):
     def test_evaluate_agent_returns_episode_metrics_and_diagnostics(self):
         result = evaluate_agent(DummyAgent(), self.returns, self.features)
 
-        self.assertEqual(set(result.keys()), {"episode", "metrics", "diagnostics"})
+        self.assertEqual(
+            set(result.keys()),
+            {"episode", "metrics", "diagnostics", "policy_history"},
+        )
 
     def test_evaluate_agent_accepts_reward_config(self):
         result = evaluate_agent(
@@ -111,9 +114,31 @@ class EvaluateAgentTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(set(result.keys()), {"episode", "metrics", "diagnostics"})
+        self.assertEqual(
+            set(result.keys()),
+            {"episode", "metrics", "diagnostics", "policy_history"},
+        )
         self.assertIn("drawdown", result["episode"])
         self.assertIn("concentration", result["episode"])
+
+    def test_evaluate_agent_policy_history_has_one_row_per_period(self):
+        result = evaluate_agent(DummyAgent(), self.returns, self.features)
+
+        self.assertEqual(len(result["policy_history"]), len(self.returns))
+
+    def test_evaluate_agent_policy_history_has_weight_columns_for_each_asset(self):
+        result = evaluate_agent(DummyAgent(), self.returns, self.features)
+        expected_weight_columns = {f"weight_{asset}" for asset in self.returns.columns}
+
+        self.assertTrue(expected_weight_columns.issubset(result["policy_history"].columns))
+
+    def test_evaluate_agent_policy_history_includes_datetime_date_column(self):
+        result = evaluate_agent(DummyAgent(), self.returns, self.features)
+        policy_history = result["policy_history"]
+
+        self.assertIn("date", policy_history.columns)
+        self.assertEqual(policy_history.loc[self.returns.index[0], "date"], self.returns.index[0])
+        self.assertTrue(pd.api.types.is_datetime64_any_dtype(policy_history["date"]))
 
     def test_evaluate_agent_metrics_use_financial_net_returns(self):
         result = evaluate_agent(

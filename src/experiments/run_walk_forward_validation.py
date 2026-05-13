@@ -160,6 +160,10 @@ def _build_experiment_result(raw_result: dict) -> dict:
         "test_comparison_summary": summarize_metrics_table(test_metrics_table),
         "validation_diagnostics": raw_result["validation_evaluation"]["diagnostics"],
         "test_diagnostics": raw_result["test_evaluation"]["diagnostics"],
+        "validation_policy_history": raw_result["validation_evaluation"].get(
+            "policy_history"
+        ),
+        "test_policy_history": raw_result["test_evaluation"].get("policy_history"),
         "raw_result": raw_result,
     }
 

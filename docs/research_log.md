@@ -613,3 +613,136 @@ adding more feature complexity.
 **Decision:**  
 Do not change the reward function yet. The next step is concentration
 diagnostics.
+
+## Entry X — Mandate Risk Diagnostics and Concentration Interpretation
+
+**Date:** 2026-05-13
+
+**Purpose:**  
+Evaluate whether the learned TD3 policies comply with client-style risk
+mandates instead of judging concentration as automatically wrong.
+
+**Implementation:**  
+Added `src/analysis/mandate_risk_diagnostics.py` and
+`tests/test_mandate_risk_diagnostics.py`.
+
+**Tests:**  
+`python3 -m unittest tests/test_mandate_risk_diagnostics.py` ran 24 tests OK.
+`python3 -m unittest discover tests` ran 450 tests OK.
+
+**Real smoke:**  
+Applied the diagnostics to 45 paired test metrics/diagnostics files from
+`outputs/tables/feature_set_comparison_V1_V2_V3_real_macro_2015_2024_3folds_5seeds_100ep`.
+
+**Moderate mandate limits:**  
+`max_drawdown_limit = -0.20`, `max_volatility_limit = 0.25`,
+`max_weight_limit = 0.80`, `min_effective_assets = 1.25`, and
+`max_turnover_limit = 0.75`.
+
+**Moderate result:**  
+The moderate mandate produced `mandate_pass_rate = 0.0`,
+`drawdown_pass_rate = 0.8889`, `volatility_pass_rate = 0.5778`,
+`final_weight_pass_rate = 0.1556`, `effective_assets_pass_rate = 0.1111`, and
+`turnover_pass_rate = 0.7111`. Mean Sharpe was 0.8169, mean max drawdown was
+-0.1108, and mean average effective number of assets was 1.1405.
+
+**Aggressive result:**  
+Under an aggressive mandate, `mandate_pass_rate = 0.9778`.
+
+**Corrected dominant assets:**  
+- GLD: 14 observations, rate 0.3111, mean final weight 0.9713.
+- BTC-USD: 11 observations, rate 0.2444, mean final weight 0.8651.
+- SPY: 11 observations, rate 0.2444, mean final weight 0.9364.
+- CASH: 5 observations, rate 0.1111, mean final weight 0.9344.
+- TLT: 4 observations, rate 0.0889, mean final weight 0.8747.
+
+**Interpretation:**  
+The policy is highly concentrated, but not always in the same asset. It rotates
+dominant exposure across assets. Under the current moderate limits, the learned
+policies are not appropriate for a moderate mandate mainly because of
+concentration and low effective number of assets, not because of drawdown.
+Under an aggressive mandate, most observations pass.
+
+**Methodological statement:**  
+Individual buy-and-hold benchmarks remain useful references, but they are not
+the only success criterion. A client mandate can rationally accept lower return
+than a concentrated buy-and-hold asset if risk limits are respected.
+
+**Next decision:**  
+Do not change the reward function yet. The next step should compare mandate
+compliance by feature set and then evaluate whether max-weight constraints or
+concentration penalties are needed for moderate/client mandates.
+
+## Entry X — Policy History Export and Policy Behavior Diagnostics
+
+**Date:** 2026-05-13
+
+**Purpose:**  
+Move from aggregate diagnostics to per-period policy behavior analysis.
+
+**Implementation:**  
+Added policy history export for validation and test evaluations. Added the
+Policy Behavior Diagnostics module to analyze dominant assets, concentration,
+transitions, holding periods, conditional performance, and future regime
+attribution.
+
+**Tests:**  
+`python3 -m unittest discover tests` ran 478 tests OK.
+
+**Smoke result:**  
+`outputs/tables/policy_history_export_smoke/test_policy_history.csv` had shape
+(30, 14), with 0 missing values. Columns included `date`,
+`portfolio_return`, `financial_net_return`, `portfolio_value`, `drawdown`,
+`turnover`, `transaction_cost`, `max_weight`, `cash_weight`, `weight_SPY`,
+`weight_TLT`, `weight_GLD`, `weight_BTC-USD`, and `weight_CASH`.
+
+**Feature set comparison rerun with policy history:**  
+The rerun output was written to
+`outputs/tables/feature_set_comparison_V1_V2_V3_real_macro_2015_2024_policy_history`.
+Ranking by robust Sharpe with 0.5 dispersion penalty:
+
+- V3_real_macro: 0.3016
+- V2: 0.1477
+- V1: -0.1341
+
+**Policy behavior by feature set:**  
+Mean dominant weight:
+
+- V1: 0.9434
+- V2: 0.9456
+- V3_real_macro: 0.9527
+
+Mean effective number of assets:
+
+- V1: 1.1377
+- V2: 1.1342
+- V3_real_macro: 1.1116
+
+High concentration 90% rate:
+
+- V1: 0.8179
+- V2: 0.8359
+- V3_real_macro: 0.8487
+
+**Dominant asset distribution:**  
+V1 total counts: BTC-USD = 118, SPY = 98, GLD = 67, CASH = 64, and TLT = 43.
+V2 total counts: BTC-USD = 113, CASH = 92, TLT = 69, GLD = 64, and SPY = 52.
+V3_real_macro total counts: BTC-USD = 155, GLD = 98, CASH = 78, SPY = 43, and
+TLT = 16.
+
+**Interpretation:**  
+The learned policy is structurally concentrated. It behaves more like
+dominant-asset selection than diversified allocation. However, the dominant
+asset changes across observations, so it is not simply static all-in BTC.
+V3_real_macro ranks best in robust Sharpe in the policy-history rerun, but it
+is also the most concentrated of the three feature sets.
+
+**Methodological caution:**  
+Concentration should still not be judged as automatically wrong. The next
+question is whether dominant-asset rotation is associated with meaningful
+financial regimes or whether it is unstable/noisy.
+
+**Next decision:**  
+Do not change the reward function or add max-weight constraints yet. The next
+step is regime attribution by merging or exporting evaluation features with
+policy history.

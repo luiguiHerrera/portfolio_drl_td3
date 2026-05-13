@@ -31,6 +31,8 @@ class RunBasicExperimentTests(unittest.TestCase):
             "max_weight": 0.3,
             "cash_weight": 0.2,
         }
+        self.validation_policy_history = self._policy_history()
+        self.test_policy_history = self._policy_history()
         self.train_td3_result = {
             "episode_logs": [
                 {
@@ -60,9 +62,11 @@ class RunBasicExperimentTests(unittest.TestCase):
             },
             "validation_evaluation": {
                 "diagnostics": self.validation_diagnostics,
+                "policy_history": self.validation_policy_history,
             },
             "test_evaluation": {
                 "diagnostics": self.test_diagnostics,
+                "policy_history": self.test_policy_history,
             },
         }
 
@@ -79,6 +83,8 @@ class RunBasicExperimentTests(unittest.TestCase):
                 "test_comparison_summary",
                 "validation_diagnostics",
                 "test_diagnostics",
+                "validation_policy_history",
+                "test_policy_history",
                 "raw_result",
             },
         )
@@ -230,6 +236,12 @@ class RunBasicExperimentTests(unittest.TestCase):
 
         self.assertIs(result["raw_result"], self.train_td3_result)
 
+    def test_policy_histories_are_exposed_when_raw_evaluation_contains_them(self):
+        result = self._run_experiment()
+
+        self.assertIs(result["validation_policy_history"], self.validation_policy_history)
+        self.assertIs(result["test_policy_history"], self.test_policy_history)
+
     def _run_experiment(self):
         with patch(
             "src.experiments.run_basic_experiment.train_td3",
@@ -255,6 +267,26 @@ class RunBasicExperimentTests(unittest.TestCase):
                 "buy_hold_SPY",
                 "buy_hold_CASH",
             ],
+        )
+
+    @staticmethod
+    def _policy_history() -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "date": pd.date_range("2024-01-05", periods=2, freq="W-FRI"),
+                "portfolio_return": [0.01, 0.02],
+                "portfolio_value": [101000.0, 103020.0],
+                "drawdown": [0.0, 0.0],
+                "turnover": [0.1, 0.2],
+                "transaction_cost": [0.0001, 0.0002],
+                "max_weight": [0.3, 0.4],
+                "cash_weight": [0.2, 0.1],
+                "weight_SPY": [0.2, 0.4],
+                "weight_TLT": [0.2, 0.2],
+                "weight_GLD": [0.2, 0.1],
+                "weight_BTC-USD": [0.2, 0.2],
+                "weight_CASH": [0.2, 0.1],
+            }
         )
 
 

@@ -107,5 +107,7 @@ def run_basic_experiment(config_path: str) -> dict:
         "test_comparison_summary": summarize_metrics_table(test_metrics_table),
         "validation_diagnostics": result["validation_evaluation"]["diagnostics"],
         "test_diagnostics": result["test_evaluation"]["diagnostics"],
+        "validation_policy_history": result["validation_evaluation"].get("policy_history"),
+        "test_policy_history": result["test_evaluation"].get("policy_history"),
         "raw_result": result,
     }

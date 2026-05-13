@@ -237,6 +237,65 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded_config["reward"]["lambda_concentration"], 0.3)
 
+    def test_load_config_accepts_missing_features_section(self):
+        config = _valid_config()
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertNotIn("features", loaded_config)
+
+    def test_load_config_accepts_valid_v2_features_section(self):
+        config = _valid_config()
+        config["features"] = {
+            "version": "v2",
+            "market_asset": "SPY",
+            "short_window": 4,
+            "long_window": 12,
+            "ewma_span": 12,
+        }
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["features"]["version"], "v2")
+
+    def test_load_config_rejects_unsupported_feature_version(self):
+        config = _valid_config()
+        config["features"] = {"version": "v3"}
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "features.version"):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_v2_market_asset_not_in_data_assets(self):
+        config = _valid_config()
+        config["features"] = {"version": "v2", "market_asset": "QQQ"}
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(
+                ValueError,
+                "features.market_asset must exist in data.assets",
+            ):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_invalid_v2_feature_parameters(self):
+        invalid_feature_sections = (
+            {"version": "v2", "market_asset": ""},
+            {"version": "v2", "short_window": 1},
+            {"version": "v2", "long_window": 1},
+            {"version": "v2", "ewma_span": 1},
+            {"version": "v2", "short_window": 12, "long_window": 4},
+        )
+
+        for features in invalid_feature_sections:
+            config = _valid_config()
+            config["features"] = features
+            with self.subTest(features=features):
+                with self._temporary_config(config) as config_path:
+                    with self.assertRaises(ValueError):
+                        load_config(str(config_path))
+
     def _temporary_config(self, config: dict):
         temp_dir = tempfile.TemporaryDirectory()
         config_path = Path(temp_dir.name) / "config.yaml"

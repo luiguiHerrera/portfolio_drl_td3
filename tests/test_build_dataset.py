@@ -72,6 +72,27 @@ class BuildDatasetTests(unittest.TestCase):
 
         self.assertIn("CASH", result.columns)
 
+    def test_build_returns_dataset_applies_config_date_boundaries_after_returns(self):
+        out_of_bounds_returns = pd.DataFrame(
+            {
+                "SPY": [0.01, 0.02, 0.03],
+                "TLT": [0.01, 0.02, 0.03],
+                "GLD": [0.01, 0.02, 0.03],
+                "BTC-USD": [0.01, 0.02, 0.03],
+                "CASH": [0.0, 0.0, 0.0],
+            },
+            index=pd.to_datetime(["2019-12-27", "2020-01-03", "2024-01-05"]),
+        )
+
+        with self._temporary_config() as config_path:
+            with self._patched_pipeline(returns=out_of_bounds_returns):
+                result = build_returns_dataset(config_path)
+
+        self.assertGreaterEqual(result.index.min(), pd.Timestamp(self.start_date))
+        self.assertLessEqual(result.index.max(), pd.Timestamp(self.end_date))
+        self.assertNotIn(pd.Timestamp("2019-12-27"), result.index)
+        self.assertNotIn(pd.Timestamp("2024-01-05"), result.index)
+
     def _temporary_config(self):
         config_text = f"""
 project:
@@ -132,14 +153,17 @@ training:
 
         return TemporaryConfig()
 
-    def _patched_pipeline(self):
+    def _patched_pipeline(self, returns: pd.DataFrame | None = None):
+        if returns is None:
+            returns = self.returns
+
         download_patcher = patch(
             "src.data.build_dataset.download_prices",
             return_value=self.prices,
         )
         compute_patcher = patch(
             "src.data.build_dataset.compute_returns",
-            return_value=self.returns,
+            return_value=returns,
         )
 
         class PatchedPipeline:

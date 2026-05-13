@@ -114,6 +114,27 @@ weights net of transaction cost. Feature normalization is fitted only on the
 training split to reduce data leakage risk. Validation and test splits are
 chronological.
 
+Feature Set V1 remains the default when no `features` section is provided in
+the configuration. Feature Set V2 is available as opt-in infrastructure:
+
+```yaml
+features:
+  version: v2
+  market_asset: SPY
+  short_window: 4
+  long_window: 12
+  ewma_span: 12
+```
+
+V2 adds return-derived state variables including momentum, volatility, EWMA
+volatility, beta and correlation versus the selected market asset, rolling
+drawdown, and simple market-regime indicators. Raw features are still shifted
+externally by one period during dataset preparation to avoid look-ahead bias.
+After return construction, date boundaries are clipped so final model returns
+respect `data.start_date` and `data.end_date`. Feature Set V2 is implemented
+infrastructure and should not be interpreted as evidence of performance
+superiority.
+
 ## Benchmarks
 
 The current benchmark workflow includes:

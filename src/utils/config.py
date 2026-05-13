@@ -64,6 +64,7 @@ def load_config(path: str) -> dict:
     _validate_reward(config)
     _validate_td3(config)
     _validate_training(config)
+    _validate_features(config)
 
     return config
 
@@ -151,6 +152,38 @@ def _validate_training(config: dict) -> None:
     _validate_ratio_sum(config)
 
 
+def _validate_features(config: dict) -> None:
+    features = config.get("features")
+    if features is None:
+        return
+    if not isinstance(features, dict):
+        raise ValueError("Config field features must be a mapping.")
+
+    version = features.get("version", "v1")
+    if version not in {"v1", "v2"}:
+        raise ValueError("Config field features.version must be one of: v1, v2.")
+    if version == "v1":
+        return
+
+    market_asset = features.get("market_asset", "SPY")
+    if not isinstance(market_asset, str) or not market_asset.strip():
+        raise ValueError("Config field features.market_asset must be a non-empty string.")
+    if market_asset not in config["data"]["assets"]:
+        raise ValueError("Config field features.market_asset must exist in data.assets.")
+
+    short_window = features.get("short_window", 4)
+    long_window = features.get("long_window", 12)
+    ewma_span = features.get("ewma_span", 12)
+    _validate_integer_at_least_two(short_window, "features.short_window")
+    _validate_integer_at_least_two(long_window, "features.long_window")
+    _validate_integer_at_least_two(ewma_span, "features.ewma_span")
+    if long_window < short_window:
+        raise ValueError(
+            "Config field features.long_window must be greater than or equal to "
+            "features.short_window."
+        )
+
+
 def _validate_assets(config: dict) -> None:
     assets = config["data"]["assets"]
     if not isinstance(assets, list) or not assets:
@@ -208,4 +241,12 @@ def _validate_integer_at_least_one(value, field_name: str) -> None:
     if value < 1:
         raise ValueError(
             f"Config field {field_name} must be an integer greater than or equal to 1."
+        )
+
+
+def _validate_integer_at_least_two(value, field_name: str) -> None:
+    _validate_integer(value, field_name)
+    if value < 2:
+        raise ValueError(
+            f"Config field {field_name} must be an integer greater than or equal to 2."
         )

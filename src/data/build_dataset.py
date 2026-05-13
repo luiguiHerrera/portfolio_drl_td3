@@ -23,8 +23,23 @@ def build_returns_dataset(config_path: str) -> pd.DataFrame:
     end_date = _optional_string(data_config["end_date"])
 
     prices = download_prices(assets, start_date, end_date)
+    returns = compute_returns(prices, assets, frequency)
 
-    return compute_returns(prices, assets, frequency)
+    return _apply_date_boundaries(returns, start_date, end_date)
+
+
+def _apply_date_boundaries(
+    returns: pd.DataFrame,
+    start_date: str | None,
+    end_date: str | None,
+) -> pd.DataFrame:
+    bounded_returns = returns
+    if start_date is not None:
+        bounded_returns = bounded_returns.loc[bounded_returns.index >= pd.Timestamp(start_date)]
+    if end_date is not None:
+        bounded_returns = bounded_returns.loc[bounded_returns.index <= pd.Timestamp(end_date)]
+
+    return bounded_returns
 
 
 def _optional_string(value) -> str | None:

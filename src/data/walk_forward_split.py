@@ -3,8 +3,9 @@
 import pandas as pd
 
 from src.data.build_dataset import build_returns_dataset
-from src.data.features import build_features
+from src.data.feature_factory import build_configured_features
 from src.data.normalize import normalize_train_validation_test
+from src.utils.config import load_config
 
 
 def slice_dataset_by_date(
@@ -46,8 +47,9 @@ def build_walk_forward_datasets(
 ) -> dict:
     """Build train/validation/test datasets from explicit fold date ranges."""
     _validate_fold(fold)
+    config = load_config(config_path)
     returns = build_returns_dataset(config_path)
-    raw_features = build_features(returns)
+    raw_features = build_configured_features(returns, config)
     features_available_before_return = raw_features.shift(1).dropna()
 
     train_returns, train_features = slice_dataset_by_date(

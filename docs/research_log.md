@@ -361,3 +361,39 @@ making performance claims.
 This is the first serious walk-forward run for Experiment H, but it uses one
 seed and three folds. It is stronger than a single split, yet still not enough
 to establish robust out-of-sample superiority.
+
+## Entry X — Feature Set V2 and Date Boundary Fix
+
+**Date:** 2026-05-13
+
+**Research question:**  
+Can the state representation be enriched with more financially meaningful
+return-derived features without breaking the original V1 pipeline or
+introducing look-ahead/date-boundary leakage?
+
+**Decision implemented:**  
+Added opt-in Feature Set V2 through a shared feature factory. V1 remains the
+default. Added date-boundary clipping after computed returns to prevent weekly
+resampling labels from exceeding `data.end_date`.
+
+**Methodological justification:**  
+Feature Set V2 expands the state space with momentum, volatility, EWMA
+volatility, beta/correlation versus market asset, rolling drawdown, and simple
+market-regime indicators. Clipping computed returns after resampling prevents
+evaluation windows from silently exceeding configured boundaries.
+
+**Tests executed:**  
+The full unit test suite passed: 366 tests OK.
+
+**Observed result:**  
+A smoke dataset check with `configs/local/smoke_feature_v2.yaml` produced 49
+features and no missing values. `max_return_index` was corrected to
+2024-12-27, which is <= 2024-12-31.
+
+**Interpretation risk:**  
+This is not performance evidence. It only validates pipeline correctness and
+feature availability.
+
+**Next decision:**  
+After commit, run walk-forward and walk-forward-seed validation using V2 before
+any tuning or performance claim.

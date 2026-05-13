@@ -147,6 +147,20 @@ win a backtest by adding more columns; the goal is a controlled research
 pipeline where each signal can be tested, challenged, and removed if it fails
 validation.
 
+The project also includes a feature set comparison runner for V1, V2, and V3
+variants under the same walk-forward folds, seeds, reward configuration, TD3
+hyperparameters, and benchmark pipeline. A local macro dataset builder can
+construct weekly V3 macro input from raw CSV files for `DGS10`, `DGS2`,
+`VIXCLS`, `DTWEXBGS`, and `CPIAUCSL`; it uses no live downloads, APIs, FRED
+calls, or yfinance calls. Daily series are aligned to weekly Friday using the
+last available observation and forward-fill only. CPI is shifted with a simple
+availability lag before weekly alignment. No backfill is used.
+
+In the current V1/V2/V3 real-macro comparison, V2 remains the reference feature
+set. V3 macro plumbing works and improves over V1 in that run, but the current
+local macro fixture did not beat V2. That result is infrastructure feedback,
+not a claim that macro variables cannot help or that TD3 is robustly superior.
+
 After return construction, date boundaries are clipped so final model returns
 respect `data.start_date` and `data.end_date`.
 

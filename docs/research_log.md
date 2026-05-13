@@ -435,3 +435,132 @@ and validation.
 **Next step:**  
 Build and validate a real macro dataset with release-date awareness before
 using V3 for empirical claims.
+
+## Entry X — Feature Set Comparison and Decision to Test Real Macro Data
+
+**Date:** 2026-05-13
+
+**Research question:**  
+Do richer risk/regime features and synthetic macro features improve TD3
+robustness over V1 under identical walk-forward seed validation?
+
+**Experiment:**  
+Compared V1, V2, and V3_macro using the same benchmark pipeline, reward
+definition, TD3 hyperparameters, three walk-forward folds, and five seeds. Each
+run used 100 episodes, batch size 32, actor learning rate 0.0005, and critic
+learning rate 0.0005. Outputs were written under
+`outputs/tables/feature_set_comparison_V1_V2_V3_macro_3folds_5seeds_100ep/`.
+
+**Result:**  
+V2 ranked first by robust Sharpe with 0.5 dispersion penalty:
+
+- V2: robust Sharpe 0.5 = 0.7125, mean Sharpe = 1.0949, standard deviation =
+  0.7647, robust Sharpe 1.0 = 0.3301, mean CAPM alpha = 0.1430, robust CAPM
+  alpha 0.5 = 0.0096, positive Sharpe rate = 86.67%, best-policy win rate =
+  6.67%, and win rate versus the best individual buy-and-hold benchmark =
+  13.33%.
+- V3_macro: robust Sharpe 0.5 = 0.0111, mean Sharpe = 0.6065, standard
+  deviation = 1.1908, robust Sharpe 1.0 = -0.5844, mean CAPM alpha = 0.1259,
+  robust CAPM alpha 0.5 = -0.0172, positive Sharpe rate = 66.67%,
+  best-policy win rate = 0.00%, and win rate versus the best individual
+  buy-and-hold benchmark = 6.67%.
+- V1: robust Sharpe 0.5 = -0.6491, mean Sharpe = 0.0423, standard deviation =
+  1.3827, robust Sharpe 1.0 = -1.3404, mean CAPM alpha = -0.0447, robust CAPM
+  alpha 0.5 = -0.1786, positive Sharpe rate = 46.67%, best-policy win rate =
+  0.00%, and win rate versus the best individual buy-and-hold benchmark =
+  6.67%.
+
+**Financial interpretation:**  
+V2 appears to add useful risk/regime information relative to V1 under this
+controlled comparison. Synthetic V3_macro did not improve on V2.
+
+**Caution:**  
+V3_macro used synthetic macro data, so this result is not evidence against real
+macro variables. It only shows that adding the current synthetic macro inputs
+did not improve this run.
+
+**Benchmark warning:**  
+Information ratios remained weak or negative, and benchmark win rates remained
+low. This is not evidence of robust TD3 superiority.
+
+**Decision:**  
+Do not change the reward function yet. First test V3 with real macro variables,
+because the current V3 result may be contaminated by synthetic macro data.
+
+**Proposed real macro variables:**  
+`DGS10`, `DGS2`, `VIXCLS`, `DTWEXBGS`, and `CPIAUCSL`.
+
+**Methodological safeguard:**  
+The real macro implementation must avoid look-ahead bias. CPI requires
+release-date or lag treatment before it can be used as a state variable. No
+backfill should be used.
+
+**Next step:**  
+Build a local real macro CSV pipeline and rerun the feature set comparison
+before updating README or committing the feature set comparison runner.
+
+## Entry X — Real Local Macro Fixture and Feature Set Comparison
+
+**Date:** 2026-05-13
+
+**Research question:**  
+Does V3 with local real macro fixture improve TD3 robustness over V2 under
+identical walk-forward seed validation?
+
+**Infrastructure:**  
+Added a local macro builder from raw CSV files only. It performs weekly Friday
+alignment with last available observations, uses forward fill only, applies a
+simple four-week CPI availability lag before weekly alignment, and does not use
+live downloads, APIs, FRED calls, yfinance calls, or backfill.
+
+**Macro builder smoke result:**  
+The weekly macro fixture produced shape (257, 5), start date 2020-01-31, end
+date 2024-12-27, columns `DGS10`, `DGS2`, `VIX`, `DXY`, and `CPI`, and 0
+missing values.
+
+**V3 prepared dataset smoke:**  
+The configured V3 dataset produced 61 features with no missing values.
+`train_returns` had shape (128, 5), `validation_returns` shape (27, 5), and
+`test_returns` shape (28, 5). The final test date was 2024-12-27.
+
+**Experiment:**  
+Compared V1, V2, and V3_real_macro_fixture using three walk-forward folds,
+five seeds, 100 episodes, batch size 32, actor learning rate 0.0005, and critic
+learning rate 0.0005. Outputs were written under
+`outputs/tables/feature_set_comparison_V1_V2_V3_real_macro_3folds_5seeds_100ep/`.
+
+**Result:**  
+V2 ranked first by robust Sharpe with 0.5 dispersion penalty:
+
+- V2: robust Sharpe 0.5 = 0.3821, mean Sharpe = 0.8979, robust Sharpe 1.0 =
+  -0.1338, mean Information Ratio = -0.6097, mean CAPM alpha = 0.0639,
+  positive Sharpe rate = 86.67%, and mean effective number of assets = 1.1143.
+- V3_real_macro_fixture: robust Sharpe 0.5 = 0.1670, mean Sharpe = 0.5339,
+  robust Sharpe 1.0 = -0.1999, mean Information Ratio = -0.8449, mean CAPM
+  alpha = -0.0134, positive Sharpe rate = 86.67%, and mean effective number of
+  assets = 1.1162.
+- V1: robust Sharpe 0.5 = -0.2126, mean Sharpe = 0.2543, robust Sharpe 1.0 =
+  -0.6796, mean Information Ratio = -1.2933, mean CAPM alpha = -0.0440,
+  positive Sharpe rate = 60.00%, and mean effective number of assets = 1.1533.
+
+**Financial interpretation:**  
+V2 remains the strongest current representation. The real macro fixture
+improved over V1 but did not add enough value beyond V2 in this controlled
+comparison.
+
+**Benchmark warning:**  
+`win_rate_best_policy_agent = 0.0` and
+`win_rate_vs_best_individual_buyhold_by_sharpe = 0.0` across all three feature
+sets. Information ratios remain negative, so benchmark-relative performance is
+still weak.
+
+**Decision:**  
+Keep V2 as the reference feature set. Do not change the reward function yet.
+The next methodological priority should be benchmark and concentration
+analysis, or feature ablation, rather than adding more macro complexity
+blindly.
+
+**Risk:**  
+The raw macro fixture is still a local fixture, not a fully audited real-time
+macro release database. CPI lag is a simple approximation, not a full
+release-calendar model.

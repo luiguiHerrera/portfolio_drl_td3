@@ -19,12 +19,21 @@ from src.utils.seed import set_seed
 def train_td3(config_path: str) -> dict:
     """Run a minimal TD3 training loop and return in-memory results."""
     config = load_config(config_path)
+    datasets = prepare_train_validation_test_datasets(config_path)
+
+    return train_td3_on_datasets(datasets, config)
+
+
+def train_td3_on_datasets(
+    datasets: dict,
+    config: dict,
+) -> dict:
+    """Run TD3 training/evaluation using already-prepared datasets."""
     training_config = config["training"]
     environment_config = config["environment"]
     td3_config = config["td3"]
 
     set_seed(training_config["seed"])
-    datasets = prepare_train_validation_test_datasets(config_path)
 
     env = PortfolioEnv(
         returns=datasets["train_returns"],

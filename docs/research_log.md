@@ -269,3 +269,95 @@ Experiment H is the strongest relative candidate under the current design, but t
 
 **Research implication:**  
 The next stage should use Experiment H as the reference TD3 configuration for further methodological improvements, but not as a final empirical result. The current framework is now useful because it identifies instability, benchmark weakness, and seed sensitivity directly.
+
+## Entry X — Walk-Forward Validation for Experiment H
+
+**Date:** 2026-05-13
+
+**Objective:**  
+Evaluate the current reference TD3 configuration, Experiment H, using explicit
+chronological walk-forward validation instead of relying on one fixed
+train/validation/test split.
+
+**Setup:**
+- Base config: `configs/local/smoke_risk_aware.yaml`
+- Output directory: `outputs/tables/walk_forward_H_100/`
+- Seed: 42
+- Episodes: 100
+- Batch size: 32
+- Actor learning rate: 0.0005
+- Critic learning rate: 0.0005
+- Folds:
+  - F1: train 2021-2022, validate 2023H1, test 2023H2
+  - F2: train 2021H2-2023H1, validate 2023H2, test 2024H1
+  - F3: train 2022-2023, validate 2024H1, test 2024H2
+
+**Fold-level results:**
+- F1: cumulative return 2.61%, Sharpe 0.4112, Sortino 0.5348,
+  Information Ratio vs equal-weight rebalanced net -1.1544, CAPM alpha 0.0402,
+  max drawdown -9.84%, Sharpe rank 7, best policy
+  `equal_weight_gross`, best individual buy-and-hold `buy_hold_BTC-USD`,
+  Sharpe difference vs best individual buy-and-hold -1.3822, average turnover
+  0.3016, and average effective number of assets 1.0358.
+- F2: cumulative return 24.11%, Sharpe 3.2960, Sortino 9.9386,
+  Information Ratio vs equal-weight rebalanced net 1.9193, CAPM alpha 0.3859,
+  max drawdown -4.22%, Sharpe rank 1, best policy `agent`, best individual
+  buy-and-hold `buy_hold_SPY`, Sharpe difference vs best individual
+  buy-and-hold 0.2858, average turnover 0.6807, and average effective number
+  of assets 1.1958.
+- F3: cumulative return 2.03%, Sharpe 0.2970, Sortino 0.1558,
+  Information Ratio vs equal-weight rebalanced net -0.7910, CAPM alpha
+  -0.1078, max drawdown -21.48%, Sharpe rank 7, best policy
+  `equal_weight_gross`, best individual buy-and-hold `buy_hold_BTC-USD`,
+  Sharpe difference vs best individual buy-and-hold -1.6164, average turnover
+  0.8514, and average effective number of assets 1.0782.
+
+**Aggregate summary:**
+- Mean test Sharpe: 1.3347
+- Standard deviation test Sharpe: 1.6995
+- Minimum test Sharpe: 0.2970
+- Maximum test Sharpe: 3.2960
+- Robust Sharpe score 0.5: 0.4850
+- Robust Sharpe score 1.0: -0.3647
+- Mean test Sortino: 3.5431
+- Mean Information Ratio vs equal-weight rebalanced net: -0.0087
+- Mean CAPM alpha vs SPY: 0.1061
+- Mean cumulative return: 9.58%
+- Mean max drawdown: -11.85%
+- Positive Sharpe rate: 100%
+- Positive Sortino rate: 100%
+- Positive CAPM alpha rate: 66.67%
+- Positive Information Ratio rate: 33.33%
+- Win rate as best policy: 33.33%
+- Win rate vs best individual buy-and-hold by Sharpe: 33.33%
+- Mean average turnover: 0.6112
+- Mean average effective number of assets: 1.1033
+
+**Interpretation:**  
+The walk-forward workflow now provides a more realistic chronological
+validation design than a single train/validation/test split. The agent achieved
+positive Sharpe in all three test folds, which suggests some potential signal.
+However, the evidence is not yet robust enough to claim empirical superiority.
+Performance is dominated by F2, while F1 and F3 are positive but weak. The
+robust Sharpe score with a 0.5 penalty is positive, but the score with a 1.0
+penalty is negative.
+
+The mean Information Ratio versus the equal-weight rebalanced net benchmark is
+approximately zero and slightly negative. The agent was the best policy in only
+one of three folds and beat the best individual buy-and-hold benchmark by
+Sharpe in only one of three folds. The average effective number of assets is
+close to 1, indicating that the policy remains highly concentrated.
+
+**Research implication:**  
+This result supports using walk-forward validation as the main empirical
+validation framework, but it also highlights regime dependence and
+concentration risk. The next research step should avoid blind tuning and use
+walk-forward validation together with seed robustness. Further work should
+consider improving objective stability, expanding the number of folds, and
+eventually adding stronger baselines such as risk parity and Markowitz before
+making performance claims.
+
+**Interpretation risk:**  
+This is the first serious walk-forward run for Experiment H, but it uses one
+seed and three folds. It is stronger than a single split, yet still not enough
+to establish robust out-of-sample superiority.

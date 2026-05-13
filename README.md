@@ -162,6 +162,14 @@ the same experiment and saves selected CSV outputs. Saved files include:
 Diagnostic CSV outputs preserve allocation risk fields and flattened final
 portfolio weights.
 
+An explicit walk-forward validation workflow is also implemented for manually
+defined chronological folds. Each fold trains on its own train window, validates
+on the next period, and tests on the following period. The workflow saves
+fold-level result tables and aggregate summary tables, reducing dependence on a
+single fixed split and supporting stronger empirical validation. Current
+walk-forward results remain preliminary and should not be interpreted as
+evidence of robust empirical superiority.
+
 The workflow does not save `raw_result`, the agent, replay buffer, model
 checkpoints, plots, or reports.
 
@@ -207,7 +215,8 @@ versioned.
 - Extend the reward function with dynamic Sharpe, drawdown, transaction cost,
   and turnover terms.
 - Implement Markowitz and risk parity benchmark logic.
-- Add walk-forward validation.
+- Extend walk-forward validation across additional folds, seeds, and stronger
+  benchmark comparisons.
 - Run sensitivity analysis across seeds, costs, and hyperparameters.
 - Add macroeconomic and GARCH-based state features.
 - Add plotting and report generation.

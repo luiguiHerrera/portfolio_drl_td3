@@ -123,12 +123,13 @@ changing older experiments.
 - V2 is opt-in and adds richer return, risk, and simple regime features.
 - V3 is opt-in and extends V2 with optional local macro CSV features.
 
-V3 does not download macro data. It only reads a local CSV when `macro_path` is
-configured, which keeps the run reproducible and avoids hidden live-data
-dependencies. Macro observations are aligned by date, forward-filled only, and
-then shifted externally by one period during dataset preparation. Backfill is
-not allowed because it can introduce information that was not available at the
-decision time.
+V3 does not download macro data during training, evaluation, feature
+construction, feature comparison, or walk-forward validation. It only reads a
+local CSV when `macro_path` is configured, which keeps model runs reproducible
+and avoids hidden live-data dependencies. Macro observations are aligned by
+date, forward-filled only, and then shifted externally by one period during
+dataset preparation. Backfill is not allowed because it can introduce
+information that was not available at the decision time.
 
 ```yaml
 features:
@@ -137,11 +138,19 @@ features:
   short_window: 4
   long_window: 12
   ewma_span: 12
-  macro_path: tests/fixtures/macro_weekly_2020_2024_test.csv
+  macro_path: data/processed/macro_weekly_2015_2024.csv
   macro_date_column: date
 ```
 
-The synthetic macro fixture is only for testing the plumbing. It is not
+Local real macro CSVs can be prepared as a separate manual step with
+`scripts/download_fred_macro_data.py`. The script downloads FRED-style CSVs for
+`DGS10`, `DGS2`, `VIXCLS`, `DTWEXBGS`, and `CPIAUCSL` into `data/raw/macro/`,
+then builds `data/processed/macro_weekly_2015_2024.csv`. This acquisition step
+is deliberately outside the training and evaluation pipeline. CPI uses a
+simple lag approximation before weekly alignment, not a full release-calendar
+model.
+
+Synthetic macro fixtures remain only for testing the plumbing. They are not
 evidence about the usefulness of macro variables. This project is not trying to
 win a backtest by adding more columns; the goal is a controlled research
 pipeline where each signal can be tested, challenged, and removed if it fails
@@ -156,10 +165,11 @@ calls, or yfinance calls. Daily series are aligned to weekly Friday using the
 last available observation and forward-fill only. CPI is shifted with a simple
 availability lag before weekly alignment. No backfill is used.
 
-In the current V1/V2/V3 real-macro comparison, V2 remains the reference feature
-set. V3 macro plumbing works and improves over V1 in that run, but the current
-local macro fixture did not beat V2. That result is infrastructure feedback,
-not a claim that macro variables cannot help or that TD3 is robustly superior.
+In the latest long-history V1/V2/V3 comparison, V3_real_macro ranked marginally
+first by robust Sharpe with 0.5 dispersion penalty: V3_real_macro = 0.5709,
+V2 = 0.5610, and V1 = -0.0739. The difference between V3_real_macro and V2 is
+small, benchmark win rates remain weak, and this is not enough to claim robust
+TD3 superiority.
 
 After return construction, date boundaries are clipped so final model returns
 respect `data.start_date` and `data.end_date`.

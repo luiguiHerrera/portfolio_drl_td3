@@ -1,0 +1,53 @@
+project:
+  name: portfolio_drl_td3_empirical_long_history
+  description: Main empirical long-history weekly configuration for TD3 portfolio research
+
+data:
+  assets:
+    - SPY
+    - TLT
+    - GLD
+    - BTC-USD
+    - CASH
+  frequency: weekly
+  start_date: 2015-01-01
+  end_date: 2024-12-31
+
+environment:
+  initial_cash: 100000
+  transaction_cost: 0.001
+  allow_short: false
+  max_weight_per_asset: 1.0
+
+reward:
+  lambda_return: 1.0
+  lambda_sharpe: 0.0
+  lambda_drawdown: 0.02
+  lambda_transaction_cost: 1.0
+  lambda_turnover: 0.0005
+  lambda_concentration: 0.0
+
+td3:
+  actor_learning_rate: 0.0005
+  critic_learning_rate: 0.0005
+  gamma: 0.99
+  tau: 0.005
+  policy_noise: 0.2
+  noise_clip: 0.5
+  policy_delay: 2
+  batch_size: 32
+  replay_buffer_size: 10000
+
+training:
+  seed: 42
+  episodes: 100
+  train_ratio: 0.7
+  validation_ratio: 0.15
+  test_ratio: 0.15
+
+features:
+  version: v2
+  market_asset: SPY
+  short_window: 4
+  long_window: 12
+  ewma_span: 12

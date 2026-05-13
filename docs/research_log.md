@@ -564,3 +564,52 @@ blindly.
 The raw macro fixture is still a local fixture, not a fully audited real-time
 macro release database. CPI lag is a simple approximation, not a full
 release-calendar model.
+
+## Entry X — Real FRED Macro Long-History Comparison
+
+**Date:** 2026-05-13
+
+**Research question:**  
+Does V3 with a real local FRED macro CSV improve TD3 robustness over V1 and V2
+under identical long-history walk-forward seed validation?
+
+**Macro data preparation:**  
+Prepared local FRED-style macro CSVs for `DGS10`, `DGS2`, `VIXCLS`,
+`DTWEXBGS`, and `CPIAUCSL` as a standalone acquisition step, separate from the
+training and evaluation pipeline. The processed weekly macro CSV had shape
+(522, 5), start date 2015-01-02, end date 2024-12-27, and 0 missing values.
+
+**V3 dataset smoke:**  
+The long-history V3 dataset preparation produced 61 features with no missing
+values. The resulting split sizes were 347 train observations, 74 validation
+observations, and 76 test observations.
+
+**Experiment:**  
+Compared V1, V2, and V3_real_macro using three walk-forward folds, five seeds,
+and 100 training episodes per fold-seed run.
+
+**Result:**  
+The robust Sharpe scores with 0.5 dispersion penalty were:
+
+- V3_real_macro: 0.570887
+- V2: 0.560976
+- V1: -0.073884
+
+**Interpretation:**  
+V3_real_macro is competitive and marginally ranks first in this comparison.
+However, the difference versus V2 is too small to claim robust superiority.
+This is a useful signal for continued testing, not a final empirical result.
+
+**Benchmark warning:**  
+`win_rate_best_policy_agent = 0.0` and
+`win_rate_vs_best_individual_buyhold_by_sharpe = 0.0` across all feature sets.
+The agent still does not beat the benchmark set consistently.
+
+**Concentration warning:**  
+The mean effective number of assets remains near 1.1, so concentration is now
+the main methodological issue to diagnose before changing the objective or
+adding more feature complexity.
+
+**Decision:**  
+Do not change the reward function yet. The next step is concentration
+diagnostics.

@@ -1,0 +1,361 @@
+"""Dynamic allocation benchmark rules for diagnostic policy comparison.
+
+These rules are intentionally simple. They provide transparent dominant-asset
+switching baselines that can be compared against concentrated TD3 policies
+without changing the existing training, reward, or benchmark pipeline.
+"""
+
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from src.backtest.evaluate_policy import summary_metrics
+from src.backtest.performance_metrics import extended_summary_metrics
+
+
+def compute_rolling_momentum(
+    returns: pd.DataFrame,
+    window: int = 12,
+) -> pd.DataFrame:
+    """Compute rolling compounded returns over a fixed lookback window."""
+    _validate_returns(returns)
+    _validate_window(window, "window")
+
+    return (1.0 + returns).rolling(window).apply(np.prod, raw=True) - 1.0
+
+
+def compute_rolling_volatility(
+    returns: pd.DataFrame,
+    window: int = 12,
+) -> pd.DataFrame:
+    """Compute rolling standard deviation over a fixed lookback window."""
+    _validate_returns(returns)
+    _validate_window(window, "window")
+
+    return returns.rolling(window).std()
+
+
+def build_momentum_winner_weights(
+    returns: pd.DataFrame,
+    window: int = 12,
+    eligible_assets: list[str] | None = None,
+) -> pd.DataFrame:
+    """Allocate to the asset with the highest prior rolling momentum."""
+    eligible = _resolve_eligible_assets(returns, eligible_assets)
+    momentum = compute_rolling_momentum(returns[eligible], window)
+
+    return _winner_weights_from_scores(momentum, returns.columns)
+
+
+def build_risk_adjusted_momentum_winner_weights(
+    returns: pd.DataFrame,
+    momentum_window: int = 12,
+    volatility_window: int = 12,
+    eligible_assets: list[str] | None = None,
+    volatility_floor: float = 1e-8,
+) -> pd.DataFrame:
+    """Allocate to the asset with the highest prior momentum-to-volatility score."""
+    _validate_window(momentum_window, "momentum_window")
+    _validate_window(volatility_window, "volatility_window")
+    if volatility_floor <= 0.0:
+        raise ValueError("volatility_floor must be positive.")
+
+    eligible = _resolve_eligible_assets(returns, eligible_assets)
+    momentum = compute_rolling_momentum(returns[eligible], momentum_window)
+    volatility = compute_rolling_volatility(returns[eligible], volatility_window)
+    volatility = volatility.where(volatility > volatility_floor)
+    scores = momentum / volatility
+
+    return _winner_weights_from_scores(scores, returns.columns)
+
+
+def build_trend_following_spy_cash_weights(
+    returns: pd.DataFrame,
+    market_asset: str = "SPY",
+    cash_asset: str = "CASH",
+    window: int = 12,
+) -> pd.DataFrame:
+    """Allocate to SPY during positive prior trend and CASH otherwise."""
+    _validate_required_assets(returns, [market_asset, cash_asset])
+    momentum = compute_rolling_momentum(returns[[market_asset]], window)[market_asset]
+
+    selected = pd.Series(index=returns.index, dtype=object)
+    selected.loc[momentum > 0.0] = market_asset
+    selected.loc[momentum <= 0.0] = cash_asset
+
+    return _weights_from_selected_assets(selected, returns.columns)
+
+
+def build_defensive_risk_off_weights(
+    returns: pd.DataFrame,
+    market_asset: str = "SPY",
+    defensive_assets: list[str] | None = None,
+    cash_asset: str = "CASH",
+    window: int = 12,
+) -> pd.DataFrame:
+    """Allocate to SPY in positive trend, otherwise to the best defensive asset."""
+    _validate_required_assets(returns, [market_asset, cash_asset])
+    if defensive_assets is None:
+        defensive_assets = [
+            asset for asset in ["GLD", "TLT", "CASH"] if asset in returns.columns
+        ]
+    _validate_required_assets(returns, defensive_assets)
+    if not defensive_assets:
+        raise ValueError("defensive_assets must contain at least one available asset.")
+
+    signal_assets = [market_asset, *defensive_assets]
+    momentum = compute_rolling_momentum(returns[signal_assets], window)
+    defensive_winner = _idxmax_excluding_all_nan(momentum[defensive_assets])
+
+    selected = pd.Series(index=returns.index, dtype=object)
+    selected.loc[momentum[market_asset] > 0.0] = market_asset
+    selected.loc[momentum[market_asset] <= 0.0] = defensive_winner.loc[
+        momentum[market_asset] <= 0.0
+    ]
+
+    return _weights_from_selected_assets(selected, returns.columns)
+
+
+def evaluate_weight_strategy(
+    returns: pd.DataFrame,
+    weights: pd.DataFrame,
+    transaction_cost: float = 0.001,
+    initial_value: float = 100000,
+) -> dict:
+    """Evaluate a precomputed weight strategy with simple turnover costs."""
+    _validate_returns(returns)
+    if weights.empty:
+        raise ValueError("weights must not be empty.")
+    if not isinstance(weights.index, pd.DatetimeIndex):
+        raise TypeError("weights index must be a DatetimeIndex.")
+    if transaction_cost < 0.0 or transaction_cost >= 1.0:
+        raise ValueError("transaction_cost must be greater than or equal to 0 and less than 1.")
+    if initial_value <= 0.0:
+        raise ValueError("initial_value must be positive.")
+    _validate_required_assets(weights, list(returns.columns))
+
+    aligned_index = returns.index.intersection(weights.index)
+    if aligned_index.empty:
+        raise ValueError("returns and weights must share at least one date.")
+
+    aligned_returns = returns.loc[aligned_index]
+    aligned_weights = weights.loc[aligned_index, returns.columns]
+
+    gross_returns = (aligned_weights * aligned_returns).sum(axis=1)
+    turnover = aligned_weights.diff().abs().sum(axis=1)
+    turnover.iloc[0] = aligned_weights.iloc[0].abs().sum()
+    transaction_costs = transaction_cost * turnover
+    net_returns = gross_returns - transaction_costs
+
+    portfolio_value = initial_value * (1.0 + net_returns).cumprod()
+    drawdown = portfolio_value / portfolio_value.cummax() - 1.0
+
+    history = pd.DataFrame(
+        {
+            "date": aligned_index,
+            "gross_return": gross_returns.to_numpy(dtype=float),
+            "net_return": net_returns.to_numpy(dtype=float),
+            "portfolio_value": portfolio_value.to_numpy(dtype=float),
+            "drawdown": drawdown.to_numpy(dtype=float),
+            "turnover": turnover.to_numpy(dtype=float),
+            "transaction_cost": transaction_costs.to_numpy(dtype=float),
+        },
+        index=aligned_index,
+    )
+    for asset in returns.columns:
+        history[f"weight_{asset}"] = aligned_weights[asset].to_numpy(dtype=float)
+
+    base_metrics = summary_metrics(net_returns)
+    risk_adjusted_metrics = extended_summary_metrics(net_returns)
+    sortino_value = risk_adjusted_metrics["sortino_ratio"]
+    calmar_value = risk_adjusted_metrics["calmar_ratio"]
+    max_drawdown_value = base_metrics["max_drawdown"]
+
+    return {
+        "history": history.reset_index(drop=True),
+        "returns": net_returns.rename("net_return"),
+        "final_value": float(portfolio_value.iloc[-1]),
+        "cumulative_return": base_metrics["cumulative_return"],
+        "annualized_return": base_metrics["annualized_return"],
+        "annualized_volatility": base_metrics["annualized_volatility"],
+        "sharpe_ratio": base_metrics["sharpe_ratio"],
+        "sortino_ratio": sortino_value,
+        "calmar_ratio": calmar_value,
+        "max_drawdown": max_drawdown_value,
+        "average_turnover": float(turnover.mean()),
+        "sortino_ratio_is_finite": bool(np.isfinite(sortino_value)),
+        "sortino_ratio_is_extreme": bool(
+            not np.isfinite(sortino_value) or abs(sortino_value) > 10.0
+        ),
+        "calmar_ratio_is_finite": bool(np.isfinite(calmar_value)),
+        "calmar_ratio_is_infinite": bool(np.isinf(calmar_value)),
+        "max_drawdown_is_zero": bool(max_drawdown_value == 0.0),
+    }
+
+
+def build_dynamic_benchmark_suite(
+    returns: pd.DataFrame,
+    transaction_cost: float = 0.001,
+    initial_value: float = 100000,
+    momentum_window: int = 12,
+    volatility_window: int = 12,
+    market_asset: str = "SPY",
+    cash_asset: str = "CASH",
+) -> dict:
+    """Build and evaluate the default dynamic benchmark rule suite."""
+    benchmark_builders = {
+        f"momentum_winner_{momentum_window}p": lambda: build_momentum_winner_weights(
+            returns,
+            window=momentum_window,
+        ),
+        (
+            f"risk_adjusted_momentum_winner_"
+            f"{momentum_window}p_{volatility_window}p"
+        ): lambda: build_risk_adjusted_momentum_winner_weights(
+            returns,
+            momentum_window=momentum_window,
+            volatility_window=volatility_window,
+        ),
+        f"trend_spy_cash_{momentum_window}p": lambda: build_trend_following_spy_cash_weights(
+            returns,
+            market_asset=market_asset,
+            cash_asset=cash_asset,
+            window=momentum_window,
+        ),
+        f"defensive_risk_off_{momentum_window}p": lambda: build_defensive_risk_off_weights(
+            returns,
+            market_asset=market_asset,
+            cash_asset=cash_asset,
+            window=momentum_window,
+        ),
+    }
+
+    suite = {}
+    for benchmark_name, build_weights in benchmark_builders.items():
+        try:
+            weights = build_weights()
+            evaluation = evaluate_weight_strategy(
+                returns,
+                weights,
+                transaction_cost=transaction_cost,
+                initial_value=initial_value,
+            )
+        except (KeyError, ValueError):
+            continue
+
+        suite[benchmark_name] = {
+            "weights": weights,
+            **evaluation,
+        }
+
+    return suite
+
+
+def save_dynamic_benchmark_suite(
+    benchmark_suite: dict,
+    output_dir: str,
+) -> dict:
+    """Save dynamic benchmark histories and an aggregate summary table."""
+    destination = Path(output_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+
+    summary_rows = []
+    paths = {}
+    for benchmark_name, benchmark_result in benchmark_suite.items():
+        history_path = destination / f"{benchmark_name}_history.csv"
+        benchmark_result["history"].to_csv(history_path, index=False)
+        paths[f"{benchmark_name}_history"] = str(history_path)
+        summary_rows.append(
+            {
+                "benchmark_name": benchmark_name,
+                "final_value": benchmark_result["final_value"],
+                "cumulative_return": benchmark_result["cumulative_return"],
+                "annualized_return": benchmark_result["annualized_return"],
+                "annualized_volatility": benchmark_result["annualized_volatility"],
+                "sharpe_ratio": benchmark_result["sharpe_ratio"],
+                "sortino_ratio": benchmark_result["sortino_ratio"],
+                "calmar_ratio": benchmark_result["calmar_ratio"],
+                "max_drawdown": benchmark_result["max_drawdown"],
+                "average_turnover": benchmark_result["average_turnover"],
+                "sortino_ratio_is_finite": benchmark_result["sortino_ratio_is_finite"],
+                "sortino_ratio_is_extreme": benchmark_result["sortino_ratio_is_extreme"],
+                "calmar_ratio_is_finite": benchmark_result["calmar_ratio_is_finite"],
+                "calmar_ratio_is_infinite": benchmark_result["calmar_ratio_is_infinite"],
+                "max_drawdown_is_zero": benchmark_result["max_drawdown_is_zero"],
+            }
+        )
+
+    summary = pd.DataFrame(summary_rows)
+    summary_path = destination / "dynamic_benchmark_summary.csv"
+    summary.to_csv(summary_path, index=False)
+    paths["summary"] = str(summary_path)
+
+    return paths
+
+
+def _winner_weights_from_scores(
+    scores: pd.DataFrame,
+    all_assets: pd.Index,
+) -> pd.DataFrame:
+    selected = _idxmax_excluding_all_nan(scores)
+
+    return _weights_from_selected_assets(selected, all_assets)
+
+
+def _idxmax_excluding_all_nan(scores: pd.DataFrame) -> pd.Series:
+    selected = pd.Series(np.nan, index=scores.index, dtype=object)
+    valid_rows = ~scores.isna().all(axis=1)
+    selected.loc[valid_rows] = scores.loc[valid_rows].idxmax(axis=1)
+
+    return selected
+
+
+def _weights_from_selected_assets(
+    selected_assets: pd.Series,
+    all_assets: pd.Index,
+) -> pd.DataFrame:
+    shifted_selection = selected_assets.shift(1).dropna()
+    weights = pd.DataFrame(0.0, index=shifted_selection.index, columns=all_assets)
+    for date, asset in shifted_selection.items():
+        weights.loc[date, asset] = 1.0
+
+    return weights
+
+
+def _resolve_eligible_assets(
+    returns: pd.DataFrame,
+    eligible_assets: list[str] | None,
+) -> list[str]:
+    _validate_returns(returns)
+    if eligible_assets is None:
+        return list(returns.columns)
+
+    _validate_required_assets(returns, eligible_assets)
+    if not eligible_assets:
+        raise ValueError("eligible_assets must contain at least one asset.")
+
+    return eligible_assets
+
+
+def _validate_required_assets(
+    data: pd.DataFrame,
+    required_assets: list[str],
+) -> None:
+    missing_assets = [asset for asset in required_assets if asset not in data.columns]
+    if missing_assets:
+        raise ValueError(f"Missing required assets: {missing_assets}")
+
+
+def _validate_returns(returns: pd.DataFrame) -> None:
+    if not isinstance(returns, pd.DataFrame):
+        raise TypeError("returns must be a pandas DataFrame.")
+    if returns.empty:
+        raise ValueError("returns must not be empty.")
+    if not isinstance(returns.index, pd.DatetimeIndex):
+        raise TypeError("returns index must be a DatetimeIndex.")
+
+
+def _validate_window(window: int, field_name: str) -> None:
+    if not isinstance(window, int) or window < 2:
+        raise ValueError(f"{field_name} must be an integer greater than or equal to 2.")

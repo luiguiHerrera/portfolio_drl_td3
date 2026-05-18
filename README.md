@@ -193,6 +193,21 @@ Transaction costs are currently modeled only for the equal-weight rebalanced
 benchmark. Markowitz and risk parity benchmarks are planned but not implemented
 yet.
 
+The project now also has a reproducible local market-data step:
+`scripts/download_market_data.py` builds
+`data/processed/returns_weekly_2015_2024.csv` for `SPY`, `TLT`, `GLD`,
+`BTC-USD`, and `CASH`. On top of that file, simple dynamic allocation rules are
+available as a tougher diagnostic hurdle: 12-period momentum winner,
+risk-adjusted momentum, SPY/CASH trend following, and a defensive risk-off
+rule.
+
+Right now, the useful uncomfortable result is that these simple dynamic rules
+beat the current TD3 policies on risk-adjusted metrics. That is not a failure;
+it is the point of doing the research properly. TD3 needs to beat real
+decision rules, not decorative benchmarks. Sortino and Calmar outputs also
+carry safety flags so extreme or infinite ratios are visible instead of being
+quietly over-interpreted.
+
 ## Experiment Workflow
 
 `run_basic_experiment(config_path)` runs the minimal TD3 workflow and organizes
@@ -232,6 +247,13 @@ dominant assets, concentration, transitions, holding periods, and conditional
 performance. This is diagnostic only; it does not change the TD3 agent, reward,
 environment, features, or benchmarks. Concentration is treated as behavior to
 analyze, not automatic failure.
+
+Regime attribution support can merge policy history with raw, unnormalized
+evaluation features. This keeps binary regime indicators and macro variables
+interpretable while testing whether dominant-asset concentration is associated
+with market or macro conditions. The attribution layer is descriptive only and
+does not change TD3, rewards, environment behavior, feature construction,
+training, metrics, or benchmarks.
 
 The project also includes a mandate risk diagnostics module for analyzing saved
 metrics and diagnostics against configurable client-style limits. Concentration

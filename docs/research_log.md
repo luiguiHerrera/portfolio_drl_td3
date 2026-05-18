@@ -746,3 +746,183 @@ financial regimes or whether it is unstable/noisy.
 Do not change the reward function or add max-weight constraints yet. The next
 step is regime attribution by merging or exporting evaluation features with
 policy history.
+
+## Entry X — Regime Attribution for Dominant-Asset Policy Behavior
+
+**Date:** 2026-05-13
+
+**Purpose:**  
+Evaluate whether the learned concentrated policies rotate dominant assets in
+ways associated with financial regimes.
+
+**Implementation:**  
+Added `src/analysis/regime_attribution.py` and
+`tests/test_regime_attribution.py`. The module merges `policy_history` with
+raw, unnormalized features and computes regime attribution by dominant asset.
+
+**Tests:**  
+`python3 -m unittest tests/test_regime_attribution.py` ran 17 tests OK.
+`python3 -m unittest discover tests` ran 495 tests OK.
+
+**Source experiment:**  
+`outputs/tables/feature_set_comparison_V1_V2_V3_real_macro_2015_2024_policy_history`.
+
+**Aggregated outputs:**  
+- `outputs/tables/regime_attribution_by_feature_set_real_macro_2015_2024/regime_attribution_summary_by_feature_set_asset.csv`
+- `outputs/tables/regime_attribution_by_feature_set_real_macro_2015_2024/dominant_asset_summary_by_feature_set_asset.csv`
+
+**Dominant asset distribution:**  
+V2 total counts: BTC-USD = 113, CASH = 92, TLT = 69, GLD = 64, and SPY = 52.
+V3_real_macro total counts: BTC-USD = 155, GLD = 98, CASH = 78, SPY = 43, and
+TLT = 16.
+
+**Key V3 regime attribution:**  
+BTC-USD dominance had 155 observations, with `market_trend_regime = 0.9354`,
+`market_defensive_regime = 0.7079`, `macro_high_vix_regime = 0.5747`,
+`macro_inverted_yield_curve_regime = 0.7432`, and
+`macro_strong_dollar_regime = 0.4649`.
+
+GLD dominance had 98 observations, with `market_high_vol_regime = 0.5612`,
+`market_risk_off_regime = 0.3715`, `macro_high_vix_regime = 0.2948`, and
+`macro_strong_dollar_regime = 0.8257`.
+
+CASH dominance had 78 observations, with `market_high_vol_regime = 0.5911`,
+`macro_high_vix_regime = 0.4808`, and `macro_strong_dollar_regime = 0.6953`.
+
+SPY dominance had 43 observations, with `market_trend_regime = 0.6667`,
+`market_risk_off_regime = 0.5944`, `macro_high_vix_regime = 0.8183`,
+`macro_inverted_yield_curve_regime = 1.0`, and
+`macro_strong_dollar_regime = 1.0`.
+
+TLT dominance had 16 observations, with `market_trend_regime = 1.0`,
+`macro_high_vix_regime = 0.2083`, and `macro_yield_curve_10y_2y = -0.3608`.
+
+**Interpretation:**  
+The model behaves like a dominant-asset switching policy rather than a
+diversified allocation policy. Some regime associations appear economically
+plausible, especially BTC-USD dominance during positive trend regimes and CASH
+dominance during more volatile or strong-dollar environments. However, the
+macro attribution is not clean enough to claim that the model learned a robust
+macroeconomic allocation rule. Some variables, such as inflation pressure, do
+not discriminate because they are effectively constant across the tested
+period.
+
+**Methodological caution:**  
+Regime attribution is descriptive, not causal. It does not prove that the agent
+uses these variables correctly; it only shows associations between dominant
+allocation choices and observed state variables.
+
+**Next decision:**  
+Before changing the reward function or imposing max-weight constraints, compare
+TD3 against simple dynamic allocation benchmarks such as 12-week momentum
+winner, risk-adjusted momentum, trend-following, and risk-off defensive rules.
+
+## Entry X — Dynamic Allocation Benchmarks and TD3 Hurdle Comparison
+
+**Date:** 2026-05-13
+
+**Purpose:**  
+Since TD3 learned highly concentrated dominant-asset policies, compare it
+against simple dynamic allocation rules before changing the reward function or
+adding portfolio constraints.
+
+**Implementation:**  
+Added `scripts/download_market_data.py` to create reproducible local weekly
+returns at `data/processed/returns_weekly_2015_2024.csv`. Added
+`src/backtest/dynamic_allocation_benchmarks.py` for diagnostic dynamic
+allocation rules. Added tests in `tests/test_download_market_data.py` and
+`tests/test_dynamic_allocation_benchmarks.py`.
+
+**Local market dataset:**  
+The local processed return dataset had shape (521, 5), start date 2015-01-09,
+end date 2024-12-27, columns SPY, TLT, GLD, BTC-USD, and CASH, and 0 missing
+values.
+
+**Benchmarks:**  
+- `momentum_winner_12p`
+- `risk_adjusted_momentum_winner_12p_12p`
+- `trend_spy_cash_12p`
+- `defensive_risk_off_12p`
+
+**Safe ratio flags:**  
+Added `sortino_ratio_is_finite`, `sortino_ratio_is_extreme`,
+`calmar_ratio_is_finite`, `calmar_ratio_is_infinite`, and
+`max_drawdown_is_zero`. These flags are designed to prevent over-interpretation
+of extreme Sortino or infinite Calmar values when downside deviation or maximum
+drawdown is near zero. The raw ratios are still preserved.
+
+**Tests:**  
+`python3 -m unittest tests/test_download_market_data.py` ran 11 tests OK.
+`python3 -m unittest tests/test_dynamic_allocation_benchmarks.py` ran 28 tests
+OK. `python3 -m unittest discover tests` ran 534 tests OK.
+
+**Dynamic benchmark aggregate:**  
+`defensive_risk_off_12p`: mean cumulative return = 0.074091, mean Sharpe =
+1.336054, mean Sortino = 2.551050, mean max drawdown = -0.073294, worst max
+drawdown = -0.118148, and mean average turnover = 0.192308.
+
+`momentum_winner_12p`: mean cumulative return = 0.291238, mean Sharpe =
+1.375670, mean Sortino = 3.858278, mean max drawdown = -0.155668, worst max
+drawdown = -0.192170, and mean average turnover = 0.500000.
+
+`risk_adjusted_momentum_winner_12p_12p`: mean cumulative return = 0.065992,
+mean Sharpe = 0.607083, mean Sortino = 1.067393, mean max drawdown =
+-0.085640, worst max drawdown = -0.129004, and mean average turnover =
+0.397436.
+
+`trend_spy_cash_12p`: mean cumulative return = 0.084668, mean Sharpe =
+1.609587, mean Sortino = 2.902973, mean max drawdown = -0.052766, worst max
+drawdown = -0.056565, and mean average turnover = 0.141026.
+
+**TD3 vs dynamic benchmark table:**  
+`momentum_winner_12p` (dynamic benchmark): mean cumulative return = 0.291238,
+mean Sharpe = 1.375670, robust Sharpe 0.5 = 1.122988, mean Sortino = 3.858278,
+mean max drawdown = -0.155668, worst max drawdown = -0.192170, and mean
+average turnover = 0.500000.
+
+`trend_spy_cash_12p` (dynamic benchmark): mean cumulative return = 0.084668,
+mean Sharpe = 1.609587, robust Sharpe 0.5 = 1.015885, mean Sortino = 2.902973,
+mean max drawdown = -0.052766, worst max drawdown = -0.056565, and mean
+average turnover = 0.141026.
+
+`defensive_risk_off_12p` (dynamic benchmark): mean cumulative return =
+0.074091, mean Sharpe = 1.336054, robust Sharpe 0.5 = 0.533350, mean Sortino =
+2.551050, mean max drawdown = -0.073294, worst max drawdown = -0.118148, and
+mean average turnover = 0.192308.
+
+`risk_adjusted_momentum_winner_12p_12p` (dynamic benchmark): mean cumulative
+return = 0.065992, mean Sharpe = 0.607083, robust Sharpe 0.5 = 0.382539, mean
+Sortino = 1.067393, mean max drawdown = -0.085640, worst max drawdown =
+-0.129004, and mean average turnover = 0.397436.
+
+`V3_real_macro` (TD3): mean cumulative return = 0.081678, mean Sharpe =
+0.563611, robust Sharpe 0.5 = 0.301614, mean Sortino = 1.018962, mean max
+drawdown = -0.134771, worst max drawdown = -0.208422, mean average turnover =
+0.421601, and mean effective number of assets = 1.111574.
+
+`V2` (TD3): mean cumulative return = 0.094096, mean Sharpe = 0.552743, robust
+Sharpe 0.5 = 0.147718, mean Sortino = 1.442779, mean max drawdown = -0.101749,
+worst max drawdown = -0.158292, mean average turnover = 0.651826, and mean
+effective number of assets = 1.134161.
+
+`V1` (TD3): mean cumulative return = 0.042415, mean Sharpe = 0.387797, robust
+Sharpe 0.5 = -0.134123, mean Sortino = 1.099904, mean max drawdown =
+-0.127345, worst max drawdown = -0.251822, mean average turnover = 0.718174,
+and mean effective number of assets = 1.137702.
+
+**Interpretation:**  
+The simple dynamic rules currently outperform TD3 on risk-adjusted metrics.
+`momentum_winner_12p` dominates return and robust Sharpe.
+`trend_spy_cash_12p` dominates Sharpe and drawdown control. TD3 remains useful
+as a research object, but it has not yet demonstrated incremental value over
+simple dynamic allocation rules.
+
+**Methodological caution:**  
+The comparison is still based on three walk-forward test folds and should not
+be overgeneralized. However, these dynamic benchmarks are now the minimum
+hurdle for future TD3 and reward-design improvements.
+
+**Next decision:**  
+Do not add complexity blindly. The next research step should be reward or
+mandate redesign only if it can improve against these dynamic benchmark
+hurdles.

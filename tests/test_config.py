@@ -346,6 +346,45 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded_config["features"]["version"], "v3")
 
+    def test_load_config_accepts_valid_v4_features_section(self):
+        config = _valid_config()
+        config["features"] = {
+            "version": "v4",
+            "market_asset": "SPY",
+            "short_window": 4,
+            "long_window": 12,
+            "ewma_span": 12,
+            "include_garch_features": True,
+            "garch_include_relative": True,
+            "garch_omega": 1e-6,
+            "garch_alpha": 0.05,
+            "garch_beta": 0.90,
+            "garch_periods_per_year": 52,
+        }
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["features"]["version"], "v4")
+
+    def test_load_config_accepts_valid_v5_features_section(self):
+        config = _valid_config()
+        config["features"] = {
+            "version": "v5",
+            "market_asset": "SPY",
+            "short_window": 4,
+            "long_window": 12,
+            "ewma_span": 12,
+            "correlation_window": 12,
+            "drawdown_window": 12,
+            "risk_off_threshold": 2.0,
+        }
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["features"]["version"], "v5")
+
     def test_load_config_accepts_v3_macro_path_and_macro_date_column(self):
         config = _valid_config()
         config["features"] = {
@@ -393,11 +432,46 @@ class ConfigTests(unittest.TestCase):
 
     def test_load_config_rejects_unsupported_feature_version(self):
         config = _valid_config()
-        config["features"] = {"version": "v4"}
+        config["features"] = {"version": "v6"}
 
         with self._temporary_config(config) as config_path:
             with self.assertRaisesRegex(ValueError, "features.version"):
                 load_config(str(config_path))
+
+    def test_load_config_rejects_invalid_v4_garch_parameters(self):
+        invalid_feature_sections = (
+            {"version": "v4", "include_garch_features": "yes"},
+            {"version": "v4", "garch_include_relative": "yes"},
+            {"version": "v4", "garch_omega": 0.0},
+            {"version": "v4", "garch_alpha": -0.1},
+            {"version": "v4", "garch_beta": -0.1},
+            {"version": "v4", "garch_alpha": 0.5, "garch_beta": 0.5},
+            {"version": "v4", "garch_periods_per_year": 0},
+        )
+
+        for features in invalid_feature_sections:
+            config = _valid_config()
+            config["features"] = features
+            with self.subTest(features=features):
+                with self._temporary_config(config) as config_path:
+                    with self.assertRaises(ValueError):
+                        load_config(str(config_path))
+
+    def test_load_config_rejects_invalid_v5_feature_parameters(self):
+        invalid_feature_sections = (
+            {"version": "v5", "correlation_window": 1},
+            {"version": "v5", "drawdown_window": 1},
+            {"version": "v5", "risk_off_threshold": -0.1},
+            {"version": "v5", "risk_off_threshold": True},
+        )
+
+        for features in invalid_feature_sections:
+            config = _valid_config()
+            config["features"] = features
+            with self.subTest(features=features):
+                with self._temporary_config(config) as config_path:
+                    with self.assertRaises(ValueError):
+                        load_config(str(config_path))
 
     def test_load_config_rejects_v2_market_asset_not_in_data_assets(self):
         config = _valid_config()

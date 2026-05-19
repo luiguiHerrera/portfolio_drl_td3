@@ -184,8 +184,10 @@ def _validate_features(config: dict) -> None:
         raise ValueError("Config field features must be a mapping.")
 
     version = features.get("version", "v1")
-    if version not in {"v1", "v2", "v3"}:
-        raise ValueError("Config field features.version must be one of: v1, v2, v3.")
+    if version not in {"v1", "v2", "v3", "v4", "v5"}:
+        raise ValueError(
+            "Config field features.version must be one of: v1, v2, v3, v4, v5."
+        )
     if version == "v1":
         return
 
@@ -219,6 +221,10 @@ def _validate_features(config: dict) -> None:
             raise ValueError(
                 "Config field features.macro_date_column must be a non-empty string."
             )
+    if version == "v4":
+        _validate_v4_garch_feature_config(features)
+    if version == "v5":
+        _validate_v5_regime_feature_config(features)
 
 
 def _validate_assets(config: dict) -> None:
@@ -258,6 +264,43 @@ def _validate_reward_mandate_fields(reward: dict) -> None:
         )
     for key, value in mandate_penalty_weights.items():
         _validate_non_negative_number(value, f"reward.mandate_penalty_weights.{key}")
+
+
+def _validate_v4_garch_feature_config(features: dict) -> None:
+    for field_name in ("include_garch_features", "garch_include_relative"):
+        value = features.get(field_name)
+        if value is not None and not isinstance(value, bool):
+            raise ValueError(f"Config field features.{field_name} must be a bool.")
+
+    omega = features.get("garch_omega", 1e-6)
+    alpha = features.get("garch_alpha", 0.05)
+    beta = features.get("garch_beta", 0.90)
+    periods_per_year = features.get("garch_periods_per_year", 52)
+    if not _is_number(omega) or omega <= 0.0:
+        raise ValueError("Config field features.garch_omega must be greater than 0.")
+    if not _is_number(alpha) or alpha < 0.0:
+        raise ValueError(
+            "Config field features.garch_alpha must be greater than or equal to 0."
+        )
+    if not _is_number(beta) or beta < 0.0:
+        raise ValueError(
+            "Config field features.garch_beta must be greater than or equal to 0."
+        )
+    if alpha + beta >= 1.0:
+        raise ValueError("Config field features.garch_alpha + garch_beta must be less than 1.")
+    _validate_integer_at_least_one(periods_per_year, "features.garch_periods_per_year")
+
+
+def _validate_v5_regime_feature_config(features: dict) -> None:
+    correlation_window = features.get("correlation_window", 12)
+    drawdown_window = features.get("drawdown_window", 12)
+    risk_off_threshold = features.get("risk_off_threshold", 2.0)
+    _validate_integer_at_least_two(correlation_window, "features.correlation_window")
+    _validate_integer_at_least_two(drawdown_window, "features.drawdown_window")
+    _validate_non_negative_number(
+        risk_off_threshold,
+        "features.risk_off_threshold",
+    )
 
 
 def _validate_ratio_sum(config: dict) -> None:

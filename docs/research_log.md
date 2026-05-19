@@ -1088,3 +1088,144 @@ The mandate-aware reward should remain experimental, not default. The next
 research step should not be random penalty tuning. It should be a clearer
 hypothesis about when concentration is justified and when mandate penalties
 should relax or activate.
+
+## Entry X — V2 vs V4 GARCH-Style Feature Comparison
+
+**Date:** 2026-05-19
+
+**Purpose:**  
+Test whether adding deterministic GARCH-style volatility features improves TD3
+behavior relative to the current V2 reference feature set.
+
+**Feature definition:**  
+V4 is defined as V2 plus deterministic GARCH-style volatility features. The
+filter is not a full estimated GARCH model. It uses fixed parameters and
+lagged returns to produce conditional-volatility-style state variables.
+
+**Experiment:**  
+Used `data/processed/returns_weekly_latest.csv`, `episodes = 20`, seeds
+`[7, 42, 101]`, baseline reward with mandate penalty disabled, and compared
+feature versions V2 and V4.
+
+**Aggregate result:**  
+`V2`: mean test Sharpe = 0.7625, standard deviation = 0.1256, robust Sharpe
+0.5 = 0.6998, mean cumulative return = 0.2735, mean max drawdown = -0.2595,
+worst max drawdown = -0.4872, mean turnover = 0.5064, mean max weight =
+0.9332, mean effective assets = 1.1574, and mean final cash weight = 0.2903.
+
+`V4`: mean test Sharpe = 0.0278, standard deviation = 0.1291, robust Sharpe
+0.5 = -0.0367, mean cumulative return = -0.0616, mean max drawdown = -0.4594,
+worst max drawdown = -0.4612, mean turnover = 0.3534, mean max weight =
+0.9657, mean effective assets = 1.0911, and mean final cash weight was
+approximately 0.0000.
+
+**Concentration quality:**  
+V2 had better long-horizon concentration quality than V4. At horizon 12, V2
+had dominant-best-asset rate = 0.1316, beats-equal-weight rate = 0.3596, and
+mean excess versus equal weight = -0.0450. V4 had dominant-best-asset rate =
+0.1974, beats-equal-weight rate = 0.3246, and mean excess versus equal weight
+= -0.0574. V4 was more concentrated and did not improve forward selection
+quality.
+
+**Interpretation:**  
+V4 did not improve TD3 behavior relative to V2. V2 remains the reference
+feature set. The deterministic GARCH-style features should remain
+experimental.
+
+**Decision:**  
+Do not implement estimated real GARCH yet unless a clearer hypothesis is
+formed. The next step should be either deeper V2 analysis or a more targeted
+volatility-regime hypothesis, not adding GARCH complexity blindly.
+
+## Entry X — V2 vs V5 Regime and Correlation Feature Comparison
+
+**Date:** 2026-05-19
+
+**Purpose:**  
+Test whether regime and dynamic-correlation state variables improve TD3
+behavior relative to V2 after the V4 GARCH-style feature set failed to improve
+the model.
+
+**Feature definition:**  
+V5 is defined as V2 plus return-derived regime and correlation features.
+
+**Experiment:**  
+Used `data/processed/returns_weekly_latest.csv`, `episodes = 20`, seeds
+`[7, 42, 101]`, baseline reward with mandate penalty disabled, and compared
+feature versions V2 and V5.
+
+**Aggregate result:**  
+`V5`: mean test Sharpe = 0.7461, standard deviation = 0.4423, robust Sharpe
+0.5 = 0.5249, mean cumulative return = 0.2389, mean max drawdown = -0.2681,
+worst max drawdown = -0.4126, mean turnover = 0.4780, mean max weight =
+0.9499, mean effective assets = 1.1269, and mean final cash weight = 0.3333.
+
+`V2`: mean test Sharpe = 0.3547, standard deviation = 0.1969, robust Sharpe
+0.5 = 0.2562, mean cumulative return = 0.0988, mean max drawdown = -0.2553,
+worst max drawdown = -0.3848, mean turnover = 0.5778, mean max weight =
+0.9469, mean effective assets = 1.1249, and mean final cash weight = 0.0000.
+
+**Concentration quality:**  
+V5 improved long-horizon concentration quality relative to V2. At horizon 12,
+V2 had beats-equal-weight rate = 0.3596, mean excess versus equal weight =
+-0.0467, and mean dominant-asset rank = 3.4605. V5 had beats-equal-weight rate
+= 0.4298, mean excess versus equal weight = -0.0218, and mean dominant-asset
+rank = 3.2237.
+
+**Cash diagnostics:**  
+V5 strongly increased cash allocation. Its mean cash weight was roughly
+0.54-0.56 and cash was above the 10% normal band in roughly 57%-59% of
+observations. V2 mean cash was roughly 0.095-0.100, with cash above the 10%
+band around 12% of observations.
+
+**Interpretation:**  
+V5 improves robust Sharpe versus V2 in this controlled 3-seed comparison and
+also improves long-horizon concentration quality. However, V5 relies heavily
+on CASH, so the result is promising but not clean.
+
+**Decision:**  
+The next step is not reward tuning. The next step is to test whether high CASH
+exposure happens during V5 risk-off states. If high cash is mostly aligned
+with `risk_off_state`, V5 may be learning useful regime defense. If high cash
+occurs outside `risk_off_state`, V5 may be exploiting a cash trap. V5 is more
+promising than V4 GARCH-style features, but it is not ready to become the
+default.
+
+## Entry X — V5 Cash Risk-Off Attribution
+
+**Date:** 2026-05-19
+
+**Purpose:**  
+Test whether V5 high CASH exposure is aligned with the raw V5 `risk_off_state`.
+
+**Output path:**  
+`outputs/tables/feature_set_comparison_V2_V5_regime_latest_3seeds_20ep/diagnostics/v5_cash_risk_off_attribution`
+
+**Tests:**  
+`python3 -m unittest discover tests` ran 737 tests OK.
+
+**Summary:**  
+`V5_seed_101`: mean cash = 0.0604, high-cash rate = 0.0909, risk-off rate =
+0.1023, and share of high-cash observations in risk-off = 0.0000.
+
+`V5_seed_42`: mean cash = 0.6844, high-cash rate = 0.7159, risk-off rate =
+0.1023, and share of high-cash observations in risk-off = 0.0794.
+
+`V5_seed_7`: mean cash = 0.8569, high-cash rate = 0.8977, risk-off rate =
+0.1023, and share of high-cash observations in risk-off = 0.1013.
+
+**By-state interpretation:**  
+For seed 42, mean cash outside risk-off was 0.6986. For seed 7, mean cash
+outside risk-off was 0.8541. Therefore most high CASH exposure occurs outside
+V5 `risk_off_state`.
+
+**Interpretation:**  
+V5 improved robust Sharpe versus V2, but the improvement is contaminated by
+cash-trap behavior. V5 is promising but not clean. V2 remains the cleaner
+reference feature set.
+
+**Decision:**  
+V5 should not become the default until CASH is constrained or penalized
+conditionally. The next step should be a conditional CASH rule: normal cash
+band around 0%-10%, with higher cash allowed only when risk-off state is
+justified. Do not implement estimated real GARCH yet.

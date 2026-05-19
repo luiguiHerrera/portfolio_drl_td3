@@ -51,6 +51,12 @@ MANDATE_PENALTY_WEIGHT_KEYS = {
     "effective_assets_breach",
     "turnover_breach",
 }
+TURNOVER_PENALTY_MODES = {
+    "linear",
+    "none",
+    "excess_linear",
+    "excess_quadratic",
+}
 
 
 def load_config(path: str) -> dict:
@@ -141,6 +147,8 @@ def _validate_reward(config: dict) -> None:
             )
 
     _validate_reward_mandate_fields(config["reward"])
+    _validate_reward_cash_penalty_fields(config["reward"])
+    _validate_reward_turnover_penalty_fields(config["reward"])
 
 
 def _validate_td3(config: dict) -> None:
@@ -264,6 +272,60 @@ def _validate_reward_mandate_fields(reward: dict) -> None:
         )
     for key, value in mandate_penalty_weights.items():
         _validate_non_negative_number(value, f"reward.mandate_penalty_weights.{key}")
+
+
+def _validate_reward_cash_penalty_fields(reward: dict) -> None:
+    use_cash_risk_off_penalty = reward.get("use_cash_risk_off_penalty")
+    if use_cash_risk_off_penalty is not None and not isinstance(
+        use_cash_risk_off_penalty,
+        bool,
+    ):
+        raise ValueError("Config field reward.use_cash_risk_off_penalty must be a bool.")
+
+    normal_cash_max = reward.get("normal_cash_max")
+    if normal_cash_max is not None:
+        if not _is_number(normal_cash_max) or normal_cash_max < 0.0 or normal_cash_max > 1.0:
+            raise ValueError(
+                "Config field reward.normal_cash_max must be numeric and in the range [0, 1]."
+            )
+
+    cash_penalty_weight = reward.get("cash_penalty_weight")
+    if cash_penalty_weight is not None:
+        _validate_non_negative_number(
+            cash_penalty_weight,
+            "reward.cash_penalty_weight",
+        )
+
+    cash_risk_off_state = reward.get("cash_risk_off_state")
+    if cash_risk_off_state is not None and not isinstance(cash_risk_off_state, bool):
+        raise ValueError("Config field reward.cash_risk_off_state must be a bool.")
+
+
+def _validate_reward_turnover_penalty_fields(reward: dict) -> None:
+    turnover_penalty_mode = reward.get("turnover_penalty_mode")
+    if turnover_penalty_mode is not None and (
+        not isinstance(turnover_penalty_mode, str)
+        or turnover_penalty_mode not in TURNOVER_PENALTY_MODES
+    ):
+        valid_modes = ", ".join(sorted(TURNOVER_PENALTY_MODES))
+        raise ValueError(
+            "Config field reward.turnover_penalty_mode must be one of: "
+            f"{valid_modes}."
+        )
+
+    turnover_free_band = reward.get("turnover_free_band")
+    if turnover_free_band is not None:
+        _validate_non_negative_number(
+            turnover_free_band,
+            "reward.turnover_free_band",
+        )
+
+    turnover_quadratic_weight = reward.get("turnover_quadratic_weight")
+    if turnover_quadratic_weight is not None:
+        _validate_non_negative_number(
+            turnover_quadratic_weight,
+            "reward.turnover_quadratic_weight",
+        )
 
 
 def _validate_v4_garch_feature_config(features: dict) -> None:

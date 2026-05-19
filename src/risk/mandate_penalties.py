@@ -102,6 +102,26 @@ def turnover_breach(
     return positive_part(turnover - max_turnover_limit)
 
 
+def compute_cash_breach(
+    cash_weight: float,
+    normal_cash_max: float = 0.10,
+    risk_off_state: bool = False,
+) -> float:
+    """Return CASH exposure above the normal band unless risk-off is active."""
+    _validate_number(cash_weight, "cash_weight")
+    if cash_weight < 0.0 or cash_weight > 1.0:
+        raise ValueError("cash_weight must be >= 0 and <= 1.")
+    _validate_number(normal_cash_max, "normal_cash_max")
+    if normal_cash_max < 0.0 or normal_cash_max > 1.0:
+        raise ValueError("normal_cash_max must be >= 0 and <= 1.")
+    if not isinstance(risk_off_state, bool):
+        raise ValueError("risk_off_state must be bool.")
+    if risk_off_state:
+        return 0.0
+
+    return positive_part(cash_weight - normal_cash_max)
+
+
 def compute_mandate_breaches(
     current_drawdown: float,
     current_volatility: float,

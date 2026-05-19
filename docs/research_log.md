@@ -1229,3 +1229,60 @@ V5 should not become the default until CASH is constrained or penalized
 conditionally. The next step should be a conditional CASH rule: normal cash
 band around 0%-10%, with higher cash allowed only when risk-off state is
 justified. Do not implement estimated real GARCH yet.
+
+## Entry X — V5 Turnover Penalty Smoke
+
+**Date:** 2026-05-19
+
+**Purpose:**  
+Test whether the current linear turnover penalty was limiting V5 policy
+behavior. The concern was that the agent may be learning that moving is worse
+than being wrong, especially because transaction costs already penalize
+turnover.
+
+**Experiment:**  
+Used V5 features, `data/processed/returns_weekly_latest.csv`,
+`episodes = 10`, seeds `[7, 42, 101]`, with mandate penalty disabled and cash
+penalty disabled.
+
+**Turnover modes tested:**  
+`linear` current behavior, `none`, `excess_linear` with free band 0.10,
+`excess_linear` with free band 0.20, and `excess_quadratic` with free band
+0.10.
+
+**Result:**  
+`V5_turnover_free_band_020`: robust Sharpe = 1.1846, mean Sharpe = 1.3739,
+average turnover = 0.3231, mean turnover penalty = 0.000124, and cash above
+10% rate = 0.2511.
+
+`V5_turnover_free_band_010`: robust Sharpe = 1.0920, mean Sharpe = 1.4257,
+average turnover = 0.2653, mean turnover penalty = 0.000119, and cash above
+10% rate = 0.2987.
+
+`V5_turnover_none`: robust Sharpe = 0.7853, mean Sharpe = 0.9712, average
+turnover = 0.4871, mean turnover penalty = 0.000000, and cash above 10% rate =
+0.3593.
+
+`V5_turnover_linear_current`: robust Sharpe = 0.5150, mean Sharpe = 1.0697,
+average turnover = 0.4641, mean turnover penalty = 0.000232, and cash above
+10% rate = 0.3247.
+
+`V5_turnover_quadratic_010`: robust Sharpe = 0.3648, mean Sharpe = 0.4863,
+average turnover = 0.4901, mean turnover penalty = 0.000541, and cash above
+10% rate = 0.2165.
+
+**Policy history export:**  
+Turnover reward debug fields are now saved in `policy_history` when available:
+`turnover_penalty`, `turnover_penalty_mode`, `turnover_free_band`, and
+`turnover_excess`.
+
+**Interpretation:**  
+The linear turnover penalty appears too blunt. Removing the turnover penalty
+entirely is not the answer; it worsened cash exposure. A free-band turnover
+penalty, especially `free_band = 0.20`, looks more promising. The quadratic
+0.10 version reduced cash exposure but hurt performance.
+
+**Decision:**  
+The current candidate for future experiments is `excess_linear` turnover with
+`turnover_free_band = 0.20`. It should remain experimental, not default, until
+tested across stronger folds and seeds.

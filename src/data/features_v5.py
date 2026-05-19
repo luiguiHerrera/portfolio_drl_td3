@@ -52,7 +52,7 @@ def build_features_v5(
         drawdown_window=drawdown_window,
         risk_off_threshold=risk_off_threshold,
     )
-    features = pd.concat([v2_features, regime_features], axis=1).dropna()
+    features = pd.concat([v2_features, regime_features], axis=1, sort=False).dropna()
     if features.empty:
         raise ValueError(
             "Feature Set V5 output is empty after aligning V2 and regime features."
@@ -121,7 +121,7 @@ def _build_regime_correlation_features(
                 correlation_window,
             )
         )
-    avg_pairwise_corr = pd.concat(pairwise_correlations, axis=1).mean(axis=1)
+    avg_pairwise_corr = pd.concat(pairwise_correlations, axis=1, sort=False).mean(axis=1)
     features[f"avg_pairwise_corr_{correlation_window}p"] = avg_pairwise_corr
     features["correlation_stress"] = _float_indicator(
         avg_pairwise_corr > 0.50,

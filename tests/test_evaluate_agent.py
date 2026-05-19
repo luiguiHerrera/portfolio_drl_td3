@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from src.backtest.evaluate_agent import (
+    build_policy_history,
     evaluate_agent,
     run_policy_episode,
     summarize_episode_diagnostics,
@@ -58,6 +59,7 @@ class EvaluateAgentTests(unittest.TestCase):
             "concentration",
             "weights",
             "final_portfolio_value",
+            "turnover_reward_info",
         }
 
         self.assertEqual(set(episode.keys()), expected_keys)
@@ -169,6 +171,41 @@ class EvaluateAgentTests(unittest.TestCase):
 
         self.assertNotIn("mandate_penalty", policy_history.columns)
         self.assertNotIn("mandate_max_weight_breach", policy_history.columns)
+
+    def test_evaluate_agent_policy_history_includes_turnover_reward_fields_when_available(self):
+        result = evaluate_agent(
+            DummyAgent(),
+            self.returns,
+            self.features,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "lambda_turnover": 0.5,
+                "turnover_penalty_mode": "excess_linear",
+                "turnover_free_band": 0.10,
+            },
+            transaction_cost=0.0,
+        )
+        policy_history = result["policy_history"]
+        expected_columns = {
+            "turnover_penalty",
+            "turnover_penalty_mode",
+            "turnover_free_band",
+            "turnover_excess",
+        }
+
+        self.assertTrue(expected_columns.issubset(policy_history.columns))
+        self.assertEqual(policy_history["turnover_penalty_mode"].iloc[0], "excess_linear")
+        self.assertAlmostEqual(policy_history["turnover_free_band"].iloc[0], 0.10)
+
+    def test_build_policy_history_does_not_require_turnover_reward_fields(self):
+        episode = run_policy_episode(DummyAgent(), self.returns, self.features)
+        episode.pop("turnover_reward_info", None)
+
+        policy_history = build_policy_history(episode)
+
+        self.assertNotIn("turnover_penalty", policy_history.columns)
+        self.assertNotIn("turnover_penalty_mode", policy_history.columns)
 
     def test_evaluate_agent_metrics_use_financial_net_returns(self):
         result = evaluate_agent(

@@ -20,6 +20,12 @@ MANDATE_INFO_FIELDS = (
     "mandate_effective_assets_breach",
     "mandate_turnover_breach",
 )
+TURNOVER_REWARD_INFO_FIELDS = (
+    "turnover_penalty",
+    "turnover_penalty_mode",
+    "turnover_free_band",
+    "turnover_excess",
+)
 
 
 def run_policy_episode(
@@ -50,6 +56,9 @@ def run_policy_episode(
     concentration = []
     weights = []
     mandate_info_values = {field: [] for field in MANDATE_INFO_FIELDS}
+    turnover_reward_info_values = {
+        field: [] for field in TURNOVER_REWARD_INFO_FIELDS
+    }
 
     while not done:
         action = agent.select_action(state)
@@ -66,6 +75,8 @@ def run_policy_episode(
         weights.append(info["weights"])
         for field in MANDATE_INFO_FIELDS:
             mandate_info_values[field].append(info.get(field, pd.NA))
+        for field in TURNOVER_REWARD_INFO_FIELDS:
+            turnover_reward_info_values[field].append(info.get(field, pd.NA))
         state = next_state
 
     episode_index = env.returns.index
@@ -101,6 +112,12 @@ def run_policy_episode(
     mandate_info = pd.DataFrame(mandate_info_values, index=episode_index)
     if not mandate_info.isna().all(axis=None):
         episode["mandate_info"] = mandate_info
+    turnover_reward_info = pd.DataFrame(
+        turnover_reward_info_values,
+        index=episode_index,
+    )
+    if not turnover_reward_info.isna().all(axis=None):
+        episode["turnover_reward_info"] = turnover_reward_info
 
     return episode
 
@@ -158,6 +175,8 @@ def build_policy_history(episode: dict) -> pd.DataFrame:
     )
     if "mandate_info" in episode:
         history = pd.concat([history, episode["mandate_info"]], axis=1)
+    if "turnover_reward_info" in episode:
+        history = pd.concat([history, episode["turnover_reward_info"]], axis=1)
 
     return pd.concat([history, weights], axis=1)
 

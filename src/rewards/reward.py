@@ -71,10 +71,58 @@ def compute_risk_aware_reward(
     return float(
         lambda_return * portfolio_return
         - lambda_transaction_cost * transaction_cost
-        - lambda_turnover * turnover
+        - compute_turnover_penalty(
+            turnover=turnover,
+            lambda_turnover=lambda_turnover,
+            mode=reward_config.get("turnover_penalty_mode", "linear"),
+            free_band=reward_config.get("turnover_free_band", 0.0),
+            quadratic_weight=reward_config.get("turnover_quadratic_weight", 0.0),
+        )
         - lambda_concentration * concentration
         - lambda_drawdown * drawdown
     )
+
+
+def compute_turnover_penalty(
+    turnover: float,
+    lambda_turnover: float,
+    mode: str = "linear",
+    free_band: float = 0.0,
+    quadratic_weight: float = 0.0,
+) -> float:
+    """Compute the configured turnover penalty component."""
+    if not _is_number(turnover) or turnover < 0.0:
+        raise ValueError("turnover must be numeric and non-negative.")
+    if not _is_number(lambda_turnover) or lambda_turnover < 0.0:
+        raise ValueError("lambda_turnover must be numeric and non-negative.")
+    if not isinstance(mode, str) or mode not in {
+        "linear",
+        "none",
+        "excess_linear",
+        "excess_quadratic",
+    }:
+        raise ValueError(
+            "turnover_penalty_mode must be one of: linear, none, "
+            "excess_linear, excess_quadratic."
+        )
+    if not _is_number(free_band) or free_band < 0.0:
+        raise ValueError("turnover_free_band must be numeric and non-negative.")
+    if not _is_number(quadratic_weight) or quadratic_weight < 0.0:
+        raise ValueError(
+            "turnover_quadratic_weight must be numeric and non-negative."
+        )
+
+    if mode == "none":
+        return 0.0
+    if mode == "linear":
+        return float(lambda_turnover * turnover)
+
+    turnover_excess = max(float(turnover) - float(free_band), 0.0)
+    linear_penalty = float(lambda_turnover * turnover_excess)
+    if mode == "excess_linear":
+        return linear_penalty
+
+    return float(linear_penalty + quadratic_weight * turnover_excess ** 2)
 
 
 def _get_lambda(reward_config: dict, field_name: str, default: float) -> float:

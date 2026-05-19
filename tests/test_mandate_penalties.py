@@ -3,6 +3,7 @@
 import unittest
 
 from src.risk.mandate_penalties import (
+    compute_cash_breach,
     compute_mandate_breaches,
     compute_mandate_penalty,
     compute_weighted_mandate_penalty,
@@ -41,6 +42,35 @@ class MandatePenaltyTests(unittest.TestCase):
     def test_turnover_breach_works(self):
         self.assertEqual(turnover_breach(0.50, 0.75), 0.0)
         self.assertAlmostEqual(turnover_breach(0.90, 0.75), 0.15)
+
+    def test_compute_cash_breach_returns_zero_within_normal_band(self):
+        self.assertEqual(compute_cash_breach(0.05, normal_cash_max=0.10), 0.0)
+
+    def test_compute_cash_breach_returns_excess_outside_risk_off(self):
+        self.assertAlmostEqual(
+            compute_cash_breach(
+                cash_weight=0.35,
+                normal_cash_max=0.10,
+                risk_off_state=False,
+            ),
+            0.25,
+        )
+
+    def test_compute_cash_breach_returns_zero_when_risk_off_state_true(self):
+        self.assertEqual(
+            compute_cash_breach(
+                cash_weight=0.35,
+                normal_cash_max=0.10,
+                risk_off_state=True,
+            ),
+            0.0,
+        )
+
+    def test_compute_cash_breach_rejects_invalid_cash_weight(self):
+        for invalid_cash_weight in (-0.01, 1.01, True):
+            with self.subTest(invalid_cash_weight=invalid_cash_weight):
+                with self.assertRaises(ValueError):
+                    compute_cash_breach(invalid_cash_weight)
 
     def test_compute_mandate_breaches_returns_expected_keys(self):
         result = compute_mandate_breaches(
@@ -149,6 +179,7 @@ class MandatePenaltyTests(unittest.TestCase):
             lambda: max_weight_breach(True, 0.80),
             lambda: effective_assets_breach(True, 1.25),
             lambda: turnover_breach(True, 0.75),
+            lambda: compute_cash_breach(True),
             lambda: compute_weighted_mandate_penalty(
                 {"drawdown_breach": 0.1},
                 penalty_weights={"drawdown_breach": True},

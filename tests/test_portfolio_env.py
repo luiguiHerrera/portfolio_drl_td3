@@ -112,6 +112,97 @@ class PortfolioEnvTests(unittest.TestCase):
         self.assertNotIn("mandate_penalty", baseline_info)
         self.assertNotIn("mandate_penalty", disabled_info)
 
+    def test_reward_unchanged_when_cash_risk_off_penalty_missing_or_false(self):
+        action = np.array([0.0, 0.0, 0.0, 0.0, 1.0])
+        baseline_env = PortfolioEnv(self.returns, transaction_cost=0.0)
+        disabled_env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "use_cash_risk_off_penalty": False,
+                "normal_cash_max": 0.10,
+                "cash_penalty_weight": 100.0,
+            },
+        )
+        baseline_env.reset()
+        disabled_env.reset()
+
+        _, baseline_reward, _, baseline_info = baseline_env.step(action)
+        _, disabled_reward, _, disabled_info = disabled_env.step(action)
+
+        self.assertAlmostEqual(disabled_reward, baseline_reward)
+        self.assertNotIn("cash_penalty", baseline_info)
+        self.assertNotIn("cash_penalty", disabled_info)
+
+    def test_cash_penalty_enabled_reduces_reward_above_normal_cash_outside_risk_off(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "use_cash_risk_off_penalty": True,
+                "normal_cash_max": 0.10,
+                "cash_penalty_weight": 1.0,
+                "cash_risk_off_state": False,
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([0.0, 0.0, 0.0, 0.0, 1.0]))
+
+        self.assertAlmostEqual(info["cash_breach"], 0.90)
+        self.assertAlmostEqual(info["cash_penalty"], 0.90)
+        self.assertAlmostEqual(reward, info["portfolio_return"] - 0.90)
+
+    def test_cash_penalty_does_not_penalize_high_cash_when_risk_off_state_true(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "use_cash_risk_off_penalty": True,
+                "normal_cash_max": 0.10,
+                "cash_penalty_weight": 1.0,
+                "cash_risk_off_state": True,
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([0.0, 0.0, 0.0, 0.0, 1.0]))
+
+        self.assertEqual(info["cash_breach"], 0.0)
+        self.assertEqual(info["cash_penalty"], 0.0)
+        self.assertAlmostEqual(reward, info["portfolio_return"])
+
+    def test_info_includes_cash_penalty_fields_when_enabled(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "use_cash_risk_off_penalty": True,
+                "normal_cash_max": 0.10,
+                "cash_penalty_weight": 1.0,
+                "cash_risk_off_state": False,
+            },
+        )
+        env.reset()
+
+        _, _, _, info = env.step(np.array([0.0, 0.0, 0.0, 0.0, 1.0]))
+
+        for key in (
+            "cash_penalty",
+            "cash_breach",
+            "normal_cash_max",
+            "cash_risk_off_state",
+        ):
+            self.assertIn(key, info)
+
     def test_custom_reward_config_turnover_penalty_reduces_reward(self):
         env = PortfolioEnv(
             self.returns,
@@ -127,6 +218,108 @@ class PortfolioEnvTests(unittest.TestCase):
         _, reward, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
 
         self.assertAlmostEqual(reward, info["portfolio_return"] - 0.5 * info["turnover"])
+
+    def test_turnover_penalty_none_keeps_transaction_cost_active(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.01,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 1.0,
+                "lambda_turnover": 100.0,
+                "turnover_penalty_mode": "none",
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        self.assertEqual(info["turnover_penalty"], 0.0)
+        self.assertAlmostEqual(
+            reward,
+            info["portfolio_return"] - info["transaction_cost"],
+        )
+
+    def test_excess_linear_turnover_penalty_ignores_turnover_below_free_band(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "lambda_turnover": 0.5,
+                "turnover_penalty_mode": "excess_linear",
+                "turnover_free_band": 0.10,
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(
+            np.array([0.22, 0.195, 0.195, 0.195, 0.195])
+        )
+
+        self.assertLess(info["turnover"], 0.10)
+        self.assertEqual(info["turnover_excess"], 0.0)
+        self.assertEqual(info["turnover_penalty"], 0.0)
+        self.assertAlmostEqual(reward, info["portfolio_return"])
+
+    def test_excess_linear_turnover_penalty_uses_only_excess_above_free_band(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "lambda_turnover": 0.5,
+                "turnover_penalty_mode": "excess_linear",
+                "turnover_free_band": 0.10,
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        expected_excess = info["turnover"] - 0.10
+        expected_penalty = 0.5 * expected_excess
+        self.assertAlmostEqual(info["turnover_excess"], expected_excess)
+        self.assertAlmostEqual(info["turnover_penalty"], expected_penalty)
+        self.assertAlmostEqual(reward, info["portfolio_return"] - expected_penalty)
+
+    def test_excess_quadratic_turnover_penalty_adds_quadratic_excess(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "lambda_turnover": 0.5,
+                "turnover_penalty_mode": "excess_quadratic",
+                "turnover_free_band": 0.10,
+                "turnover_quadratic_weight": 0.2,
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        expected_excess = info["turnover"] - 0.10
+        expected_penalty = 0.5 * expected_excess + 0.2 * expected_excess ** 2
+        self.assertAlmostEqual(info["turnover_penalty"], expected_penalty)
+        self.assertAlmostEqual(reward, info["portfolio_return"] - expected_penalty)
+
+    def test_info_includes_turnover_penalty_fields(self):
+        env = PortfolioEnv(self.returns)
+        env.reset()
+
+        _, _, _, info = env.step(np.full(5, 1.0))
+
+        for key in (
+            "turnover_penalty",
+            "turnover_penalty_mode",
+            "turnover_free_band",
+            "turnover_excess",
+        ):
+            self.assertIn(key, info)
 
     def test_custom_reward_config_concentration_penalty_reduces_reward(self):
         env = PortfolioEnv(

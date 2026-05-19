@@ -7,6 +7,7 @@ import numpy as np
 from src.rewards.reward import (
     compute_net_return_reward,
     compute_risk_aware_reward,
+    compute_turnover_penalty,
     concentration_penalty,
     drawdown_penalty,
 )
@@ -85,6 +86,55 @@ class RewardTests(unittest.TestCase):
                 peak_portfolio_value=100000.0,
                 reward_config={"lambda_turnover": -0.1},
             )
+
+    def test_compute_turnover_penalty_modes(self):
+        self.assertAlmostEqual(
+            compute_turnover_penalty(0.3, 0.5, mode="linear"),
+            0.15,
+        )
+        self.assertEqual(
+            compute_turnover_penalty(0.3, 0.5, mode="none"),
+            0.0,
+        )
+        self.assertAlmostEqual(
+            compute_turnover_penalty(
+                0.3,
+                0.5,
+                mode="excess_linear",
+                free_band=0.1,
+            ),
+            0.1,
+        )
+        self.assertAlmostEqual(
+            compute_turnover_penalty(
+                0.3,
+                0.5,
+                mode="excess_quadratic",
+                free_band=0.1,
+                quadratic_weight=0.25,
+            ),
+            0.11,
+        )
+
+    def test_compute_turnover_penalty_rejects_invalid_inputs(self):
+        invalid_calls = (
+            {"turnover": True, "lambda_turnover": 0.1},
+            {"turnover": -0.1, "lambda_turnover": 0.1},
+            {"turnover": 0.1, "lambda_turnover": True},
+            {"turnover": 0.1, "lambda_turnover": -0.1},
+            {"turnover": 0.1, "lambda_turnover": 0.1, "mode": "bad"},
+            {"turnover": 0.1, "lambda_turnover": 0.1, "free_band": -0.1},
+            {
+                "turnover": 0.1,
+                "lambda_turnover": 0.1,
+                "quadratic_weight": -0.1,
+            },
+        )
+
+        for kwargs in invalid_calls:
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaises(ValueError):
+                    compute_turnover_penalty(**kwargs)
 
 
 if __name__ == "__main__":

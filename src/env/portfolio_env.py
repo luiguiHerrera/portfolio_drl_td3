@@ -10,9 +10,10 @@ portfolio weights through clipping and normalization.
 import numpy as np
 import pandas as pd
 
-from src.risk.mandate_penalties import compute_mandate_penalty
+from src.risk.mandate_penalties import compute_cash_breach, compute_mandate_penalty
 from src.risk.mandate_profiles import get_mandate_limits
 from src.rewards.reward import (
+    compute_turnover_penalty,
     compute_risk_aware_reward,
     concentration_penalty,
     drawdown_penalty,
@@ -96,6 +97,7 @@ class PortfolioEnv:
             peak_portfolio_value=updated_peak_portfolio_value,
             reward_config=self.reward_config,
         )
+        turnover_penalty_result = self._compute_turnover_penalty(turnover)
         mandate_result = None
         if self.reward_config.get("use_mandate_penalty", False):
             mandate_result = self._compute_mandate_penalty(
@@ -106,6 +108,10 @@ class PortfolioEnv:
             )
             lambda_mandate = self._reward_config_number("lambda_mandate", 0.0)
             reward -= lambda_mandate * mandate_result["penalty"]
+        cash_penalty_result = None
+        if self.reward_config.get("use_cash_risk_off_penalty", False):
+            cash_penalty_result = self._compute_cash_penalty(weights)
+            reward -= cash_penalty_result["cash_penalty"]
 
         self.portfolio_value = new_portfolio_value
         self.peak_portfolio_value = updated_peak_portfolio_value
@@ -122,6 +128,12 @@ class PortfolioEnv:
             "financial_net_return": financial_net_return,
             "transaction_cost": realized_transaction_cost,
             "turnover": turnover,
+            "turnover_penalty": turnover_penalty_result["turnover_penalty"],
+            "turnover_penalty_mode": turnover_penalty_result[
+                "turnover_penalty_mode"
+            ],
+            "turnover_free_band": turnover_penalty_result["turnover_free_band"],
+            "turnover_excess": turnover_penalty_result["turnover_excess"],
             "weights": weights,
             "drawdown": drawdown,
             "concentration": concentration,
@@ -142,6 +154,8 @@ class PortfolioEnv:
                     "mandate_turnover_breach": breaches["turnover_breach"],
                 }
             )
+        if cash_penalty_result is not None:
+            info.update(cash_penalty_result)
 
         return observation, reward, done, info
 
@@ -184,6 +198,60 @@ class PortfolioEnv:
             penalty_weights=self.reward_config.get("mandate_penalty_weights"),
         )
 
+    def _compute_cash_penalty(self, weights: np.ndarray) -> dict:
+        normal_cash_max = self._reward_config_number("normal_cash_max", 0.10)
+        cash_penalty_weight = self._reward_config_number("cash_penalty_weight", 1.0)
+        cash_risk_off_state = self._reward_config_bool("cash_risk_off_state", False)
+        cash_weight = self._current_cash_weight(weights)
+        cash_breach = compute_cash_breach(
+            cash_weight=cash_weight,
+            normal_cash_max=normal_cash_max,
+            risk_off_state=cash_risk_off_state,
+        )
+        cash_penalty = cash_penalty_weight * cash_breach
+
+        return {
+            "cash_penalty": cash_penalty,
+            "cash_breach": cash_breach,
+            "normal_cash_max": normal_cash_max,
+            "cash_risk_off_state": cash_risk_off_state,
+        }
+
+    def _compute_turnover_penalty(self, turnover: float) -> dict:
+        lambda_turnover = self._reward_config_number("lambda_turnover", 0.0)
+        mode = self.reward_config.get("turnover_penalty_mode", "linear")
+        free_band = self._reward_config_number("turnover_free_band", 0.0)
+        quadratic_weight = self._reward_config_number(
+            "turnover_quadratic_weight",
+            0.0,
+        )
+        turnover_penalty = compute_turnover_penalty(
+            turnover=turnover,
+            lambda_turnover=lambda_turnover,
+            mode=mode,
+            free_band=free_band,
+            quadratic_weight=quadratic_weight,
+        )
+        if mode == "linear":
+            turnover_excess = turnover
+        elif mode == "none":
+            turnover_excess = 0.0
+        else:
+            turnover_excess = max(turnover - free_band, 0.0)
+
+        return {
+            "turnover_penalty": turnover_penalty,
+            "turnover_penalty_mode": mode,
+            "turnover_free_band": free_band,
+            "turnover_excess": turnover_excess,
+        }
+
+    def _current_cash_weight(self, weights: np.ndarray) -> float:
+        if "CASH" not in self.asset_names:
+            return 0.0
+
+        return float(weights[self.asset_names.index("CASH")])
+
     def _current_trailing_volatility(self) -> float:
         window = int(self.reward_config.get("mandate_volatility_window", 12))
         if len(self.financial_net_return_history) < window:
@@ -206,6 +274,13 @@ class PortfolioEnv:
             raise ValueError(f"Reward config field {field_name} must be non-negative.")
 
         return float(value)
+
+    def _reward_config_bool(self, field_name: str, default: bool) -> bool:
+        value = self.reward_config.get(field_name, default)
+        if not isinstance(value, bool):
+            raise ValueError(f"Reward config field {field_name} must be bool.")
+
+        return value
 
     def _align_returns_and_features(
         self,

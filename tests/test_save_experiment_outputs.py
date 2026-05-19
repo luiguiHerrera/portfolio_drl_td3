@@ -193,6 +193,25 @@ class SaveExperimentOutputsTests(unittest.TestCase):
         }
         self.assertTrue(expected_columns.issubset(test_history.columns))
 
+    def test_saved_policy_history_csv_includes_turnover_reward_columns_when_present(self):
+        experiment_result = dict(self.experiment_result)
+        experiment_result["validation_policy_history"] = (
+            self._policy_history_with_turnover_reward()
+        )
+        experiment_result["test_policy_history"] = self._policy_history_with_turnover_reward()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = save_basic_experiment_outputs(experiment_result, temp_dir)
+            test_history = pd.read_csv(paths["test_policy_history"])
+
+        expected_columns = {
+            "turnover_penalty",
+            "turnover_penalty_mode",
+            "turnover_free_band",
+            "turnover_excess",
+        }
+        self.assertTrue(expected_columns.issubset(test_history.columns))
+
     def test_works_with_custom_output_dir_and_experiment_name(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             paths = save_basic_experiment_outputs(
@@ -327,6 +346,16 @@ class SaveExperimentOutputsTests(unittest.TestCase):
         history["mandate_max_weight_breach"] = [0.0, 0.05]
         history["mandate_effective_assets_breach"] = [0.2, 0.3]
         history["mandate_turnover_breach"] = [0.0, 0.0]
+
+        return history
+
+    @staticmethod
+    def _policy_history_with_turnover_reward() -> pd.DataFrame:
+        history = SaveExperimentOutputsTests._policy_history()
+        history["turnover_penalty"] = [0.01, 0.02]
+        history["turnover_penalty_mode"] = ["linear", "linear"]
+        history["turnover_free_band"] = [0.0, 0.0]
+        history["turnover_excess"] = [0.1, 0.2]
 
         return history
 

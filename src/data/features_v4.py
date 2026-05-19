@@ -46,7 +46,7 @@ def build_features_v4(
         beta=garch_beta,
         periods_per_year=garch_periods_per_year,
     )
-    features = pd.concat([v2_features, garch_features], axis=1).dropna()
+    features = pd.concat([v2_features, garch_features], axis=1, sort=False).dropna()
     if features.empty:
         raise ValueError(
             "Feature Set V4 output is empty after aligning V2 and GARCH features."

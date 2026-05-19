@@ -308,6 +308,122 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "reward.mandate_penalty_weights"):
                 load_config(str(config_path))
 
+    def test_load_config_accepts_missing_cash_penalty_fields(self):
+        config = _valid_config()
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertNotIn("use_cash_risk_off_penalty", loaded_config["reward"])
+
+    def test_load_config_accepts_valid_cash_penalty_fields(self):
+        config = _valid_config()
+        config["reward"].update(
+            {
+                "use_cash_risk_off_penalty": True,
+                "normal_cash_max": 0.10,
+                "cash_penalty_weight": 1.0,
+                "cash_risk_off_state": False,
+            }
+        )
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertTrue(loaded_config["reward"]["use_cash_risk_off_penalty"])
+        self.assertEqual(loaded_config["reward"]["normal_cash_max"], 0.10)
+
+    def test_load_config_rejects_invalid_use_cash_risk_off_penalty(self):
+        config = _valid_config()
+        config["reward"]["use_cash_risk_off_penalty"] = "true"
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "reward.use_cash_risk_off_penalty"):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_invalid_normal_cash_max(self):
+        invalid_values = (-0.01, 1.01, True)
+        for invalid_value in invalid_values:
+            config = _valid_config()
+            config["reward"]["normal_cash_max"] = invalid_value
+            with self.subTest(invalid_value=invalid_value):
+                with self._temporary_config(config) as config_path:
+                    with self.assertRaisesRegex(ValueError, "reward.normal_cash_max"):
+                        load_config(str(config_path))
+
+    def test_load_config_rejects_invalid_cash_penalty_weight(self):
+        invalid_values = (-0.01, True)
+        for invalid_value in invalid_values:
+            config = _valid_config()
+            config["reward"]["cash_penalty_weight"] = invalid_value
+            with self.subTest(invalid_value=invalid_value):
+                with self._temporary_config(config) as config_path:
+                    with self.assertRaisesRegex(ValueError, "reward.cash_penalty_weight"):
+                        load_config(str(config_path))
+
+    def test_load_config_rejects_invalid_cash_risk_off_state(self):
+        config = _valid_config()
+        config["reward"]["cash_risk_off_state"] = "false"
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "reward.cash_risk_off_state"):
+                load_config(str(config_path))
+
+    def test_load_config_accepts_valid_turnover_penalty_fields(self):
+        config = _valid_config()
+        config["reward"].update(
+            {
+                "turnover_penalty_mode": "excess_quadratic",
+                "turnover_free_band": 0.10,
+                "turnover_quadratic_weight": 0.05,
+            }
+        )
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(
+            loaded_config["reward"]["turnover_penalty_mode"],
+            "excess_quadratic",
+        )
+        self.assertEqual(loaded_config["reward"]["turnover_free_band"], 0.10)
+
+    def test_load_config_rejects_invalid_turnover_penalty_mode(self):
+        invalid_values = ("soft", True)
+        for invalid_value in invalid_values:
+            config = _valid_config()
+            config["reward"]["turnover_penalty_mode"] = invalid_value
+            with self.subTest(invalid_value=invalid_value):
+                with self._temporary_config(config) as config_path:
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "reward.turnover_penalty_mode",
+                    ):
+                        load_config(str(config_path))
+
+    def test_load_config_rejects_invalid_turnover_free_band(self):
+        invalid_values = (-0.01, True)
+        for invalid_value in invalid_values:
+            config = _valid_config()
+            config["reward"]["turnover_free_band"] = invalid_value
+            with self.subTest(invalid_value=invalid_value):
+                with self._temporary_config(config) as config_path:
+                    with self.assertRaisesRegex(ValueError, "reward.turnover_free_band"):
+                        load_config(str(config_path))
+
+    def test_load_config_rejects_invalid_turnover_quadratic_weight(self):
+        invalid_values = (-0.01, True)
+        for invalid_value in invalid_values:
+            config = _valid_config()
+            config["reward"]["turnover_quadratic_weight"] = invalid_value
+            with self.subTest(invalid_value=invalid_value):
+                with self._temporary_config(config) as config_path:
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "reward.turnover_quadratic_weight",
+                    ):
+                        load_config(str(config_path))
+
     def test_load_config_accepts_missing_features_section(self):
         config = _valid_config()
 

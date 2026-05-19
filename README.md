@@ -2,50 +2,59 @@
 
 ## Overview
 
-This repository contains an academic PyTorch implementation of a
-Twin Delayed Deep Deterministic Policy Gradient (TD3) agent for dynamic
-portfolio allocation. The project is intended for Master's thesis research and
-focuses on transparent, modular implementation rather than production trading
-use.
+This repository contains an academic PyTorch implementation of a Twin Delayed Deep Deterministic Policy Gradient (TD3) agent for dynamic portfolio allocation.
 
-The codebase implements the main components needed to study a continuous-action
-portfolio allocation agent under long-only, fully invested constraints. It is
-designed to support methodological discussion, testing, and future empirical
-experiments.
+The project is built for Master's thesis research. It is not production trading software. The goal is to study whether a DRL allocation agent can add value against simple, transparent, and harder-to-fool portfolio rules.
+
+No performance claim should be inferred from the current implementation. Any result must survive chronological out-of-sample testing, benchmark comparison, seed sensitivity, and clear risk diagnostics.
 
 ## Current Scope
 
-The repository currently provides a methodological prototype. It includes a
-minimal end-to-end training, evaluation, benchmark comparison, and CSV output
-workflow, but it does not provide validated investment results or empirical
-conclusions.
+The repository currently provides a research pipeline for:
 
-No performance claim should be inferred from the current implementation. Future
-claims must be supported by reproducible out-of-sample experiments, benchmark
-comparison, sensitivity analysis, and appropriate validation design.
+- weekly multi-asset portfolio allocation;
+- TD3 training and evaluation;
+- feature set comparison;
+- walk-forward validation;
+- dynamic benchmark comparison;
+- mandate-aware diagnostics;
+- controlled reward experiments.
+
+The current uncomfortable but useful lesson is simple: TD3 must beat real decision rules, not decorative benchmarks.
 
 ## Implemented Components
 
 ### Data Pipeline
 
 - YAML configuration loading and validation.
-- Yahoo Finance download support for market assets.
-- Synthetic `CASH` asset handling with zero return.
-- Price preprocessing and weekly return construction.
-- Local return snapshots through `data.returns_path` for reproducible runs
-  without downloading inside training.
-- Return-based feature engineering.
+- Yahoo Finance market-data acquisition as a separate step.
+- Synthetic `CASH` asset with zero return.
+- Weekly return construction.
+- Local return snapshots through `data.returns_path`, so training can run from a reproducible CSV instead of downloading data inside the experiment.
+- Feature engineering with V1, V2, and V3 feature sets.
+- Optional local macro CSV features for V3.
 - Chronological train, validation, and test splitting.
 - Train-only feature normalization.
-- Prepared dataset builder with aligned returns and features.
+
+Fresh-market experiments can update market data first, write a local returns snapshot, and then train from that snapshot. The usual latest snapshot is:
+
+```text
+data/processed/returns_weekly_latest.csv
+```
+
+Frozen historical snapshots can still be created explicitly.
 
 ### Environment and Reward
 
-- `PortfolioEnv` for long-only, fully invested portfolio simulation.
-- Separation between observed state features and realized asset returns.
-- Financial portfolio value is updated with net realized return:
-  `financial_net_return = portfolio_return - transaction_cost`.
-- The learning reward is a separate configurable risk-aware signal:
+- Long-only, fully invested `PortfolioEnv`.
+- Portfolio weights are non-negative and sum to one.
+- Financial portfolio value uses net realized return:
+
+```text
+financial_net_return = portfolio_return - transaction_cost
+```
+
+The base reward is configurable:
 
 ```text
 reward =
@@ -56,83 +65,69 @@ reward =
     - lambda_drawdown * drawdown
 ```
 
-Mandate-aware reward penalties are opt-in. Default reward behavior remains
-unchanged.
+Mandate-aware reward penalties are opt-in. Default reward behavior remains unchanged unless explicitly enabled.
 
 ### TD3 Model
 
 - NumPy replay buffer.
-- PyTorch `ActorNetwork` with softmax portfolio weights.
-- PyTorch `CriticNetwork`.
-- `TD3Agent` with twin critics, target networks, delayed actor updates, target
-  policy smoothing, and sampled-batch `train_step`.
-- Minimal `train_td3` loop connecting datasets, environment, replay buffer, and
-  TD3 agent.
+- PyTorch actor network with softmax portfolio weights.
+- Twin critic networks.
+- Target networks.
+- Delayed actor updates.
+- Target policy smoothing.
+- Minimal TD3 training loop.
 
-### Evaluation and Benchmarks
+### Evaluation and Diagnostics
 
-- Agent policy episode evaluation.
-- Portfolio metrics including cumulative return, annualized return, annualized
-  volatility, Sharpe ratio, and maximum drawdown.
-- Agent performance metrics use financial net returns after transaction costs;
-  gross policy returns remain available as diagnostics.
-- Allocation risk diagnostics including max weight, cash weight, Herfindahl
-  index, effective number of assets, entropy, turnover, and transaction cost.
-- Basic benchmark comparison workflow.
-- Compact validation and test comparison summaries.
-- Individual buy-and-hold asset benchmarks for checking whether the agent adds
-  dynamic allocation value beyond concentrated exposure to a single winning
-  asset.
+The project reports:
 
-### Experiment Workflow
+- cumulative return;
+- annualized return;
+- annualized volatility;
+- Sharpe ratio;
+- Sortino ratio;
+- Calmar ratio;
+- maximum drawdown;
+- turnover;
+- transaction costs;
+- max weight;
+- cash weight;
+- Herfindahl index;
+- effective number of assets.
 
-- Minimal in-memory experiment runner.
-- Run-and-save workflow for selected CSV outputs.
-- CSV saving utility with defensive validation before writing outputs.
-- No model, replay buffer, plot, report, or raw result persistence.
+Saved policy histories allow ex-post behavior analysis:
 
-### Testing
+- shadow mandate penalties;
+- concentration quality;
+- cash allocation quality;
+- dominant-asset attribution;
+- regime attribution.
 
-- Unit tests cover implemented data, environment, benchmark, model, training,
-  experiment, and saving utilities.
+Concentration is not automatically bad. The useful question is whether the model found edge, followed the mandate, or gamed the penalty.
 
 ## Methodology
 
-The initial allocation problem is defined over:
+The base universe is:
 
 - `SPY`: U.S. equity market exposure;
 - `TLT`: long-duration U.S. Treasury exposure;
 - `GLD`: gold exposure;
 - `BTC-USD`: Bitcoin exposure;
-- `CASH`: synthetic cash asset with zero return.
+- `CASH`: synthetic zero-return cash.
 
-The portfolio is long-only and fully invested across all assets, including
-`CASH`. Actor outputs are transformed into non-negative weights that sum to one.
+At date `t`, the agent observes features available through `t-1`, chooses weights for period `t`, and then receives realized returns for `t`. Feature normalization is fitted only on the training split to reduce leakage risk.
 
-State features are separated from realized returns. At date `t`, features are
-shifted so the agent observes information available through `t-1`, then selects
-portfolio weights for period `t`. Realized returns at `t` are observed after the
-decision, and portfolio return and reward are computed from those current action
-weights net of transaction cost. Feature normalization is fitted only on the
-training split to reduce data leakage risk. Validation and test splits are
-chronological.
+## Feature Sets
 
-### Feature Sets
+The feature pipeline is versioned:
 
-The feature pipeline is versioned so new state variables can be tested without
-changing older experiments.
+- `V1`: default return-based features.
+- `V2`: return, risk, and simple regime features.
+- `V3`: V2 plus optional local macro CSV features.
 
-- V1 is the default return-based feature set.
-- V2 is opt-in and adds richer return, risk, and simple regime features.
-- V3 is opt-in and extends V2 with optional local macro CSV features.
+V3 does not download macro data during training, evaluation, feature construction, feature comparison, or walk-forward validation. It only reads a local CSV when `macro_path` is configured.
 
-V3 does not download macro data during training, evaluation, feature
-construction, feature comparison, or walk-forward validation. It only reads a
-local CSV when `macro_path` is configured, which keeps model runs reproducible
-and avoids hidden live-data dependencies. Macro observations are aligned by
-date, forward-filled only, and then shifted externally by one period during
-dataset preparation. Backfill is not allowed because it can introduce
-information that was not available at the decision time.
+Example:
 
 ```yaml
 features:
@@ -145,144 +140,86 @@ features:
   macro_date_column: date
 ```
 
-Local real macro CSVs can be prepared as a separate manual step with
-`scripts/download_fred_macro_data.py`. The script downloads FRED-style CSVs for
-`DGS10`, `DGS2`, `VIXCLS`, `DTWEXBGS`, and `CPIAUCSL` into `data/raw/macro/`,
-then builds `data/processed/macro_weekly_2015_2024.csv`. This acquisition step
-is deliberately outside the training and evaluation pipeline. CPI uses a
-simple lag approximation before weekly alignment, not a full release-calendar
-model.
+Local macro data can be prepared separately with:
 
-Synthetic macro fixtures remain only for testing the plumbing. They are not
-evidence about the usefulness of macro variables. This project is not trying to
-win a backtest by adding more columns; the goal is a controlled research
-pipeline where each signal can be tested, challenged, and removed if it fails
-validation.
+```text
+scripts/download_fred_macro_data.py
+```
 
-The project also includes a feature set comparison runner for V1, V2, and V3
-variants under the same walk-forward folds, seeds, reward configuration, TD3
-hyperparameters, and benchmark pipeline. A local macro dataset builder can
-construct weekly V3 macro input from raw CSV files for `DGS10`, `DGS2`,
-`VIXCLS`, `DTWEXBGS`, and `CPIAUCSL`; it uses no live downloads, APIs, FRED
-calls, or yfinance calls. Daily series are aligned to weekly Friday using the
-last available observation and forward-fill only. CPI is shifted with a simple
-availability lag before weekly alignment. No backfill is used.
-
-In the latest long-history V1/V2/V3 comparison, V3_real_macro ranked marginally
-first by robust Sharpe with 0.5 dispersion penalty: V3_real_macro = 0.5709,
-V2 = 0.5610, and V1 = -0.0739. The difference between V3_real_macro and V2 is
-small, benchmark win rates remain weak, and this is not enough to claim robust
-TD3 superiority.
-
-After return construction, date boundaries are clipped so final model returns
-respect `data.start_date` and `data.end_date`.
+The macro step is deliberately outside the training loop. No hidden live-data dependency. No backfill. No magic.
 
 ## Benchmarks
 
-The current benchmark workflow includes:
+The benchmark layer includes:
 
-- gross equal-weight portfolio;
+- equal-weight portfolio;
 - transaction-cost-aware equal-weight rebalanced portfolio;
-- gross buy-and-hold portfolio;
-- individual buy-and-hold asset benchmarks for `SPY`, `TLT`, `GLD`,
-  `BTC-USD`, and `CASH`.
+- buy-and-hold portfolio;
+- individual buy-and-hold assets;
+- simple dynamic allocation rules:
+  - momentum winner;
+  - risk-adjusted momentum;
+  - SPY/CASH trend rule;
+  - defensive risk-off rule.
 
-Benchmark comparison is performed in memory and produces metrics tables for the
-agent and benchmark policies. Individual asset buy-and-hold benchmarks are
-included because the TD3 agent can become highly concentrated; comparing against
-single-asset buy-and-hold returns helps assess whether it adds dynamic
-allocation value or primarily replicates exposure to a winning asset.
-Transaction costs are currently modeled only for the equal-weight rebalanced
-benchmark. Markowitz and risk parity benchmarks are planned but not implemented
-yet.
+In the current preliminary walk-forward tests, simple dynamic rules beat the current TD3 policies on several risk-adjusted metrics. That is not a failure. That is the point of doing the research properly.
 
-The project now also has a reproducible local market-data step:
-`scripts/download_market_data.py` builds
-`data/processed/returns_weekly_2015_2024.csv` for `SPY`, `TLT`, `GLD`,
-`BTC-USD`, and `CASH`. On top of that file, simple dynamic allocation rules are
-available as a tougher diagnostic hurdle: 12-period momentum winner,
-risk-adjusted momentum, SPY/CASH trend following, and a defensive risk-off
-rule.
+TD3 needs to beat simple rules before it earns complexity.
 
-Right now, the useful uncomfortable result is that these simple dynamic rules
-beat the current TD3 policies on risk-adjusted metrics. That is not a failure;
-it is the point of doing the research properly. TD3 needs to beat real
-decision rules, not decorative benchmarks. Sortino and Calmar outputs also
-carry safety flags so extreme or infinite ratios are visible instead of being
-quietly over-interpreted.
+## Mandate-Aware Layer
+
+The project now includes mandate-aware infrastructure:
+
+- risk profiles;
+- quantitative mandate limits;
+- pure mandate penalty components;
+- optional mandate-aware reward;
+- ex-post mandate diagnostics.
+
+Example mandate dimensions:
+
+- maximum drawdown;
+- maximum volatility;
+- maximum weight;
+- minimum effective assets;
+- maximum turnover.
+
+The mandate layer is not meant to blindly punish concentration. A concentrated allocation can be valid if it is justified by state, regime, risk limits, and realized quality.
+
+The current working principle:
+
+```text
+Do not punish concentration.
+Punish unjustified behavior.
+```
 
 ## Experiment Workflow
 
-`run_basic_experiment(config_path)` runs the minimal TD3 workflow and organizes
-results in memory. It returns:
+`run_basic_experiment(config_path)` runs the minimal TD3 workflow and returns results in memory.
 
-- training summary;
-- validation and test metrics tables;
-- validation and test comparison summaries;
-- validation and test diagnostics, including allocation concentration and
-  transaction-cost diagnostics;
-- raw in-memory result.
+`run_and_save_basic_experiment(config_path, output_dir, experiment_name)` runs the same workflow and saves selected CSV outputs.
 
-Comparison summaries include the best individual buy-and-hold benchmark by
-Sharpe ratio and the agent's metric differences versus that benchmark.
+The fresh-market runner updates market data first, creates a local return snapshot, generates a config pointing to that snapshot, and then runs the experiment:
 
-Fresh-market experiments can update market data first, write a local returns
-snapshot, and then train from that snapshot. Training itself does not need to
-download data.
+```text
+scripts/run_basic_experiment_with_fresh_market_data.py
+```
 
-`run_and_save_basic_experiment(config_path, output_dir, experiment_name)` runs
-the same experiment and saves selected CSV outputs. Saved files include:
-
-- `training_summary.csv`;
-- `validation_metrics_table.csv`;
-- `test_metrics_table.csv`;
-- `validation_comparison_summary.csv`;
-- `test_comparison_summary.csv`;
-- `validation_diagnostics.csv`;
-- `test_diagnostics.csv`.
-- `validation_policy_history.csv`;
-- `test_policy_history.csv`.
-
-Saved outputs now support ex-post behavior checks:
-
-- per-period policy history;
-- shadow mandate penalties;
-- concentration quality;
-- cash allocation quality;
-- dominant-asset and regime attribution.
-
-Concentration is not automatically bad. The useful question is whether the
-model found edge, followed a valid mandate, or gamed the penalty. Do not tune
-reward blindly.
-
-An explicit walk-forward validation workflow is also implemented for manually
-defined chronological folds. Each fold trains on its own train window, validates
-on the next period, and tests on the following period. The workflow saves
-fold-level result tables and aggregate summary tables, reducing dependence on a
-single fixed split and supporting stronger empirical validation. Current
-walk-forward results remain preliminary and should not be interpreted as
-evidence of robust empirical superiority.
-
-The workflow does not save `raw_result`, the agent, replay buffer, model
-checkpoints, plots, or reports.
+Training itself should consume a local snapshot. It should not download market data as a hidden side effect.
 
 ## Repository Structure
 
 ```text
 portfolio_drl_td3/
 ├── configs/
-│   └── config.yaml
 ├── data/
-│   ├── raw/
-│   ├── interim/
-│   └── processed/
+├── docs/
 ├── notebooks/
 ├── outputs/
-│   ├── figures/
-│   ├── models/
-│   └── tables/
 ├── reports/
+├── scripts/
 ├── src/
+│   ├── analysis/
 │   ├── backtest/
 │   ├── data/
 │   ├── env/
@@ -290,6 +227,7 @@ portfolio_drl_td3/
 │   ├── memory/
 │   ├── models/
 │   ├── rewards/
+│   ├── risk/
 │   ├── train/
 │   ├── utils/
 │   ├── validation/
@@ -299,24 +237,19 @@ portfolio_drl_td3/
 └── README.md
 ```
 
-Data, generated outputs, saved models, and reports are excluded from version
-control by default. Source code, configuration, and tests are intended to be
-versioned.
+Data, generated outputs, saved models, and reports are excluded from version control by default.
 
 ## Roadmap
 
-- Extend the reward function with dynamic Sharpe, drawdown, transaction cost,
-  and turnover terms.
-- Implement Markowitz and risk parity benchmark logic.
-- Extend walk-forward validation across additional folds, seeds, and stronger
-  benchmark comparisons.
-- Run sensitivity analysis across seeds, costs, and hyperparameters.
-- Add macroeconomic and GARCH-based state features.
-- Add plotting and report generation.
-- Conduct reproducible empirical experiment analysis.
+- Run controlled mandate-reward mini-grid experiments.
+- Compare mandate-aware TD3 against dynamic allocation benchmarks.
+- Stress-test feature sets across more folds, seeds, and market regimes.
+- Add plotting and reporting for experiment review.
+- Explore GARCH or additional state-risk features only if they improve validation.
+- Keep cutting anything that looks smart but fails out-of-sample.
 
 ## Academic Disclaimer
 
-This repository is research code, not production trading software or investment
-advice. Any empirical claim requires reproducible experiments, chronological
-out-of-sample testing, benchmark comparison, and sensitivity analysis.
+This repository is research code, not investment advice or production trading software.
+
+Any empirical claim requires reproducible experiments, chronological out-of-sample testing, benchmark comparison, and sensitivity analysis.

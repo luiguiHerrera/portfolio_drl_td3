@@ -1045,3 +1045,46 @@ Run a controlled mandate-reward mini-grid before making more penalty changes.
 The next experiment should vary mandate penalty weights deliberately and
 compare not only Sharpe and drawdown, but also mandate breaches, concentration
 quality, cash allocation quality, and dynamic benchmark hurdles.
+
+## Entry X — Multi-Seed Mandate Reward Mini-Grid
+
+**Date:** 2026-05-19
+
+**Purpose:**  
+Test whether the first promising mandate penalty region survives a slightly
+more controlled seed sweep before changing reward defaults or adding new
+constraints.
+
+**Experiment:**  
+Used `data/processed/returns_weekly_latest.csv`, `episodes = 20`, and seeds
+`[7, 42, 101]`. The grid compared `baseline_no_mandate` against balanced
+moderate mandate penalties with `lambda_mandate` values of 0.001, 0.003,
+0.005, and 0.0075.
+
+**Result:**  
+`baseline_no_mandate`: robust Sharpe 0.5 = 0.1779, mean Sharpe = 0.4736, mean
+return = 0.1409, mean drawdown = -0.2423, turnover = 0.3548, and effective
+assets = 1.0618.
+
+`moderate_balanced_lambda_0075`: robust Sharpe 0.5 = 0.1280, mean Sharpe =
+0.4748, mean return = 0.1325, mean drawdown = -0.2560, turnover = 0.6135, and
+effective assets = 1.2568.
+
+`moderate_balanced_lambda_005`: robust Sharpe 0.5 = 0.0899.
+
+`moderate_balanced_lambda_003`: robust Sharpe 0.5 = -0.0169.
+
+`moderate_balanced_lambda_001`: robust Sharpe 0.5 = -0.1980.
+
+**Interpretation:**  
+The mandate reward changes behavior, but it does not yet improve robust
+performance. The baseline still wins on robust Sharpe. `lambda_0075` is the
+closest mandate-aware setting, but it remains below the baseline. `lambda_001`
+showed the clearest cash-trap behavior. Higher lambda values improved
+effective assets, but did not clearly improve dominant-asset forward quality.
+
+**Decision:**  
+The mandate-aware reward should remain experimental, not default. The next
+research step should not be random penalty tuning. It should be a clearer
+hypothesis about when concentration is justified and when mandate penalties
+should relax or activate.

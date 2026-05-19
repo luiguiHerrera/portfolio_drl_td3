@@ -101,6 +101,13 @@ def build_shadow_mandate_penalty_observations(
         window=volatility_window,
     )
     result = result.dropna(subset=["trailing_volatility", "effective_assets"]).copy()
+    result = result.drop(
+        columns=[
+            column
+            for column in [*BREACH_COLUMNS, "mandate_penalty"]
+            if column in result.columns
+        ]
+    )
 
     mandate_limits = get_mandate_limits(mandate_profile)
     penalty_rows = []

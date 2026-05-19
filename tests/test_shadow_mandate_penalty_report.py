@@ -65,6 +65,21 @@ class ShadowMandatePenaltyReportTests(unittest.TestCase):
         ]:
             self.assertIn(column, result.columns)
 
+    def test_build_observations_replaces_existing_mandate_columns(self):
+        history = self._history()
+        history["mandate_penalty"] = 999.0
+        history["drawdown_breach"] = 999.0
+
+        result = build_shadow_mandate_penalty_observations(
+            history,
+            mandate_profile="moderate",
+            volatility_window=3,
+        )
+
+        self.assertEqual(result.columns.tolist().count("mandate_penalty"), 1)
+        self.assertEqual(result.columns.tolist().count("drawdown_breach"), 1)
+        self.assertLess(result["mandate_penalty"].mean(), 999.0)
+
     def test_build_observations_drops_rows_without_trailing_volatility(self):
         history = self._history()
 

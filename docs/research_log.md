@@ -926,3 +926,122 @@ hurdle for future TD3 and reward-design improvements.
 Do not add complexity blindly. The next research step should be reward or
 mandate redesign only if it can improve against these dynamic benchmark
 hurdles.
+
+## Entry X — Mandate-Aware Reward Infrastructure and Diagnostics
+
+**Date:** 2026-05-19
+
+**Purpose:**  
+Prepare mandate-aware reward experiments without treating concentration as an
+automatic failure. The goal is to separate useful concentrated allocation from
+reward gaming, passive cash behavior, and mandate-incompatible exposure.
+
+**Fresh-market runner fix:**  
+The fresh-market workflow now updates market data first, writes a local returns
+snapshot, and then trains from a generated config that points to that snapshot.
+The generated config uses the actual snapshot end date instead of silently
+clipping back to the base config's stale historical `data.end_date`.
+
+The live smoke requested data through `requested_end_date = 2026-05-19`. The
+refreshed local returns snapshot ended at `market_data_end = 2026-05-15`, had
+shape [593, 5], and had 0 missing values.
+`snapshot_end_used_in_generated_config = 2026-05-15`.
+
+**Mandate-aware reward infrastructure:**  
+Added mandate profiles and pure mandate penalty components, then integrated
+the mandate penalty into the active reward as an opt-in additive term:
+
+```text
+reward_new = reward_old - lambda_mandate * mandate_penalty
+```
+
+Default behavior remains unchanged unless `reward.use_mandate_penalty = true`.
+This is infrastructure for controlled experiments, not a conclusion that the
+mandate reward is calibrated.
+
+**Mandate smoke:**  
+Using `data/processed/returns_weekly_latest.csv`, `training.episodes = 3`, and
+a moderate mandate penalty configuration, the first saved smoke comparison
+showed:
+
+- `baseline_no_mandate`: test Sharpe = 1.5066, test cumulative return =
+  0.7694, max drawdown = -0.1688, average turnover = 0.3551, and average
+  effective number of assets = 1.0663.
+- `mandate_moderate`: test Sharpe = -0.4136, test cumulative return =
+  -0.0009, max drawdown = -0.0009, average turnover = 0.0200, and average
+  effective number of assets = 1.0037.
+
+This first smoke suggested that the mandate penalty could reduce turnover and
+drawdown but might also create a passive defensive allocation. A later rerun
+concentrated mostly in GLD and improved concentration-quality metrics versus
+equal weight across horizons. Therefore these smoke runs are behavior evidence,
+not performance evidence.
+
+**Mandate penalty component means:**  
+For the rerun `mandate_moderate` test policy history, the mean penalty
+components were:
+
+- `mandate_penalty = 0.402616`
+- `drawdown_breach = 0.000000`
+- `volatility_breach = 0.006086`
+- `max_weight_breach = 0.196417`
+- `effective_assets_breach = 0.242750`
+- `turnover_breach = 0.009509`
+
+The penalty was driven mainly by max-weight concentration and low effective
+number of assets, not drawdown.
+
+**Concentration quality diagnostics:**  
+The concentration quality diagnostic evaluates whether the dominant asset was
+subsequently rewarded by realized returns.
+
+`baseline_no_mandate`:
+
+- Horizon 1: best-rate = 0.1954, beats equal weight = 0.5287, excess vs equal
+  weight = 0.0008.
+- Horizon 4: best-rate = 0.1667, beats equal weight = 0.5357, excess vs equal
+  weight = 0.0031.
+- Horizon 12: best-rate = 0.0395, beats equal weight = 0.5132, excess vs equal
+  weight = -0.0065.
+
+`mandate_moderate`:
+
+- Horizon 1: best-rate = 0.3563, beats equal weight = 0.6207, excess vs equal
+  weight = 0.0041.
+- Horizon 4: best-rate = 0.4405, beats equal weight = 0.6548, excess vs equal
+  weight = 0.0169.
+- Horizon 12: best-rate = 0.5789, beats equal weight = 0.7105, excess vs equal
+  weight = 0.0677.
+
+In this rerun, concentration in GLD looked more justified ex post than the
+baseline's dominant choices. This does not prove robust performance, but it
+does show why concentration should not be rejected mechanically.
+
+**Cash allocation diagnostics:**  
+Added a cash allocation diagnostic to distinguish valid defensive cash from a
+cash trap. With `normal_cash_max = 0.10`, the latest smoke produced:
+
+- Baseline max cash = 0.000085.
+- Mandate max cash = 0.027275.
+- Cash above normal rate = 0.0 for both strategies.
+
+The current smoke does not show a cash trap, so no cash cap should be added
+yet. If future policies hide in CASH, the diagnostic can test whether that
+cash exposure occurred during risk-off states and what the forward opportunity
+cost was.
+
+**Tests:**  
+After the diagnostics and reward-debug export updates,
+`python3 -m unittest discover tests` ran 658 tests OK.
+
+**Interpretation:**  
+Do not treat concentration as automatically bad. The latest evidence says the
+cash trap is not present in the saved smoke, and GLD concentration may be
+justified in this short run. But this is still a small smoke experiment, not
+robust performance evidence.
+
+**Next decision:**  
+Run a controlled mandate-reward mini-grid before making more penalty changes.
+The next experiment should vary mandate penalty weights deliberately and
+compare not only Sharpe and drawdown, but also mandate breaches, concentration
+quality, cash allocation quality, and dynamic benchmark hurdles.

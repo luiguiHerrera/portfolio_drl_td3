@@ -93,8 +93,62 @@ class BuildDatasetTests(unittest.TestCase):
         self.assertNotIn(pd.Timestamp("2019-12-27"), result.index)
         self.assertNotIn(pd.Timestamp("2024-01-05"), result.index)
 
+    def test_build_returns_dataset_uses_configured_returns_snapshot_without_download(self):
+        snapshot = self.returns.reset_index(names="date")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            returns_path = Path(temp_dir) / "returns.csv"
+            config_path = Path(temp_dir) / "config.yaml"
+            snapshot.to_csv(returns_path, index=False)
+            config_path.write_text(
+                self._config_text(
+                    extra_data_lines=f"""
+  returns_path: {returns_path}
+  returns_date_column: date
+"""
+                ),
+                encoding="utf-8",
+            )
+            with patch("src.data.build_dataset.download_prices") as download_mock:
+                result = build_returns_dataset(str(config_path))
+
+        download_mock.assert_not_called()
+        pd.testing.assert_frame_equal(result, self.returns, check_freq=False)
+
+    def test_configured_returns_snapshot_missing_path_raises_file_not_found(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_returns_path = Path(temp_dir) / "missing_returns.csv"
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                self._config_text(
+                    extra_data_lines=f"""
+  returns_path: {missing_returns_path}
+  returns_date_column: date
+"""
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(FileNotFoundError, "Returns snapshot not found"):
+                build_returns_dataset(str(config_path))
+
     def _temporary_config(self):
-        config_text = f"""
+        config_text = self._config_text()
+        temp_dir = tempfile.TemporaryDirectory()
+        config_path = Path(temp_dir.name) / "config.yaml"
+        config_path.write_text(config_text, encoding="utf-8")
+
+        class TemporaryConfig:
+            def __enter__(self_inner):
+                return str(config_path)
+
+            def __exit__(self_inner, exc_type, exc_value, traceback):
+                temp_dir.cleanup()
+
+        return TemporaryConfig()
+
+    def _config_text(self, extra_data_lines: str = ""):
+        return f"""
 project:
   name: portfolio_drl_td3_test
   description: Temporary test config for dataset builder
@@ -109,6 +163,7 @@ data:
   frequency: {self.frequency}
   start_date: {self.start_date}
   end_date: {self.end_date}
+{extra_data_lines.rstrip()}
 environment:
   initial_cash: 100000
   transaction_cost: 0.001
@@ -140,18 +195,6 @@ training:
   validation_ratio: 0.15
   test_ratio: 0.15
 """
-        temp_dir = tempfile.TemporaryDirectory()
-        config_path = Path(temp_dir.name) / "config.yaml"
-        config_path.write_text(config_text, encoding="utf-8")
-
-        class TemporaryConfig:
-            def __enter__(self_inner):
-                return str(config_path)
-
-            def __exit__(self_inner, exc_type, exc_value, traceback):
-                temp_dir.cleanup()
-
-        return TemporaryConfig()
 
     def _patched_pipeline(self, returns: pd.DataFrame | None = None):
         if returns is None:

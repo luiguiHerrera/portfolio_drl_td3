@@ -32,6 +32,8 @@ comparison, sensitivity analysis, and appropriate validation design.
 - Yahoo Finance download support for market assets.
 - Synthetic `CASH` asset handling with zero return.
 - Price preprocessing and weekly return construction.
+- Local return snapshots through `data.returns_path` for reproducible runs
+  without downloading inside training.
 - Return-based feature engineering.
 - Chronological train, validation, and test splitting.
 - Train-only feature normalization.
@@ -54,7 +56,8 @@ reward =
     - lambda_drawdown * drawdown
 ```
 
-Dynamic Sharpe reward terms are not implemented yet.
+Mandate-aware reward penalties are opt-in. Default reward behavior remains
+unchanged.
 
 ### TD3 Model
 
@@ -223,6 +226,10 @@ results in memory. It returns:
 Comparison summaries include the best individual buy-and-hold benchmark by
 Sharpe ratio and the agent's metric differences versus that benchmark.
 
+Fresh-market experiments can update market data first, write a local returns
+snapshot, and then train from that snapshot. Training itself does not need to
+download data.
+
 `run_and_save_basic_experiment(config_path, output_dir, experiment_name)` runs
 the same experiment and saves selected CSV outputs. Saved files include:
 
@@ -236,33 +243,17 @@ the same experiment and saves selected CSV outputs. Saved files include:
 - `validation_policy_history.csv`;
 - `test_policy_history.csv`.
 
-Diagnostic CSV outputs preserve allocation risk fields and flattened final
-portfolio weights.
+Saved outputs now support ex-post behavior checks:
 
-Policy history CSVs preserve per-period behavior for validation and test
-evaluations: portfolio return, financial net return, portfolio value, drawdown,
-turnover, transaction cost, max weight, cash weight, and `weight_<ASSET>`
-columns. The policy behavior diagnostics module can use these files to analyze
-dominant assets, concentration, transitions, holding periods, and conditional
-performance. This is diagnostic only; it does not change the TD3 agent, reward,
-environment, features, or benchmarks. Concentration is treated as behavior to
-analyze, not automatic failure.
+- per-period policy history;
+- shadow mandate penalties;
+- concentration quality;
+- cash allocation quality;
+- dominant-asset and regime attribution.
 
-Regime attribution support can merge policy history with raw, unnormalized
-evaluation features. This keeps binary regime indicators and macro variables
-interpretable while testing whether dominant-asset concentration is associated
-with market or macro conditions. The attribution layer is descriptive only and
-does not change TD3, rewards, environment behavior, feature construction,
-training, metrics, or benchmarks.
-
-The project also includes a mandate risk diagnostics module for analyzing saved
-metrics and diagnostics against configurable client-style limits. Concentration
-is not treated as automatically bad; it is evaluated as a risk exposure against
-explicit mandate constraints such as `max_drawdown_limit`,
-`max_volatility_limit`, `max_weight_limit`, `min_effective_assets`, and
-`max_turnover_limit`. The current implementation uses manually provided limits
-only. Future work may map suitability or appropriateness test results into
-these quantitative mandate limits.
+Concentration is not automatically bad. The useful question is whether the
+model found edge, followed a valid mandate, or gamed the penalty. Do not tune
+reward blindly.
 
 An explicit walk-forward validation workflow is also implemented for manually
 defined chronological folds. Each fold trains on its own train window, validates

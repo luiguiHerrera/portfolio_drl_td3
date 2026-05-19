@@ -140,6 +140,36 @@ class EvaluateAgentTests(unittest.TestCase):
         self.assertEqual(policy_history.loc[self.returns.index[0], "date"], self.returns.index[0])
         self.assertTrue(pd.api.types.is_datetime64_any_dtype(policy_history["date"]))
 
+    def test_evaluate_agent_policy_history_includes_mandate_fields_when_available(self):
+        result = evaluate_agent(
+            DummyAgent(),
+            self.returns,
+            self.features,
+            reward_config={
+                "use_mandate_penalty": True,
+                "lambda_mandate": 0.1,
+                "mandate_profile": "moderate",
+            },
+        )
+        policy_history = result["policy_history"]
+        expected_columns = {
+            "mandate_penalty",
+            "mandate_drawdown_breach",
+            "mandate_volatility_breach",
+            "mandate_max_weight_breach",
+            "mandate_effective_assets_breach",
+            "mandate_turnover_breach",
+        }
+
+        self.assertTrue(expected_columns.issubset(policy_history.columns))
+
+    def test_evaluate_agent_policy_history_does_not_require_mandate_fields(self):
+        result = evaluate_agent(DummyAgent(), self.returns, self.features)
+        policy_history = result["policy_history"]
+
+        self.assertNotIn("mandate_penalty", policy_history.columns)
+        self.assertNotIn("mandate_max_weight_breach", policy_history.columns)
+
     def test_evaluate_agent_metrics_use_financial_net_returns(self):
         result = evaluate_agent(
             DummyAgent(),

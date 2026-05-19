@@ -10,6 +10,8 @@ portfolio weights through clipping and normalization.
 import numpy as np
 import pandas as pd
 
+from src.risk.mandate_penalties import compute_mandate_penalty
+from src.risk.mandate_profiles import get_mandate_limits
 from src.rewards.reward import (
     compute_risk_aware_reward,
     concentration_penalty,
@@ -56,6 +58,7 @@ class PortfolioEnv:
         self.portfolio_value = initial_cash
         self.peak_portfolio_value = initial_cash
         self.previous_weights = self._equal_weights()
+        self.financial_net_return_history = []
 
     def reset(self) -> np.ndarray:
         """Reset environment state and return the initial observation."""
@@ -63,6 +66,7 @@ class PortfolioEnv:
         self.portfolio_value = self.initial_cash
         self.peak_portfolio_value = self.initial_cash
         self.previous_weights = self._equal_weights()
+        self.financial_net_return_history = []
 
         return self._get_observation()
 
@@ -82,6 +86,7 @@ class PortfolioEnv:
         updated_peak_portfolio_value = max(self.peak_portfolio_value, new_portfolio_value)
         drawdown = drawdown_penalty(new_portfolio_value, updated_peak_portfolio_value)
         concentration = concentration_penalty(weights)
+        self.financial_net_return_history.append(financial_net_return)
         reward = compute_risk_aware_reward(
             portfolio_return=portfolio_return,
             transaction_cost=realized_transaction_cost,
@@ -91,6 +96,16 @@ class PortfolioEnv:
             peak_portfolio_value=updated_peak_portfolio_value,
             reward_config=self.reward_config,
         )
+        mandate_result = None
+        if self.reward_config.get("use_mandate_penalty", False):
+            mandate_result = self._compute_mandate_penalty(
+                drawdown=drawdown,
+                turnover=turnover,
+                weights=weights,
+                concentration=concentration,
+            )
+            lambda_mandate = self._reward_config_number("lambda_mandate", 0.0)
+            reward -= lambda_mandate * mandate_result["penalty"]
 
         self.portfolio_value = new_portfolio_value
         self.peak_portfolio_value = updated_peak_portfolio_value
@@ -113,6 +128,20 @@ class PortfolioEnv:
             "reward": reward,
             "peak_portfolio_value": self.peak_portfolio_value,
         }
+        if mandate_result is not None:
+            breaches = mandate_result["breaches"]
+            info.update(
+                {
+                    "mandate_penalty": mandate_result["penalty"],
+                    "mandate_drawdown_breach": breaches["drawdown_breach"],
+                    "mandate_volatility_breach": breaches["volatility_breach"],
+                    "mandate_max_weight_breach": breaches["max_weight_breach"],
+                    "mandate_effective_assets_breach": breaches[
+                        "effective_assets_breach"
+                    ],
+                    "mandate_turnover_breach": breaches["turnover_breach"],
+                }
+            )
 
         return observation, reward, done, info
 
@@ -134,6 +163,49 @@ class PortfolioEnv:
             return self._equal_weights()
 
         return clipped_action / action_sum
+
+    def _compute_mandate_penalty(
+        self,
+        drawdown: float,
+        turnover: float,
+        weights: np.ndarray,
+        concentration: float,
+    ) -> dict:
+        mandate_limits = get_mandate_limits(
+            self.reward_config.get("mandate_profile", "moderate")
+        )
+        return compute_mandate_penalty(
+            current_drawdown=-drawdown,
+            current_volatility=self._current_trailing_volatility(),
+            max_weight=float(weights.max()),
+            effective_assets=self._effective_assets(concentration),
+            turnover=turnover,
+            mandate_limits=mandate_limits,
+            penalty_weights=self.reward_config.get("mandate_penalty_weights"),
+        )
+
+    def _current_trailing_volatility(self) -> float:
+        window = int(self.reward_config.get("mandate_volatility_window", 12))
+        if len(self.financial_net_return_history) < window:
+            return 0.0
+
+        recent_returns = np.asarray(self.financial_net_return_history[-window:], dtype=float)
+        return float(np.std(recent_returns, ddof=1) * np.sqrt(52))
+
+    def _effective_assets(self, concentration: float) -> float:
+        if concentration <= 0.0:
+            return float("inf")
+
+        return float(1.0 / concentration)
+
+    def _reward_config_number(self, field_name: str, default: float) -> float:
+        value = self.reward_config.get(field_name, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"Reward config field {field_name} must be numeric.")
+        if value < 0.0:
+            raise ValueError(f"Reward config field {field_name} must be non-negative.")
+
+        return float(value)
 
     def _align_returns_and_features(
         self,

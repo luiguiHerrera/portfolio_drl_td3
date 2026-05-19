@@ -237,6 +237,77 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded_config["reward"]["lambda_concentration"], 0.3)
 
+    def test_load_config_accepts_missing_mandate_reward_fields(self):
+        config = _valid_config()
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertNotIn("use_mandate_penalty", loaded_config["reward"])
+
+    def test_load_config_accepts_valid_mandate_reward_fields(self):
+        config = _valid_config()
+        config["reward"].update(
+            {
+                "use_mandate_penalty": True,
+                "lambda_mandate": 0.5,
+                "mandate_profile": "moderate",
+                "mandate_penalty_weights": {
+                    "drawdown_breach": 0.0,
+                    "volatility_breach": 1.0,
+                    "max_weight_breach": 2.0,
+                    "effective_assets_breach": 1.5,
+                    "turnover_breach": 0.5,
+                },
+            }
+        )
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertTrue(loaded_config["reward"]["use_mandate_penalty"])
+        self.assertEqual(loaded_config["reward"]["lambda_mandate"], 0.5)
+
+    def test_load_config_rejects_invalid_use_mandate_penalty(self):
+        config = _valid_config()
+        config["reward"]["use_mandate_penalty"] = "true"
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "reward.use_mandate_penalty"):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_invalid_lambda_mandate(self):
+        config = _valid_config()
+        config["reward"]["lambda_mandate"] = -0.1
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "reward.lambda_mandate"):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_invalid_mandate_profile(self):
+        config = _valid_config()
+        config["reward"]["mandate_profile"] = "unknown"
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "reward.mandate_profile"):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_unknown_mandate_penalty_weight_key(self):
+        config = _valid_config()
+        config["reward"]["mandate_penalty_weights"] = {"unknown_breach": 1.0}
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "mandate_penalty_weights"):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_invalid_mandate_penalty_weight_value(self):
+        config = _valid_config()
+        config["reward"]["mandate_penalty_weights"] = {"max_weight_breach": True}
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "reward.mandate_penalty_weights"):
+                load_config(str(config_path))
+
     def test_load_config_accepts_missing_features_section(self):
         config = _valid_config()
 

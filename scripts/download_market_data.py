@@ -8,6 +8,7 @@ instead of downloading market data during analysis.
 from __future__ import annotations
 
 import argparse
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -17,9 +18,9 @@ import yfinance as yf
 DEFAULT_ASSETS = ("SPY", "TLT", "GLD", "BTC-USD", "CASH")
 SYNTHETIC_ASSETS = {"CASH"}
 DEFAULT_START_DATE = "2015-01-01"
-DEFAULT_END_DATE = "2024-12-31"
+DEFAULT_END_DATE = date.today().isoformat()
 DEFAULT_RAW_DIR = "data/raw/market"
-DEFAULT_OUTPUT_PATH = "data/processed/returns_weekly_2015_2024.csv"
+DEFAULT_OUTPUT_PATH = "data/processed/returns_weekly_latest.csv"
 
 
 def normalize_price_data(raw: pd.DataFrame) -> pd.DataFrame:

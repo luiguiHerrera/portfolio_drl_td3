@@ -41,7 +41,16 @@ OPTIONAL_REWARD_LAMBDAS = (
     "lambda_transaction_cost",
     "lambda_turnover",
     "lambda_concentration",
+    "lambda_mandate",
 )
+MANDATE_PROFILES = {"conservative", "moderate", "aggressive"}
+MANDATE_PENALTY_WEIGHT_KEYS = {
+    "drawdown_breach",
+    "volatility_breach",
+    "max_weight_breach",
+    "effective_assets_breach",
+    "turnover_breach",
+}
 
 
 def load_config(path: str) -> dict:
@@ -95,6 +104,19 @@ def _validate_data(config: dict) -> None:
         valid_values = ", ".join(sorted(SUPPORTED_FREQUENCIES))
         raise ValueError(f"Config field data.frequency must be one of: {valid_values}.")
 
+    returns_path = config["data"].get("returns_path")
+    returns_date_column = config["data"].get("returns_date_column")
+    if returns_path is not None and (
+        not isinstance(returns_path, str) or not returns_path.strip()
+    ):
+        raise ValueError("Config field data.returns_path must be a non-empty string.")
+    if returns_date_column is not None and (
+        not isinstance(returns_date_column, str) or not returns_date_column.strip()
+    ):
+        raise ValueError(
+            "Config field data.returns_date_column must be a non-empty string."
+        )
+
 
 def _validate_environment(config: dict) -> None:
     initial_cash = config["environment"]["initial_cash"]
@@ -117,6 +139,8 @@ def _validate_reward(config: dict) -> None:
                 config["reward"][field_name],
                 f"reward.{field_name}",
             )
+
+    _validate_reward_mandate_fields(config["reward"])
 
 
 def _validate_td3(config: dict) -> None:
@@ -205,6 +229,35 @@ def _validate_assets(config: dict) -> None:
         raise ValueError("All entries in data.assets must be non-empty strings.")
     if len(assets) != len(set(assets)):
         raise ValueError("Config field data.assets must not contain duplicate assets.")
+
+
+def _validate_reward_mandate_fields(reward: dict) -> None:
+    use_mandate_penalty = reward.get("use_mandate_penalty")
+    if use_mandate_penalty is not None and not isinstance(use_mandate_penalty, bool):
+        raise ValueError("Config field reward.use_mandate_penalty must be a bool.")
+
+    mandate_profile = reward.get("mandate_profile")
+    if mandate_profile is not None and mandate_profile not in MANDATE_PROFILES:
+        valid_profiles = ", ".join(sorted(MANDATE_PROFILES))
+        raise ValueError(
+            "Config field reward.mandate_profile must be one of: "
+            f"{valid_profiles}."
+        )
+
+    mandate_penalty_weights = reward.get("mandate_penalty_weights")
+    if mandate_penalty_weights is None:
+        return
+    if not isinstance(mandate_penalty_weights, dict):
+        raise ValueError("Config field reward.mandate_penalty_weights must be a mapping.")
+
+    unknown_keys = set(mandate_penalty_weights) - MANDATE_PENALTY_WEIGHT_KEYS
+    if unknown_keys:
+        raise ValueError(
+            "Config field reward.mandate_penalty_weights contains unsupported keys: "
+            f"{sorted(unknown_keys)}."
+        )
+    for key, value in mandate_penalty_weights.items():
+        _validate_non_negative_number(value, f"reward.mandate_penalty_weights.{key}")
 
 
 def _validate_ratio_sum(config: dict) -> None:

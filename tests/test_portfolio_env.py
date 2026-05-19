@@ -89,6 +89,29 @@ class PortfolioEnvTests(unittest.TestCase):
             info["portfolio_return"] - info["transaction_cost"],
         )
 
+    def test_reward_unchanged_when_mandate_penalty_missing_or_false(self):
+        action = np.array([1.0, 0.0, 0.0, 0.0, 0.0])
+        baseline_env = PortfolioEnv(self.returns, transaction_cost=0.0)
+        disabled_env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "use_mandate_penalty": False,
+                "lambda_mandate": 100.0,
+            },
+        )
+        baseline_env.reset()
+        disabled_env.reset()
+
+        _, baseline_reward, _, baseline_info = baseline_env.step(action)
+        _, disabled_reward, _, disabled_info = disabled_env.step(action)
+
+        self.assertAlmostEqual(disabled_reward, baseline_reward)
+        self.assertNotIn("mandate_penalty", baseline_info)
+        self.assertNotIn("mandate_penalty", disabled_info)
+
     def test_custom_reward_config_turnover_penalty_reduces_reward(self):
         env = PortfolioEnv(
             self.returns,
@@ -123,6 +146,127 @@ class PortfolioEnvTests(unittest.TestCase):
             reward,
             info["portfolio_return"] - 0.1 * info["concentration"],
         )
+
+    def test_mandate_penalty_enabled_reduces_reward_when_breaches_exist(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "use_mandate_penalty": True,
+                "lambda_mandate": 1.0,
+                "mandate_profile": "moderate",
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([0.95, 0.05, 0.0, 0.0, 0.0]))
+
+        self.assertGreater(info["mandate_penalty"], 0.0)
+        self.assertLess(reward, info["portfolio_return"])
+
+    def test_aggressive_profile_does_not_penalize_all_in_max_weight(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "use_mandate_penalty": True,
+                "lambda_mandate": 1.0,
+                "mandate_profile": "aggressive",
+            },
+        )
+        env.reset()
+
+        _, _, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        self.assertEqual(info["mandate_max_weight_breach"], 0.0)
+
+    def test_moderate_profile_penalizes_high_max_weight(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "use_mandate_penalty": True,
+                "lambda_mandate": 1.0,
+                "mandate_profile": "moderate",
+            },
+        )
+        env.reset()
+
+        _, _, _, info = env.step(np.array([0.95, 0.05, 0.0, 0.0, 0.0]))
+
+        self.assertAlmostEqual(info["mandate_max_weight_breach"], 0.15)
+
+    def test_volatility_penalty_uses_only_observed_returns(self):
+        returns = pd.DataFrame(
+            {
+                "SPY": [0.01, 0.01, -0.50],
+                "TLT": [0.00, 0.00, 0.00],
+                "GLD": [0.00, 0.00, 0.00],
+                "BTC-USD": [0.00, 0.00, 0.00],
+                "CASH": [0.00, 0.00, 0.00],
+            },
+            index=pd.date_range("2024-01-05", periods=3, freq="W-FRI"),
+        )
+        env = PortfolioEnv(
+            returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "use_mandate_penalty": True,
+                "lambda_mandate": 1.0,
+                "mandate_profile": "moderate",
+                "mandate_penalty_weights": {
+                    "drawdown_breach": 0.0,
+                    "volatility_breach": 1.0,
+                    "max_weight_breach": 0.0,
+                    "effective_assets_breach": 0.0,
+                    "turnover_breach": 0.0,
+                },
+                "mandate_volatility_window": 2,
+            },
+        )
+        env.reset()
+
+        _, _, _, first_info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+        _, _, _, second_info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+        _, _, _, third_info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        self.assertEqual(first_info["mandate_volatility_breach"], 0.0)
+        self.assertEqual(second_info["mandate_volatility_breach"], 0.0)
+        self.assertGreater(third_info["mandate_volatility_breach"], 0.0)
+
+    def test_info_includes_mandate_debug_fields_when_enabled(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "use_mandate_penalty": True,
+                "lambda_mandate": 1.0,
+                "mandate_profile": "moderate",
+            },
+        )
+        env.reset()
+
+        _, _, _, info = env.step(np.array([0.95, 0.05, 0.0, 0.0, 0.0]))
+
+        for key in [
+            "mandate_penalty",
+            "mandate_drawdown_breach",
+            "mandate_volatility_breach",
+            "mandate_max_weight_breach",
+            "mandate_effective_assets_breach",
+            "mandate_turnover_breach",
+        ]:
+            self.assertIn(key, info)
 
     def test_info_includes_risk_aware_reward_fields(self):
         env = PortfolioEnv(self.returns)

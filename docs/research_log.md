@@ -2498,3 +2498,113 @@ now explicit in `dsr_method` and metadata.
 The protocol comparison runner can now compare benchmarks and TD3 candidates
 with a shared robust-score reporting layer. This closes the main ranking
 fairness issue in the combined protocol infrastructure.
+
+## Entry X — Protocol-Pure TD3 Revalidation
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Run a clean protocol-pure TD3 revalidation under the current common experimental
+protocol, instead of relying only on historical candidate outputs.
+
+**Setup:**  
+
+Candidates:
+
+- `V2_reference_full`
+- `V5_no_volatility_block`
+- `V6_financial_state`
+
+Run configuration:
+
+- `returns_path = data/processed/returns_weekly_latest.csv`
+- episodes = 30
+- seeds = `[7, 21, 42, 84, 101]`
+- expanding walk-forward
+- transaction cost = 0.001
+- cleaned reward/config semantics
+- `lambda_sharpe_present_or_active = false`
+- `robust_score_training_usage = evaluation_only`
+
+Output directory:
+
+`outputs/tables/protocol_pure_td3_revalidation_30ep_5seeds`
+
+Combined protocol comparison output:
+
+`outputs/tables/protocol_pure_td3_comparison_30ep_5seeds`
+
+**TD3 test aggregate:**  
+
+`V2_reference_full`:
+
+- mean Sharpe = 0.3682
+- robust Sharpe = -0.2670
+- robust_score = 0.6297
+- max drawdown = -0.2033
+- average turnover = 0.6070
+
+`V5_no_volatility_block`:
+
+- mean Sharpe = 0.1810
+- robust Sharpe = -0.3995
+- robust_score = 0.1178
+- max drawdown = -0.2288
+- average turnover = 0.6238
+
+`V6_financial_state`:
+
+- mean Sharpe = 0.4683
+- robust Sharpe = 0.0164
+- robust_score = 0.4619
+- max drawdown = -0.2401
+- average turnover = 0.4232
+
+**TD3 interpretation:**  
+V6 delivered the highest Sharpe among TD3 candidates in the protocol-pure run.
+However, V2 ranked higher by composite `robust_score`, mainly because its
+drawdown, Sortino/Calmar components, and conservative DSR aggregation produced
+a stronger composite profile.
+
+Therefore:
+
+- Best TD3 by Sharpe: `V6_financial_state`
+- Best TD3 by robust_score: `V2_reference_full`
+- Weakest TD3 in this protocol-pure run: `V5_no_volatility_block`
+
+**Combined benchmark comparison:**  
+After adding benchmark robust scores to the combined protocol runner, benchmarks
+dominated the top robust-score ranks:
+
+- `momentum_winner_12p`: `robust_score = 0.8575`
+- `Equal_Weight_Risky`: `robust_score = 0.8123`
+- `Equal_Weight`: `robust_score = 0.8004`
+- `risk_adjusted_momentum_winner_12p_12p`: `robust_score = 0.7789`
+- `rolling_markowitz_long_only_52p`: `robust_score = 0.7677`
+- `rolling_risk_parity_inverse_vol_12p`: `robust_score = 0.7355`
+
+The best TD3 candidate by robust_score, `V2_reference_full`, ranked below these
+benchmarks.
+
+**Conclusion:**  
+Under the current common protocol, TD3 does not demonstrate benchmark
+superiority. The protocol-pure run supports a conservative conclusion: TD3
+candidates are research-relevant, but simple and dynamic benchmark strategies
+remain stronger under the current evaluation design.
+
+**Research implication:**  
+The project should not claim that TD3 beats traditional or transparent dynamic
+benchmarks. The stronger contribution is methodological: a protocol-aware DRL
+portfolio evaluation framework with investable timing, transaction costs,
+walk-forward validation, conservative DSR aggregation, and benchmark
+comparability.
+
+Future work should focus on explaining why TD3 fails to dominate, improving
+state/reward design only with clear hypotheses, and avoiding benchmark
+overfitting.
+
+**Tests:**  
+
+- `python3 -m unittest tests/test_run_protocol_pure_td3_revalidation.py`: 5 tests OK
+- `python3 -m unittest tests/test_run_protocol_td3_comparison.py`: 17 tests OK
+- `python3 -m unittest discover tests`: 886 tests OK

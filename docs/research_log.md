@@ -1286,3 +1286,70 @@ penalty, especially `free_band = 0.20`, looks more promising. The quadratic
 The current candidate for future experiments is `excess_linear` turnover with
 `turnover_free_band = 0.20`. It should remain experimental, not default, until
 tested across stronger folds and seeds.
+
+## Entry X — V5 Dynamic CASH Penalty Weight Sweep
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Test whether a dynamic conditional CASH penalty using raw V5 `risk_off_state`
+can reduce unjustified high CASH exposure. Also test whether lower cash
+penalty weights allow justified CASH allocation during risk-off states.
+
+**Experiment:**  
+Used V5 features, raw auxiliary regime features from
+`build_v5_regime_auxiliary_features`, `data/processed/returns_weekly_latest.csv`,
+`episodes = 10`, seeds `[7, 42, 101]`, `turnover_penalty_mode =
+excess_linear`, and `turnover_free_band = 0.20`. Mandate penalty was disabled.
+The cash penalty was dynamic through `reward.cash_risk_off_column =
+risk_off_state`. Auxiliary regime features were used only for reward/business
+rules and were not neural observations.
+
+**Aggregate result:**  
+`dynamic_cash_weight_025`: robust Sharpe = 1.8846, mean Sharpe = 2.1214,
+mean return = 1.6936, mean drawdown = -0.1562, turnover = 0.2161, effective
+assets = 1.0324, mean cash = 0.0000, and cash above 10% rate = 0.0000.
+
+`dynamic_cash_weight_010`: robust Sharpe = 1.6186, mean Sharpe = 1.7135,
+mean return = 1.6038, mean drawdown = -0.1846, turnover = 0.1449, effective
+assets = 1.0138, mean cash = 0.0000, and cash above 10% rate = 0.0000.
+
+`dynamic_cash_weight_0025`: robust Sharpe = 0.9734, mean Sharpe = 1.0944,
+mean return = 0.2969, mean drawdown = -0.1000, turnover = 0.4652, effective
+assets = 1.2340, mean cash = 0.0085, and cash above 10% rate = 0.0173.
+
+`dynamic_cash_weight_005`: robust Sharpe = 0.6558, mean Sharpe = 0.9153,
+mean return = 0.2763, mean drawdown = -0.1676, turnover = 0.5189, effective
+assets = 1.2769, mean cash = 0.1941, and cash above 10% rate = 0.2251.
+
+`no_cash_penalty`: robust Sharpe = 0.9432, mean Sharpe = 1.1675, mean return
+= 0.2667, mean drawdown = -0.1254, turnover = 0.4351, effective assets =
+1.2500, mean cash = 0.1504, and cash above 10% rate = 0.2035.
+
+**Cash attribution:**  
+The V5 risk-off rate was 0.0649 across runs. `dynamic_cash_weight_025` and
+`dynamic_cash_weight_010` eliminated high cash. Lower weights did not create
+clearly justified high CASH exposure: share of high-cash observations in
+risk-off was 0.0000 for weight 0.0025 and only 0.0321 for weight 0.005.
+
+**Concentration quality, horizon 12:**  
+`dynamic_cash_weight_010`: best-asset rate = 0.4978, beats-equal rate =
+0.6190, excess versus equal weight = 0.1198, and mean rank = 2.3377.
+
+`dynamic_cash_weight_025`: best-asset rate = 0.4199, beats-equal rate =
+0.5758, excess versus equal weight = 0.0861, and mean rank = 2.3810.
+
+`no_cash_penalty`: best-asset rate = 0.0823, beats-equal rate = 0.2944,
+excess versus equal weight = -0.0302, and mean rank = 3.0736.
+
+**Interpretation:**  
+The dynamic CASH penalty successfully reduces unjustified high CASH exposure.
+However, the current `risk_off_state` does not appear to generate justified
+high CASH allocation; high CASH mostly disappears instead of concentrating in
+risk-off periods. Weight 0.010 has the best horizon-12 concentration quality.
+Weight 0.025 has the strongest robust Sharpe but remains highly concentrated.
+
+**Decision:**  
+Both 0.010 and 0.025 should be treated as experimental candidates, not
+defaults. The next step is to evaluate them with more seeds and episodes, and
+inspect which assets receive the displaced allocation.

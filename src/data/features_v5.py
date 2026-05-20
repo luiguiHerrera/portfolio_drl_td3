@@ -61,6 +61,54 @@ def build_features_v5(
     return features
 
 
+def build_v5_regime_auxiliary_features(
+    returns: pd.DataFrame,
+    market_asset: str = "SPY",
+    correlation_window: int = 12,
+    drawdown_window: int = 12,
+    risk_off_threshold: float = 2.0,
+) -> pd.DataFrame:
+    """Build raw V5 regime flags for auxiliary reward/business-rule logic."""
+    short_window = 4
+    long_window = 12
+    ewma_span = 12
+    _validate_inputs(
+        returns=returns,
+        market_asset=market_asset,
+        short_window=short_window,
+        long_window=long_window,
+        ewma_span=ewma_span,
+        correlation_window=correlation_window,
+        drawdown_window=drawdown_window,
+        risk_off_threshold=risk_off_threshold,
+    )
+    regime_features = _build_regime_correlation_features(
+        returns=returns,
+        market_asset=market_asset,
+        short_window=short_window,
+        long_window=long_window,
+        correlation_window=correlation_window,
+        drawdown_window=drawdown_window,
+        risk_off_threshold=risk_off_threshold,
+    )
+    auxiliary_columns = [
+        "regime_market_trend_positive",
+        "regime_market_trend_negative",
+        "regime_market_drawdown_stress",
+        "regime_market_high_vol",
+        "correlation_stress",
+        "risk_off_score",
+        "risk_off_state",
+    ]
+    auxiliary_features = regime_features[auxiliary_columns].dropna()
+    if auxiliary_features.empty:
+        raise ValueError(
+            "V5 regime auxiliary features are empty after dropping unavailable rows."
+        )
+
+    return auxiliary_features
+
+
 def _build_regime_correlation_features(
     returns: pd.DataFrame,
     market_asset: str,

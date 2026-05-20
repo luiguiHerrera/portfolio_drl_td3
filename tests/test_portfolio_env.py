@@ -44,6 +44,20 @@ class PortfolioEnvTests(unittest.TestCase):
         self.assertEqual(observation.shape, (3,))
         np.testing.assert_allclose(observation, self.features.iloc[0].to_numpy())
 
+    def test_observation_shape_unchanged_when_auxiliary_features_are_provided(self):
+        auxiliary_features = self._auxiliary_features([1.0, 0.0, 1.0])
+        env = PortfolioEnv(
+            self.returns,
+            features=self.features,
+            auxiliary_features=auxiliary_features,
+        )
+
+        observation = env.reset()
+
+        self.assertEqual(observation.shape, (3,))
+        self.assertEqual(env.observation_dim, len(self.features.columns))
+        self.assertEqual(list(env.auxiliary_features.columns), ["risk_off_state"])
+
     def test_returns_and_features_are_aligned_by_shared_index(self):
         extra_index = pd.date_range("2023-12-29", periods=5, freq="W-FRI")
         features = pd.DataFrame(
@@ -177,6 +191,126 @@ class PortfolioEnvTests(unittest.TestCase):
         self.assertEqual(info["cash_breach"], 0.0)
         self.assertEqual(info["cash_penalty"], 0.0)
         self.assertAlmostEqual(reward, info["portfolio_return"])
+
+    def test_cash_penalty_uses_static_risk_off_state_without_dynamic_column(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            auxiliary_features=self._auxiliary_features([0.0, 0.0, 0.0]),
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "use_cash_risk_off_penalty": True,
+                "normal_cash_max": 0.10,
+                "cash_penalty_weight": 1.0,
+                "cash_risk_off_state": True,
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([0.0, 0.0, 0.0, 0.0, 1.0]))
+
+        self.assertEqual(info["cash_penalty"], 0.0)
+        self.assertNotIn("cash_risk_off_column", info)
+        self.assertAlmostEqual(reward, info["portfolio_return"])
+
+    def test_cash_penalty_uses_dynamic_auxiliary_risk_off_state(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            auxiliary_features=self._auxiliary_features([1.0, 0.0, 0.0]),
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "use_cash_risk_off_penalty": True,
+                "normal_cash_max": 0.10,
+                "cash_penalty_weight": 1.0,
+                "cash_risk_off_column": "risk_off_state",
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([0.0, 0.0, 0.0, 0.0, 1.0]))
+
+        self.assertEqual(info["cash_breach"], 0.0)
+        self.assertEqual(info["cash_penalty"], 0.0)
+        self.assertTrue(info["cash_risk_off_state"])
+        self.assertEqual(info["cash_risk_off_column"], "risk_off_state")
+        self.assertAlmostEqual(reward, info["portfolio_return"])
+
+    def test_cash_penalty_penalizes_high_cash_outside_dynamic_risk_off(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            auxiliary_features=self._auxiliary_features([0.0, 1.0, 1.0]),
+            reward_config={
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "use_cash_risk_off_penalty": True,
+                "normal_cash_max": 0.10,
+                "cash_penalty_weight": 1.0,
+                "cash_risk_off_column": "risk_off_state",
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([0.0, 0.0, 0.0, 0.0, 1.0]))
+
+        self.assertAlmostEqual(info["cash_breach"], 0.90)
+        self.assertAlmostEqual(info["cash_penalty"], 0.90)
+        self.assertFalse(info["cash_risk_off_state"])
+        self.assertAlmostEqual(reward, info["portfolio_return"] - 0.90)
+
+    def test_cash_risk_off_column_requires_auxiliary_features(self):
+        with self.assertRaisesRegex(ValueError, "auxiliary_features are required"):
+            PortfolioEnv(
+                self.returns,
+                reward_config={
+                    "use_cash_risk_off_penalty": True,
+                    "cash_risk_off_column": "risk_off_state",
+                },
+            )
+
+    def test_cash_risk_off_column_requires_existing_auxiliary_column(self):
+        auxiliary_features = self._auxiliary_features([0.0, 1.0, 0.0])
+
+        with self.assertRaisesRegex(ValueError, "cash risk-off column"):
+            PortfolioEnv(
+                self.returns,
+                auxiliary_features=auxiliary_features,
+                reward_config={
+                    "use_cash_risk_off_penalty": True,
+                    "cash_risk_off_column": "missing_state",
+                },
+            )
+
+    def test_cash_risk_off_column_rejects_nan_values(self):
+        auxiliary_features = self._auxiliary_features([0.0, np.nan, 1.0])
+
+        with self.assertRaisesRegex(ValueError, "contains NaN"):
+            PortfolioEnv(
+                self.returns,
+                auxiliary_features=auxiliary_features,
+                reward_config={
+                    "use_cash_risk_off_penalty": True,
+                    "cash_risk_off_column": "risk_off_state",
+                },
+            )
+
+    def test_auxiliary_features_are_aligned_by_matching_dates(self):
+        auxiliary_features = self._auxiliary_features([0.0, 1.0, 0.0])
+        auxiliary_features = auxiliary_features.iloc[[2, 0, 1]]
+
+        env = PortfolioEnv(
+            self.returns,
+            features=self.features,
+            auxiliary_features=auxiliary_features,
+        )
+
+        self.assertTrue(env.returns.index.equals(self.returns.index))
+        self.assertTrue(env.features.index.equals(self.returns.index))
+        self.assertTrue(env.auxiliary_features.index.equals(self.returns.index))
+        self.assertEqual(env.auxiliary_features.iloc[1]["risk_off_state"], 1.0)
 
     def test_info_includes_cash_penalty_fields_when_enabled(self):
         env = PortfolioEnv(
@@ -620,6 +754,12 @@ class PortfolioEnvTests(unittest.TestCase):
 
         with self.assertRaises(RuntimeError):
             env.step(np.full(5, 1.0))
+
+    def _auxiliary_features(self, values: list[float]) -> pd.DataFrame:
+        return pd.DataFrame(
+            {"risk_off_state": values},
+            index=self.returns.index,
+        )
 
 
 if __name__ == "__main__":

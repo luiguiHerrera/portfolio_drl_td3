@@ -36,6 +36,7 @@ class PortfolioEnv:
         self,
         returns: pd.DataFrame,
         features: pd.DataFrame | None = None,
+        auxiliary_features: pd.DataFrame | None = None,
         initial_cash: float = 100000.0,
         transaction_cost: float = 0.001,
         reward_config: dict | None = None,
@@ -45,15 +46,23 @@ class PortfolioEnv:
         if transaction_cost < 0:
             raise ValueError("transaction_cost must be non-negative.")
 
+        self.reward_config = (
+            DEFAULT_REWARD_CONFIG.copy() if reward_config is None else reward_config.copy()
+        )
         self.returns, self.features = self._align_returns_and_features(returns, features)
+        self.returns, self.features, self.auxiliary_features = (
+            self._align_auxiliary_features(
+                self.returns,
+                self.features,
+                auxiliary_features,
+            )
+        )
         self.n_assets = len(self.returns.columns)
         self.observation_dim = len(self.features.columns)
         self.asset_names = list(self.returns.columns)
         self.initial_cash = initial_cash
         self.transaction_cost = transaction_cost
-        self.reward_config = (
-            DEFAULT_REWARD_CONFIG.copy() if reward_config is None else reward_config.copy()
-        )
+        self._validate_cash_risk_off_auxiliary_config()
 
         self.current_step = 0
         self.portfolio_value = initial_cash
@@ -201,7 +210,7 @@ class PortfolioEnv:
     def _compute_cash_penalty(self, weights: np.ndarray) -> dict:
         normal_cash_max = self._reward_config_number("normal_cash_max", 0.10)
         cash_penalty_weight = self._reward_config_number("cash_penalty_weight", 1.0)
-        cash_risk_off_state = self._reward_config_bool("cash_risk_off_state", False)
+        cash_risk_off_state = self._current_cash_risk_off_state()
         cash_weight = self._current_cash_weight(weights)
         cash_breach = compute_cash_breach(
             cash_weight=cash_weight,
@@ -215,6 +224,7 @@ class PortfolioEnv:
             "cash_breach": cash_breach,
             "normal_cash_max": normal_cash_max,
             "cash_risk_off_state": cash_risk_off_state,
+            **self._cash_risk_off_column_info(),
         }
 
     def _compute_turnover_penalty(self, turnover: float) -> dict:
@@ -252,6 +262,35 @@ class PortfolioEnv:
 
         return float(weights[self.asset_names.index("CASH")])
 
+    def _current_cash_risk_off_state(self) -> bool:
+        cash_risk_off_column = self.reward_config.get("cash_risk_off_column")
+        if cash_risk_off_column is None:
+            return self._reward_config_bool("cash_risk_off_state", False)
+
+        if self.auxiliary_features is None:
+            raise ValueError(
+                "auxiliary_features are required when reward.cash_risk_off_column "
+                "is configured."
+            )
+        value = self.auxiliary_features.iloc[self.current_step][cash_risk_off_column]
+        if pd.isna(value):
+            raise ValueError(
+                f"Auxiliary cash risk-off column '{cash_risk_off_column}' contains NaN."
+            )
+        try:
+            return float(value) >= 0.5
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Auxiliary cash risk-off column '{cash_risk_off_column}' must be numeric."
+            ) from exc
+
+    def _cash_risk_off_column_info(self) -> dict:
+        cash_risk_off_column = self.reward_config.get("cash_risk_off_column")
+        if cash_risk_off_column is None:
+            return {}
+
+        return {"cash_risk_off_column": cash_risk_off_column}
+
     def _current_trailing_volatility(self) -> float:
         window = int(self.reward_config.get("mandate_volatility_window", 12))
         if len(self.financial_net_return_history) < window:
@@ -282,6 +321,28 @@ class PortfolioEnv:
 
         return value
 
+    def _validate_cash_risk_off_auxiliary_config(self) -> None:
+        cash_risk_off_column = self.reward_config.get("cash_risk_off_column")
+        if cash_risk_off_column is None:
+            return
+        if not isinstance(cash_risk_off_column, str) or not cash_risk_off_column.strip():
+            raise ValueError(
+                "Reward config field cash_risk_off_column must be a non-empty string."
+            )
+        if self.auxiliary_features is None:
+            raise ValueError(
+                "auxiliary_features are required when reward.cash_risk_off_column "
+                "is configured."
+            )
+        if cash_risk_off_column not in self.auxiliary_features.columns:
+            raise ValueError(
+                f"auxiliary_features must contain cash risk-off column '{cash_risk_off_column}'."
+            )
+        if self.auxiliary_features[cash_risk_off_column].isna().any():
+            raise ValueError(
+                f"Auxiliary cash risk-off column '{cash_risk_off_column}' contains NaN."
+            )
+
     def _align_returns_and_features(
         self,
         returns: pd.DataFrame,
@@ -303,3 +364,35 @@ class PortfolioEnv:
             raise ValueError("aligned returns and features must not be empty.")
 
         return aligned_returns, aligned_features
+
+    def _align_auxiliary_features(
+        self,
+        returns: pd.DataFrame,
+        features: pd.DataFrame,
+        auxiliary_features: pd.DataFrame | None,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame | None]:
+        if auxiliary_features is None:
+            return returns, features, None
+        if auxiliary_features.empty:
+            raise ValueError("auxiliary_features must not be empty.")
+
+        shared_index = returns.index[returns.index.isin(auxiliary_features.index)]
+        if shared_index.empty:
+            raise ValueError(
+                "returns/features and auxiliary_features must have at least one shared index."
+            )
+
+        aligned_returns = returns.loc[shared_index]
+        aligned_features = features.loc[shared_index]
+        aligned_auxiliary_features = auxiliary_features.loc[shared_index]
+
+        if (
+            aligned_returns.empty
+            or aligned_features.empty
+            or aligned_auxiliary_features.empty
+        ):
+            raise ValueError(
+                "aligned returns, features, and auxiliary_features must not be empty."
+            )
+
+        return aligned_returns, aligned_features, aligned_auxiliary_features

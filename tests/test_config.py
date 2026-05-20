@@ -369,6 +369,31 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "reward.cash_risk_off_state"):
                 load_config(str(config_path))
 
+    def test_load_config_accepts_valid_cash_risk_off_column(self):
+        config = _valid_config()
+        config["reward"]["cash_risk_off_column"] = "risk_off_state"
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(
+            loaded_config["reward"]["cash_risk_off_column"],
+            "risk_off_state",
+        )
+
+    def test_load_config_rejects_invalid_cash_risk_off_column(self):
+        invalid_values = ("", True)
+        for invalid_value in invalid_values:
+            config = _valid_config()
+            config["reward"]["cash_risk_off_column"] = invalid_value
+            with self.subTest(invalid_value=invalid_value):
+                with self._temporary_config(config) as config_path:
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "reward.cash_risk_off_column",
+                    ):
+                        load_config(str(config_path))
+
     def test_load_config_accepts_valid_turnover_penalty_fields(self):
         config = _valid_config()
         config["reward"].update(

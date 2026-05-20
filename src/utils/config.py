@@ -300,6 +300,15 @@ def _validate_reward_cash_penalty_fields(reward: dict) -> None:
     if cash_risk_off_state is not None and not isinstance(cash_risk_off_state, bool):
         raise ValueError("Config field reward.cash_risk_off_state must be a bool.")
 
+    cash_risk_off_column = reward.get("cash_risk_off_column")
+    if cash_risk_off_column is not None and (
+        not isinstance(cash_risk_off_column, str)
+        or not cash_risk_off_column.strip()
+    ):
+        raise ValueError(
+            "Config field reward.cash_risk_off_column must be a non-empty string."
+        )
+
 
 def _validate_reward_turnover_penalty_fields(reward: dict) -> None:
     turnover_penalty_mode = reward.get("turnover_penalty_mode")

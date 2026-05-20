@@ -7,7 +7,7 @@ import pandas as pd
 
 from src.data.feature_factory import build_configured_features
 from src.data.features_v2 import build_features_v2
-from src.data.features_v5 import build_features_v5
+from src.data.features_v5 import build_features_v5, build_v5_regime_auxiliary_features
 
 
 class FeatureSetV5Tests(unittest.TestCase):
@@ -97,6 +97,31 @@ class FeatureSetV5Tests(unittest.TestCase):
         features = build_features_v5(self.returns)
 
         self.assertEqual(int(features.isna().sum().sum()), 0)
+
+    def test_build_v5_regime_auxiliary_features_returns_raw_regime_columns(self):
+        auxiliary_features = build_v5_regime_auxiliary_features(self.returns)
+        expected_columns = [
+            "regime_market_trend_positive",
+            "regime_market_trend_negative",
+            "regime_market_drawdown_stress",
+            "regime_market_high_vol",
+            "correlation_stress",
+            "risk_off_score",
+            "risk_off_state",
+        ]
+
+        self.assertEqual(list(auxiliary_features.columns), expected_columns)
+        self.assertFalse(auxiliary_features.empty)
+        for column in expected_columns:
+            self.assertTrue(pd.api.types.is_numeric_dtype(auxiliary_features[column]))
+        self.assertTrue(set(auxiliary_features["risk_off_state"].unique()).issubset({0.0, 1.0}))
+
+    def test_build_v5_regime_auxiliary_features_does_not_mutate_input(self):
+        returns = self.returns.copy(deep=True)
+
+        build_v5_regime_auxiliary_features(returns)
+
+        pd.testing.assert_frame_equal(returns, self.returns)
 
     def test_v5_raises_value_error_when_returns_empty(self):
         returns = pd.DataFrame(index=pd.DatetimeIndex([]))

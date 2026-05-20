@@ -122,6 +122,7 @@ def evaluate_weight_strategy(
     weights: pd.DataFrame,
     transaction_cost: float = 0.001,
     initial_value: float = 100000,
+    initial_weights: pd.Series | None = None,
 ) -> dict:
     """Evaluate a precomputed weight strategy with simple turnover costs."""
     _validate_returns(returns)
@@ -141,10 +142,16 @@ def evaluate_weight_strategy(
 
     aligned_returns = returns.loc[aligned_index]
     aligned_weights = weights.loc[aligned_index, returns.columns]
+    previous_weights = _prepare_initial_weights(aligned_returns, initial_weights)
 
     gross_returns = (aligned_weights * aligned_returns).sum(axis=1)
-    turnover = aligned_weights.diff().abs().sum(axis=1)
-    turnover.iloc[0] = aligned_weights.iloc[0].abs().sum()
+    turnover_values = []
+    for _, current_weights in aligned_weights.iterrows():
+        turnover_values.append(
+            float((current_weights - previous_weights).abs().sum())
+        )
+        previous_weights = current_weights
+    turnover = pd.Series(turnover_values, index=aligned_index, name="turnover")
     transaction_costs = transaction_cost * turnover
     net_returns = gross_returns - transaction_costs
 
@@ -154,6 +161,8 @@ def evaluate_weight_strategy(
     history = pd.DataFrame(
         {
             "date": aligned_index,
+            "portfolio_return": gross_returns.to_numpy(dtype=float),
+            "financial_net_return": net_returns.to_numpy(dtype=float),
             "gross_return": gross_returns.to_numpy(dtype=float),
             "net_return": net_returns.to_numpy(dtype=float),
             "portfolio_value": portfolio_value.to_numpy(dtype=float),
@@ -252,6 +261,64 @@ def build_dynamic_benchmark_suite(
     return suite
 
 
+def build_benchmark_timing_audit_summary() -> pd.DataFrame:
+    """Return the benchmark timing and cost conventions used for protocol review."""
+    rows = [
+        _static_audit_row(
+            "Equal_Weight",
+            turnover_convention="gross row-wise equal weights; turnover not modeled",
+            transaction_cost_convention="none in equal_weight_returns",
+            comparable_with_td3=False,
+        ),
+        _static_audit_row(
+            "Equal_Weight_Risky",
+            turnover_convention="requires explicit weight-strategy evaluation",
+            transaction_cost_convention="depends on caller",
+            comparable_with_td3=False,
+        ),
+        _static_audit_row(
+            "60_40_SPY_TLT",
+            turnover_convention="requires explicit weight-strategy evaluation",
+            transaction_cost_convention="depends on caller",
+            comparable_with_td3=False,
+        ),
+    ]
+    for asset in ("GLD", "SPY", "TLT", "BTC-USD"):
+        rows.append(
+            _static_audit_row(
+                f"BuyHold_{asset}",
+                turnover_convention="gross asset return; turnover not modeled",
+                transaction_cost_convention="none in individual_buy_and_hold_returns",
+                comparable_with_td3=False,
+            )
+        )
+
+    for benchmark_name in (
+        "momentum_winner_12p",
+        "risk_adjusted_momentum_winner_12p_12p",
+        "trend_spy_cash_12p",
+        "defensive_risk_off_12p",
+    ):
+        rows.append(
+            {
+                "benchmark_name": benchmark_name,
+                "signal_lagged": True,
+                "applies_return_t_after_weight_t": True,
+                "turnover_convention": (
+                    "sum(abs(weight_t - previous_weight)); previous weights "
+                    "default to equal weight as in PortfolioEnv"
+                ),
+                "transaction_cost_convention": (
+                    "financial_net_return_t = portfolio_return_t - "
+                    "transaction_cost_rate * turnover_t"
+                ),
+                "comparable_with_td3": True,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
 def save_dynamic_benchmark_suite(
     benchmark_suite: dict,
     output_dir: str,
@@ -345,6 +412,41 @@ def _validate_required_assets(
     missing_assets = [asset for asset in required_assets if asset not in data.columns]
     if missing_assets:
         raise ValueError(f"Missing required assets: {missing_assets}")
+
+
+def _prepare_initial_weights(
+    returns: pd.DataFrame,
+    initial_weights: pd.Series | None,
+) -> pd.Series:
+    if initial_weights is None:
+        return pd.Series(1.0 / len(returns.columns), index=returns.columns)
+
+    weights = initial_weights.reindex(returns.columns)
+    if weights.isna().any():
+        missing_assets = weights[weights.isna()].index.tolist()
+        raise KeyError(f"Missing initial weights for assets: {missing_assets}")
+    if (weights < 0.0).any():
+        raise ValueError("initial_weights must be non-negative.")
+    if not np.isclose(float(weights.sum()), 1.0):
+        raise ValueError("initial_weights must sum to 1.")
+
+    return weights.astype(float)
+
+
+def _static_audit_row(
+    benchmark_name: str,
+    turnover_convention: str,
+    transaction_cost_convention: str,
+    comparable_with_td3: bool,
+) -> dict:
+    return {
+        "benchmark_name": benchmark_name,
+        "signal_lagged": True,
+        "applies_return_t_after_weight_t": True,
+        "turnover_convention": turnover_convention,
+        "transaction_cost_convention": transaction_cost_convention,
+        "comparable_with_td3": comparable_with_td3,
+    }
 
 
 def _validate_returns(returns: pd.DataFrame) -> None:

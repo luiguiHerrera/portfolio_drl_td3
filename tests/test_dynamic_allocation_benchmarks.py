@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.backtest.dynamic_allocation_benchmarks import (
+    build_benchmark_timing_audit_summary,
     build_defensive_risk_off_weights,
     build_dynamic_benchmark_suite,
     build_momentum_winner_weights,
@@ -80,6 +81,39 @@ class DynamicAllocationBenchmarkTests(unittest.TestCase):
 
         self.assertAlmostEqual(evaluation["returns"].loc[returns.index[2]], -0.50)
 
+    def test_momentum_winner_does_not_select_future_winner_before_observable(self):
+        returns = pd.DataFrame(
+            {
+                "SPY": [0.10, 0.10, -0.50, 0.00],
+                "GLD": [0.00, 0.00, 0.40, 0.00],
+                "CASH": [0.00, 0.00, 0.00, 0.00],
+            },
+            index=pd.date_range("2024-01-05", periods=4, freq="W-FRI"),
+        )
+
+        weights = build_momentum_winner_weights(returns, window=2)
+
+        self.assertEqual(weights.loc[returns.index[2], "SPY"], 1.0)
+        self.assertEqual(weights.loc[returns.index[2], "GLD"], 0.0)
+        self.assertEqual(weights.loc[returns.index[3], "GLD"], 1.0)
+
+    def test_dynamic_benchmark_weights_are_lagged_relative_to_signal(self):
+        returns = pd.DataFrame(
+            {
+                "SPY": [0.10, 0.10, -0.50, 0.00],
+                "GLD": [0.00, 0.00, 0.40, 0.00],
+                "CASH": [0.00, 0.00, 0.00, 0.00],
+            },
+            index=pd.date_range("2024-01-05", periods=4, freq="W-FRI"),
+        )
+        momentum = compute_rolling_momentum(returns[["SPY", "GLD", "CASH"]], window=2)
+
+        weights = build_momentum_winner_weights(returns, window=2)
+
+        self.assertEqual(momentum.loc[returns.index[2]].idxmax(), "GLD")
+        self.assertEqual(weights.loc[returns.index[2], "SPY"], 1.0)
+        self.assertEqual(weights.loc[returns.index[3], "GLD"], 1.0)
+
     def test_risk_adjusted_momentum_winner_allocates_by_score(self):
         returns = pd.DataFrame(
             {
@@ -123,6 +157,20 @@ class DynamicAllocationBenchmarkTests(unittest.TestCase):
         weights = build_trend_following_spy_cash_weights(returns, window=2)
 
         self.assertEqual(weights.loc[returns.index[2], "CASH"], 1.0)
+
+    def test_trend_following_reacts_one_period_after_same_period_flip(self):
+        returns = pd.DataFrame(
+            {
+                "SPY": [-0.10, -0.10, 0.50, 0.00],
+                "CASH": [0.00, 0.00, 0.00, 0.00],
+            },
+            index=pd.date_range("2024-01-05", periods=4, freq="W-FRI"),
+        )
+
+        weights = build_trend_following_spy_cash_weights(returns, window=2)
+
+        self.assertEqual(weights.loc[returns.index[2], "CASH"], 1.0)
+        self.assertEqual(weights.loc[returns.index[3], "SPY"], 1.0)
 
     def test_defensive_risk_off_allocates_to_best_defensive_asset(self):
         returns = pd.DataFrame(
@@ -181,6 +229,67 @@ class DynamicAllocationBenchmarkTests(unittest.TestCase):
 
         self.assertAlmostEqual(result["history"].loc[0, "turnover"], 1.0)
         self.assertAlmostEqual(result["history"].loc[1, "turnover"], 2.0)
+
+    def test_evaluate_weight_strategy_initial_turnover_matches_td3_equal_weight_start(self):
+        dates = pd.date_range("2024-01-05", periods=1, freq="W-FRI")
+        returns = pd.DataFrame(
+            {
+                "SPY": [0.00],
+                "TLT": [0.00],
+                "GLD": [0.00],
+                "BTC-USD": [0.00],
+                "CASH": [0.00],
+            },
+            index=dates,
+        )
+        weights = pd.DataFrame(
+            {
+                "SPY": [1.0],
+                "TLT": [0.0],
+                "GLD": [0.0],
+                "BTC-USD": [0.0],
+                "CASH": [0.0],
+            },
+            index=dates,
+        )
+
+        result = evaluate_weight_strategy(returns, weights, transaction_cost=0.01)
+
+        self.assertAlmostEqual(result["history"].loc[0, "turnover"], 1.6)
+        self.assertAlmostEqual(result["history"].loc[0, "transaction_cost"], 0.016)
+
+    def test_evaluate_weight_strategy_transaction_cost_reduces_financial_net_return(self):
+        returns = pd.DataFrame(
+            {"SPY": [0.10], "GLD": [0.00]},
+            index=pd.date_range("2024-01-05", periods=1, freq="W-FRI"),
+        )
+        weights = pd.DataFrame({"SPY": [1.0], "GLD": [0.0]}, index=returns.index)
+
+        result = evaluate_weight_strategy(returns, weights, transaction_cost=0.01)
+        history = result["history"]
+
+        self.assertAlmostEqual(history.loc[0, "portfolio_return"], 0.10)
+        self.assertAlmostEqual(history.loc[0, "transaction_cost"], 0.01)
+        self.assertAlmostEqual(history.loc[0, "financial_net_return"], 0.09)
+
+    def test_evaluate_weight_strategy_history_contains_comparison_columns(self):
+        weights = pd.DataFrame(1.0, index=self.returns.index, columns=["SPY"])
+        returns = self.returns[["SPY"]]
+
+        result = evaluate_weight_strategy(returns, weights, transaction_cost=0.0)
+        history = result["history"]
+
+        for column in [
+            "date",
+            "portfolio_return",
+            "transaction_cost",
+            "financial_net_return",
+            "turnover",
+            "portfolio_value",
+            "drawdown",
+            "weight_SPY",
+        ]:
+            self.assertIn(column, history.columns)
 
     def test_evaluate_weight_strategy_computes_drawdown(self):
         returns = pd.DataFrame(
@@ -401,6 +510,30 @@ class DynamicAllocationBenchmarkTests(unittest.TestCase):
             "max_drawdown_is_zero",
         ]:
             self.assertIn(column, summary.columns)
+
+    def test_benchmark_timing_audit_summary_reports_dynamic_rules_comparable(self):
+        summary = build_benchmark_timing_audit_summary().set_index("benchmark_name")
+
+        for benchmark_name in [
+            "momentum_winner_12p",
+            "risk_adjusted_momentum_winner_12p_12p",
+            "trend_spy_cash_12p",
+            "defensive_risk_off_12p",
+        ]:
+            self.assertTrue(summary.loc[benchmark_name, "signal_lagged"])
+            self.assertTrue(
+                summary.loc[benchmark_name, "applies_return_t_after_weight_t"]
+            )
+            self.assertTrue(summary.loc[benchmark_name, "comparable_with_td3"])
+
+    def test_benchmark_timing_audit_summary_reports_static_gross_references(self):
+        summary = build_benchmark_timing_audit_summary().set_index("benchmark_name")
+
+        self.assertFalse(summary.loc["BuyHold_GLD", "comparable_with_td3"])
+        self.assertIn(
+            "none",
+            summary.loc["BuyHold_GLD", "transaction_cost_convention"],
+        )
 
     def test_invalid_inputs_raise_errors(self):
         with self.assertRaises(ValueError):

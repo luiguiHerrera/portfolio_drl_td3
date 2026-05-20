@@ -2191,3 +2191,84 @@ be explicitly implemented, validated, and documented.
 
 This supports the common experimental protocol phase by reducing hidden
 configuration ambiguity before revalidating V2, V6, and future benchmarks.
+
+## Entry X — Benchmark Timing and Cost-Comparability Audit
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Audit dynamic benchmark timing, leakage risk, turnover convention, and
+transaction-cost comparability before adding new rolling benchmarks or
+revalidating TD3 candidates under a common experimental protocol.
+
+**Audit result:**  
+No look-ahead leakage was found in the dynamic benchmark rules:
+
+- `momentum_winner_12p`
+- `risk_adjusted_momentum_winner_12p_12p`
+- `trend_spy_cash_12p`
+- `defensive_risk_off_12p`
+
+The dynamic rules were already signal-lagged: rolling signals are computed,
+selected assets are shifted by one period, weights at `t` are applied to
+realized returns at `t`.
+
+**Issue found:**  
+A cost-comparability issue was found in the dynamic benchmark evaluator.
+First-period turnover assumed previous weights were zero. This differed from
+TD3, where `PortfolioEnv` starts from equal weights at reset.
+
+This was not a look-ahead bug, but it made dynamic benchmark transaction costs
+not fully comparable with TD3.
+
+**Fix implemented:**  
+Updated `evaluate_weight_strategy` so previous weights default to equal weights,
+matching TD3's reset convention.
+
+Added comparison-friendly benchmark history columns:
+
+- `portfolio_return`
+- `financial_net_return`
+- `transaction_cost`
+- `turnover`
+- `portfolio_value`
+- `drawdown`
+- `weight_*`
+
+Existing `gross_return` and `net_return` aliases remain.
+
+**Static benchmark note:**  
+`Equal_Weight` and individual buy-and-hold helpers do not use future returns.
+However, current gross static references do not model transaction costs or
+turnover, so they are investable references but not fully net-cost comparable
+with TD3 unless evaluated through a common weight-strategy evaluator.
+
+**Staleness implication:**  
+Dynamic benchmark outputs produced before this fix should be considered stale
+because first-period turnover and transaction cost changed.
+
+Static gross benchmark outputs are unchanged, but should be interpreted as
+gross references, not fully net-cost comparable TD3 benchmarks.
+
+**Tests added:**  
+Regression tests now cover:
+
+- future winner not selected early;
+- trend rule reacts one period later;
+- weights are lagged relative to signals;
+- TD3-style first-period turnover convention;
+- transaction costs reduce net return exactly;
+- benchmark history includes comparison columns;
+- benchmark timing audit summary output.
+
+**Tests:**  
+- `python3 -m unittest tests/test_dynamic_allocation_benchmarks.py`: 36 tests OK
+- `python3 -m unittest discover tests`: 838 tests OK
+
+**Research implication:**  
+The dynamic benchmark timing is clean, but previous dynamic benchmark result
+tables should not be used as final evidence after the cost-convention fix.
+
+The next common-protocol step should evaluate TD3 candidates and benchmarks
+through a unified net-return comparison layer, including rolling risk parity and
+rolling Markowitz baselines.

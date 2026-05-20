@@ -18,6 +18,7 @@ The repository currently provides a research pipeline for:
 - walk-forward validation;
 - dynamic benchmark comparison;
 - mandate-aware diagnostics;
+- robust evaluation scoring;
 - controlled reward experiments.
 
 The current uncomfortable but useful lesson is simple: TD3 must beat real decision rules, not decorative benchmarks.
@@ -93,7 +94,13 @@ The project reports:
 - max weight;
 - cash weight;
 - Herfindahl index;
-- effective number of assets.
+- effective number of assets;
+- Deflated Sharpe / `robust_score`.
+
+`robust_score` is evaluation-only. It is not the reward function. It combines
+Deflated Sharpe, Sortino, Calmar, drawdown control, stability, and mandate
+discipline so I do not over-trust one clean-looking Sharpe number after many
+experiments.
 
 Saved policy histories allow ex-post behavior analysis:
 
@@ -124,6 +131,8 @@ The feature pipeline is versioned:
 - `V1`: default return-based features.
 - `V2`: return, risk, and simple regime features.
 - `V3`: V2 plus optional local macro CSV features.
+- `V4`: V2 plus deterministic GARCH-style volatility features. Tested, but not better than V2.
+- `V5`: V2 plus regime and correlation features. Promising internally, but currently affected by CASH behavior and benchmark weakness.
 
 V3 does not download macro data during training, evaluation, feature construction, feature comparison, or walk-forward validation. It only reads a local CSV when `macro_path` is configured.
 
@@ -165,6 +174,11 @@ The benchmark layer includes:
 In the current preliminary walk-forward tests, simple dynamic rules beat the current TD3 policies on several risk-adjusted metrics. That is not a failure. That is the point of doing the research properly.
 
 TD3 needs to beat simple rules before it earns complexity.
+
+The latest comparison is still uncomfortable in the useful way: the V5 dynamic
+CASH penalty improves internal cash discipline, but it does not beat simple
+traditional benchmarks. Under the composite `robust_score`, V2 is still ahead
+of `V5_dynamic_cash_025`.
 
 ## Mandate-Aware Layer
 
@@ -241,11 +255,11 @@ Data, generated outputs, saved models, and reports are excluded from version con
 
 ## Roadmap
 
-- Run controlled mandate-reward mini-grid experiments.
-- Compare mandate-aware TD3 against dynamic allocation benchmarks.
-- Stress-test feature sets across more folds, seeds, and market regimes.
-- Add plotting and reporting for experiment review.
-- Explore GARCH or additional state-risk features only if they improve validation.
+- Keep V2 as the clean reference until a stronger model beats it.
+- Treat V5 dynamic CASH as experimental, not default.
+- Use `robust_score` and Deflated Sharpe only as evaluation tools, not reward.
+- Compare every TD3 variant against simple benchmarks before claiming value.
+- Improve the model only where diagnostics show a real weakness.
 - Keep cutting anything that looks smart but fails out-of-sample.
 
 ## Academic Disclaimer

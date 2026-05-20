@@ -1585,3 +1585,73 @@ an experimental candidate, not a final/default model.
 Implement robust score / DSR as an evaluation layer, not as a training reward.
 Then re-rank all candidates and benchmarks using a composite robustness
 metric.
+
+## Entry X — Robust Score and Deflated Sharpe Evaluation Layer
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Move beyond ranking strategies only by Sharpe or robust Sharpe. The new
+evaluation layer adds a composite score that balances statistical robustness,
+downside risk, drawdown control, stability, and mandate discipline. Deflated
+Sharpe Ratio is used to reduce the risk of selecting a strategy because it
+looked good after multiple experiments.
+
+**Implementation:**  
+Added `src/analysis/robust_score.py` and `tests/test_robust_score.py`.
+
+Core functions added:
+
+- `compute_annualized_sharpe`
+- `compute_probabilistic_sharpe_ratio`
+- `compute_deflated_sharpe_ratio`
+- `estimate_expected_max_sharpe`
+- `normalize_metric_series`
+- `compute_discipline_score`
+- `compute_composite_robust_score`
+
+DSR uses the Bailey / Lopez de Prado expected maximum Sharpe adjustment.
+Default `n_trials_effective = 25`, with sensitivity reported for
+`n_trials = 10, 25, 50`. This is an evaluation layer only, not a training
+reward.
+
+**Composite robust_score weights:**  
+`DSR_score = 0.30`, `Sortino_score = 0.20`, `Calmar_score = 0.20`,
+`Drawdown_score = 0.15`, `Stability_score = 0.10`, and
+`Discipline_score = 0.05`.
+
+**Important interpretation:**  
+DSR is the main statistical robustness component, but it is not the whole
+selection criterion. The score still reflects downside risk, drawdown,
+stability, and mandate discipline. I deliberately did not overweight DSR above
+0.30, to avoid turning the metric into a single-author bias or another
+Sharpe-only proxy.
+
+**Ranking output:**  
+`outputs/tables/v2_v5_dynamic_cash_benchmark_comparison_30ep_5seeds/robust_score_ranking.csv`
+
+1. `BuyHold_GLD`: robust score = 0.8013, `dsr_n10 = 0.8605`,
+   `dsr_n25 = 0.7454`, and `dsr_n50 = 0.6483`.
+2. `Equal_Weight_Risky`: robust score = 0.7117 and `dsr_n25 = 0.3805`.
+3. `Equal_Weight`: robust score = 0.6939 and `dsr_n25 = 0.3805`.
+4. `BuyHold_SPY`: robust score = 0.6255 and `dsr_n25 = 0.3653`.
+5. `V2_reference`: robust score = 0.4957 and `dsr_n25 = 0.0674`.
+6. `BuyHold_BTC-USD`: robust score = 0.4750 and `dsr_n25 = 0.1682`.
+7. `V5_dynamic_cash_025`: robust score = 0.4544 and `dsr_n25 = 0.0439`.
+8. `60_40_SPY_TLT`: robust score = 0.4477 and `dsr_n25 = 0.1181`.
+9. `V5_no_cash_penalty`: robust score = 0.3439 and `dsr_n25 = 0.0047`.
+10. `BuyHold_TLT`: robust score = 0.2263 and `dsr_n25 = 0.0008`.
+
+**Interpretation:**  
+The formal DSR adjustment lowers absolute DSR values, as expected. The main
+conclusion does not change: traditional benchmarks still dominate,
+`V2_reference` remains above `V5_dynamic_cash_025`, and
+`V5_dynamic_cash_025` still improves over `V5_no_cash_penalty`.
+
+`V5_dynamic_cash_025` improves mandate and cash discipline, but it does not
+yet beat V2 or traditional benchmarks. The robust score does not artificially
+rescue the DRL candidate, which is methodologically healthy.
+
+**Warning note:**  
+DSR uses the Bailey / Lopez de Prado expected maximum Sharpe adjustment with
+`n_trials_effective = 25`. Sensitivity is computed for `n_trials = 10, 25, 50`.

@@ -1752,3 +1752,118 @@ Do not keep tuning CASH, turnover, or mandate penalties blindly. The next
 modeling work should target dominant-asset timing and state representation.
 Future experiments should test whether the agent can learn or outperform
 simple momentum and trend signals, rather than just adding more penalties.
+
+## Entry X — Feature-Block Ablation for Dominant-Asset Timing
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Diagnose which V5 feature blocks help or hurt dominant-asset timing. The
+experiment tested whether the full V5 state representation is useful, or
+whether simpler momentum/trend representations work better. This continues the
+investigation after decision attribution showed that TD3 loses mainly on
+dominant-asset timing versus simple dynamic rules.
+
+**Implementation:**  
+Added `src/experiments/run_feature_block_ablation.py` and
+`tests/test_run_feature_block_ablation.py`. This is an experiment and analysis
+runner only. It does not change reward, TD3 architecture, environment
+dynamics, or training logic.
+
+**Output:**  
+`outputs/tables/v5_feature_block_ablation_timing_30ep_5seeds`
+
+**Tests:**  
+`python3 -m unittest discover tests` ran 808 tests OK.
+
+**Feature variants:**  
+- `V2_reference_full`: 49 features.
+- `V5_full_dynamic_cash_025`: 67 features.
+- `V5_no_momentum_block`: 52 features.
+- `V5_no_volatility_block`: 48 features.
+- `V5_no_drawdown_block`: 60 features.
+- `V5_no_correlation_block`: 49 features.
+- `V5_no_regime_block`: 54 features.
+- `V5_momentum_only_or_minimal_momentum_regime`: 20 features.
+
+**Overall test aggregate:**  
+`V5_no_volatility_block`: mean Sharpe = 0.6632, robust Sharpe = 0.0621,
+return = 0.1245, max drawdown = -0.2054, turnover = 0.5121, and effective
+assets = 1.0918.
+
+`V5_no_regime_block`: mean Sharpe = 0.3289, robust Sharpe = -0.2208, return =
+-0.0119, max drawdown = -0.2612, turnover = 0.4869, and effective assets =
+1.0943.
+
+`V2_reference_full`: mean Sharpe = 0.2962, robust Sharpe = -0.2376, return =
+0.0290, max drawdown = -0.2401, turnover = 0.5468, and effective assets =
+1.1145.
+
+`V5_full_dynamic_cash_025`: mean Sharpe = -0.0302, robust Sharpe = -0.4637,
+return = -0.0521, max drawdown = -0.2924, turnover = 0.5106, and effective
+assets = 1.0890.
+
+**Robust score ranking:**  
+1. `V5_no_volatility_block`: robust score = 0.6484 and `dsr_n25 = 0.2255`.
+2. `V5_no_momentum_block`: robust score = 0.4951 and `dsr_n25 = 0.0580`.
+3. `V5_momentum_only_or_minimal_momentum_regime`: robust score = 0.3970 and
+   `dsr_n25 = 0.3626`.
+4. `V2_reference_full`: robust score = 0.3866 and `dsr_n25 = 0.0485`.
+8. `V5_full_dynamic_cash_025`: robust score = 0.1669 and `dsr_n25 = 0.0034`.
+
+**Decision attribution, horizon 12:**  
+`V5_momentum_only_or_minimal_momentum_regime`: mean regret = 0.1392,
+best-hit rate = 0.2910, beats equal = 0.5165, and excess versus equal =
+0.0280.
+
+`V5_no_volatility_block`: mean regret = 0.1686, best-hit rate = 0.1818,
+beats equal = 0.4920, and excess versus equal = -0.0014.
+
+`V2_reference_full`: mean regret = 0.1952, best-hit rate = 0.1338, beats equal
+= 0.3501, and excess versus equal = -0.0280.
+
+`V5_full_dynamic_cash_025`: mean regret = 0.1970, best-hit rate = 0.1702,
+beats equal = 0.3780, and excess versus equal = -0.0298.
+
+**Versus simple rules, horizon 12:**  
+`V5_momentum_only_or_minimal_momentum_regime`: TD3 minus
+`momentum_winner_12p` = 0.0074, win rate versus momentum = 0.3149, TD3 minus
+`trend_spy_cash_12p` = 0.0336, and win rate versus trend = 0.4535.
+
+`V5_no_volatility_block`: TD3 minus `momentum_winner_12p` = -0.0220, win rate
+versus momentum = 0.3867, TD3 minus `trend_spy_cash_12p` = 0.0042, and win
+rate versus trend = 0.3363.
+
+`V2_reference_full`: TD3 minus `momentum_winner_12p` = -0.0486, win rate
+versus momentum = 0.3162, TD3 minus `trend_spy_cash_12p` = -0.0224, and win
+rate versus trend = 0.3085.
+
+`V5_full_dynamic_cash_025`: TD3 minus `momentum_winner_12p` = -0.0504, win
+rate versus momentum = 0.2988, TD3 minus `trend_spy_cash_12p` = -0.0242, and
+win rate versus trend = 0.3202.
+
+**Cash and concentration:**  
+Dynamic CASH generally worked across V5 ablations. `V2_reference_full` still
+had high cash exposure, with cash above 10% = 0.1828 and unjustified cash
+excess = 0.1184. The best horizon-12 dominant-asset timing came from
+`V5_momentum_only_or_minimal_momentum_regime`.
+
+**Interpretation:**  
+The full V5 state representation appears overloaded. The most useful timing
+signal is momentum/trend, not the full V5 block.
+`V5_momentum_only_or_minimal_momentum_regime` gives the clearest
+dominant-asset timing improvement. `V5_no_volatility_block` gives the best
+composite robust score and aggregate risk/return profile.
+
+Several ablations beat both `V2_reference_full` and
+`V5_full_dynamic_cash_025`. Full V5 dynamic CASH is no longer the strongest
+candidate. The next controlled validation should compare
+`V5_no_volatility_block` and
+`V5_momentum_only_or_minimal_momentum_regime` against V2, full V5, and
+benchmarks.
+
+**Research implication:**  
+Do not add more CASH, turnover, or mandate penalty tuning now. Do not move yet
+to GARCH, cointegration, LSTM, or imitation learning. The next modeling work
+should target parsimonious momentum/trend state design and dominant-asset
+timing quality.

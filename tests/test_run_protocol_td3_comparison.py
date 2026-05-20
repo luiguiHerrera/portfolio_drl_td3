@@ -126,12 +126,57 @@ class ProtocolTD3ComparisonRunnerTests(unittest.TestCase):
         self.assertIn("information through t-1", metadata["timing_convention"])
         self.assertIn("sum(abs", metadata["turnover_convention"])
         self.assertIn("median_run", metadata["DSR_method_policy"])
+        self.assertTrue(metadata["benchmark_robust_score_computed"])
 
     def test_smoke_mode_does_not_include_training_orchestration(self):
         source = inspect.getsource(td3_runner_module)
 
         self.assertNotIn("train_td3", source)
         self.assertNotIn("TD3Agent", source)
+
+    def test_benchmark_rows_receive_robust_score_fields(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = self._run_smoke(temp_dir)
+            benchmark_rows = result["combined_metrics"][
+                result["combined_metrics"]["strategy_type"] == "benchmark"
+            ]
+
+        self.assertFalse(benchmark_rows["robust_score"].isna().any())
+        self.assertFalse(benchmark_rows["pooled_dsr_n25"].isna().any())
+        self.assertFalse(benchmark_rows["date_averaged_dsr_n25"].isna().any())
+
+    def test_benchmark_rows_have_dsr_method(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = self._run_smoke(temp_dir)
+            benchmark_methods = result["combined_metrics"].loc[
+                result["combined_metrics"]["strategy_type"] == "benchmark",
+                "dsr_method",
+            ]
+
+        self.assertTrue((benchmark_methods == "date_averaged").all())
+
+    def test_td3_robust_score_fields_are_preserved_from_ingestion(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = self._run_smoke(temp_dir)
+            v6 = result["td3_candidate_metrics"].set_index("strategy_name").loc[
+                "V6_financial_state"
+            ]
+
+        self.assertAlmostEqual(float(v6["robust_score"]), 0.42)
+        self.assertAlmostEqual(float(v6["median_run_dsr_n25"]), 0.20)
+        self.assertEqual(v6["dsr_method"], "median_run")
+
+    def test_model_selection_ranking_includes_scored_benchmarks(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = self._run_smoke(temp_dir)
+            table = result["model_selection"]
+            benchmark_rows = table[table["strategy_type"] == "benchmark"]
+
+        self.assertFalse(benchmark_rows["robust_score"].isna().all())
+        self.assertLessEqual(
+            int(benchmark_rows["final_protocol_rank"].min()),
+            int(table.loc[table["strategy_type"] == "td3", "final_protocol_rank"].min()),
+        )
 
     def test_csv_td3_results_path_still_works(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -15,8 +15,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
+from src.analysis.robust_score import (
+    compute_composite_robust_score,
+    compute_deflated_sharpe_ratio,
+)
 from src.experiments.run_protocol_benchmark_comparison import (
     run_protocol_benchmark_comparison,
 )
@@ -26,6 +31,7 @@ DEFAULT_OUTPUT_DIR = "outputs/tables/protocol_td3_comparison"
 DEFAULT_DSR_POLICY = "median_run -> date_averaged -> pooled -> fallback_from_sharpe"
 TIMING_CONVENTION = "information through t-1, weights for t, realized return at t"
 TURNOVER_CONVENTION = "sum(abs(w_t - w_{t-1}))"
+BENCHMARK_ROBUST_SCORE_METHOD = "single_history_date_averaged_dsr"
 
 DEFAULT_TD3_CANDIDATES = (
     {
@@ -128,7 +134,10 @@ def run_protocol_td3_comparison(
         date_column=date_column,
     )
 
-    benchmark_metrics = _normalize_benchmark_metrics(benchmark_result["metrics_table"])
+    benchmark_metrics, benchmark_robust_info = _normalize_benchmark_metrics(
+        benchmark_result["metrics_table"],
+        benchmark_result["evaluations"],
+    )
     td3_metrics, td3_ingestion_info = _load_td3_candidate_metrics(
         td3_results=td3_results,
         td3_results_path=td3_results_path,
@@ -158,6 +167,7 @@ def run_protocol_td3_comparison(
         smoke=smoke,
         transaction_cost=transaction_cost,
         td3_ingestion_info=td3_ingestion_info,
+        benchmark_robust_info=benchmark_robust_info,
     )
     metadata_path = output_path / "protocol_metadata.json"
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
@@ -201,13 +211,172 @@ def _normalize_candidates(
     return normalized
 
 
-def _normalize_benchmark_metrics(metrics_table: pd.DataFrame) -> pd.DataFrame:
+def _normalize_benchmark_metrics(
+    metrics_table: pd.DataFrame,
+    evaluations: dict[str, dict] | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     metrics = metrics_table.copy()
     metrics["strategy_name"] = metrics["benchmark_name"]
     metrics["strategy_type"] = "benchmark"
     metrics["candidate_name"] = pd.NA
     metrics["feature_version"] = pd.NA
+    metrics = _ensure_protocol_columns(metrics)
+    if not evaluations:
+        return metrics, {
+            "benchmark_robust_score_computed": False,
+            "benchmark_robust_score_method": None,
+            "benchmark_robust_score_note": "Benchmark histories unavailable.",
+        }
+
+    scored_metrics = _attach_benchmark_robust_scores(metrics, evaluations)
+    robust_available = scored_metrics["robust_score"].notna().any()
+    return scored_metrics, {
+        "benchmark_robust_score_computed": bool(robust_available),
+        "benchmark_robust_score_method": (
+            BENCHMARK_ROBUST_SCORE_METHOD if robust_available else None
+        ),
+        "benchmark_robust_score_note": (
+            "Benchmark DSR is computed from each deterministic benchmark's single "
+            "history using financial_net_return when available. TD3 DSR may come "
+            "from median run-level fold/seed aggregation when ingested from prior "
+            "experiments."
+        ),
+    }
+
+
+def _attach_benchmark_robust_scores(
+    benchmark_metrics: pd.DataFrame,
+    evaluations: dict[str, dict],
+) -> pd.DataFrame:
+    metrics = benchmark_metrics.copy()
+    dsr_rows = []
+    for benchmark_name, evaluation in evaluations.items():
+        history = evaluation.get("history", pd.DataFrame())
+        dsr_rows.append(
+            {
+                "strategy_name": benchmark_name,
+                **_compute_single_history_dsr_fields(history),
+            }
+        )
+    dsr_table = pd.DataFrame(dsr_rows)
+    metrics = metrics.merge(dsr_table, on="strategy_name", how="left", suffixes=("", "_new"))
+    for column in [
+        "pooled_dsr_n10",
+        "pooled_dsr_n25",
+        "pooled_dsr_n50",
+        "mean_run_dsr_n25",
+        "median_run_dsr_n25",
+        "date_averaged_dsr_n25",
+        "dsr_method",
+    ]:
+        new_column = f"{column}_new"
+        if new_column in metrics.columns:
+            if metrics[column].isna().all():
+                metrics[column] = metrics[new_column]
+            else:
+                metrics[column] = metrics[column].where(
+                    metrics[column].notna(),
+                    metrics[new_column],
+                )
+            metrics = metrics.drop(columns=[new_column])
+
+    scoring_input = _benchmark_scoring_input(metrics)
+    scored = compute_composite_robust_score(scoring_input)
+    score_columns = [
+        "strategy",
+        "robust_score",
+        "dsr_method",
+        "pooled_dsr_n10",
+        "pooled_dsr_n25",
+        "pooled_dsr_n50",
+        "mean_run_dsr_n25",
+        "median_run_dsr_n25",
+        "date_averaged_dsr_n25",
+    ]
+    available_score_columns = [
+        column for column in score_columns if column in scored.columns
+    ]
+    scored_subset = scored.loc[:, available_score_columns].rename(
+        columns={"strategy": "strategy_name"}
+    )
+    metrics = metrics.drop(
+        columns=[
+            column
+            for column in scored_subset.columns
+            if column != "strategy_name" and column in metrics.columns
+        ],
+    )
+    metrics = metrics.merge(scored_subset, on="strategy_name", how="left")
     return _ensure_protocol_columns(metrics)
+
+
+def _compute_single_history_dsr_fields(history: pd.DataFrame) -> dict[str, Any]:
+    returns = _history_returns(history)
+    pooled_dsr_n10 = compute_deflated_sharpe_ratio(returns, n_trials=10)
+    pooled_dsr_n25 = compute_deflated_sharpe_ratio(returns, n_trials=25)
+    pooled_dsr_n50 = compute_deflated_sharpe_ratio(returns, n_trials=50)
+    date_averaged_dsr_n25 = _date_averaged_history_dsr(history)
+    if not np.isfinite(date_averaged_dsr_n25):
+        date_averaged_dsr_n25 = np.nan
+    dsr_method = "date_averaged" if np.isfinite(date_averaged_dsr_n25) else "pooled"
+    return {
+        "pooled_dsr_n10": pooled_dsr_n10,
+        "pooled_dsr_n25": pooled_dsr_n25,
+        "pooled_dsr_n50": pooled_dsr_n50,
+        "mean_run_dsr_n25": np.nan,
+        "median_run_dsr_n25": np.nan,
+        "date_averaged_dsr_n25": date_averaged_dsr_n25,
+        "dsr_method": dsr_method,
+    }
+
+
+def _history_returns(history: pd.DataFrame) -> pd.Series:
+    if "financial_net_return" in history.columns:
+        return pd.to_numeric(history["financial_net_return"], errors="coerce")
+    if "portfolio_return" in history.columns:
+        return pd.to_numeric(history["portfolio_return"], errors="coerce")
+    return pd.Series(dtype=float)
+
+
+def _date_averaged_history_dsr(history: pd.DataFrame) -> float:
+    returns = _history_returns(history)
+    if history.empty:
+        return np.nan
+    if "date" not in history.columns:
+        return compute_deflated_sharpe_ratio(returns, n_trials=25)
+    dated = pd.DataFrame(
+        {
+            "date": pd.to_datetime(history["date"], errors="coerce"),
+            "return": returns,
+        }
+    ).dropna()
+    if dated.empty:
+        return np.nan
+    date_averaged_returns = dated.groupby("date", sort=True)["return"].mean()
+    return compute_deflated_sharpe_ratio(date_averaged_returns, n_trials=25)
+
+
+def _benchmark_scoring_input(metrics: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "strategy": metrics["strategy_name"],
+            "type": metrics["strategy_type"],
+            "sharpe": metrics["sharpe"],
+            "sortino": metrics["sortino"],
+            "calmar": metrics["calmar"],
+            "max_drawdown": metrics["max_drawdown"],
+            "worst_drawdown": metrics["max_drawdown"],
+            "turnover": metrics["average_turnover"],
+            "effective_assets": metrics["average_effective_number_of_assets"],
+            "cash_above_10_rate": metrics["cash_above_10pct"],
+            "pooled_dsr_n10": metrics["pooled_dsr_n10"],
+            "pooled_dsr_n25": metrics["pooled_dsr_n25"],
+            "pooled_dsr_n50": metrics["pooled_dsr_n50"],
+            "mean_run_dsr_n25": metrics["mean_run_dsr_n25"],
+            "median_run_dsr_n25": metrics["median_run_dsr_n25"],
+            "date_averaged_dsr_n25": metrics["date_averaged_dsr_n25"],
+        }
+    )
 
 
 def _load_td3_candidate_metrics(
@@ -635,6 +804,7 @@ def _build_protocol_metadata(
     smoke: bool,
     transaction_cost: float,
     td3_ingestion_info: dict[str, Any],
+    benchmark_robust_info: dict[str, Any],
 ) -> dict[str, Any]:
     seeds = sorted({seed for candidate in candidates for seed in candidate.seeds})
     episodes = sorted(
@@ -668,6 +838,7 @@ def _build_protocol_metadata(
         "smoke_mode": bool(smoke),
     }
     metadata.update(td3_ingestion_info)
+    metadata.update(benchmark_robust_info)
     return metadata
 
 

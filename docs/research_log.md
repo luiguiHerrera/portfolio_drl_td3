@@ -2430,3 +2430,71 @@ net-return comparability still show that simple benchmarks remain very strong.
 A final model-selection run should either compute robust_score for benchmarks
 inside the combined protocol runner or clearly separate benchmark financial
 ranking from TD3 robust-score ranking.
+
+## Entry X — Benchmark Robust Score Added to Protocol TD3 Comparison
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Fix the combined protocol ranking so benchmarks and TD3 candidates both carry
+`robust_score` / DSR fields when possible.
+
+**Issue:**  
+The first combined TD3 protocol comparison correctly ingested TD3 robust-score
+fields, but regenerated benchmark rows had missing `robust_score`. This could
+make TD3 appear above benchmarks in `protocol_model_selection_table.csv` simply
+because benchmarks lacked the robust-score field.
+
+**Fix implemented:**  
+Updated the TD3 protocol comparison runner so regenerated benchmark rows receive
+robust-score and DSR fields from their benchmark histories.
+
+Benchmark robust-score method:
+
+- `single_history_date_averaged_dsr`
+- uses benchmark `financial_net_return` when available
+- sets benchmark `dsr_method = date_averaged`
+- leaves benchmark run-level DSR fields as `NaN`, because these are
+  deterministic single-history benchmark runs, not fold/seed TD3 runs
+
+TD3 robust-score fields remain ingested from the candidate experiment output,
+using the conservative DSR aggregation already implemented.
+
+**Real comparison result:**  
+Output folder:
+
+`outputs/tables/protocol_td3_comparison_real_test_with_benchmark_robust_score`
+
+After benchmark robust scores were included, TD3 no longer floated above
+benchmarks because of missing benchmark `robust_score`.
+
+Top combined robust-score ranks:
+
+- `momentum_winner_12p`: `robust_score = 0.8575`
+- `Equal_Weight_Risky`: `robust_score = 0.8123`
+- `Equal_Weight`: `robust_score = 0.8004`
+- `risk_adjusted_momentum_winner_12p_12p`: `robust_score = 0.7789`
+- `rolling_markowitz_long_only_52p`: `robust_score = 0.7677`
+- `rolling_risk_parity_inverse_vol_12p`: `robust_score = 0.7355`
+
+**Interpretation:**  
+The combined ranking is now more honest. Simple and dynamic benchmarks dominate
+the top robust-score ranks in this run. TD3 candidates remain useful for
+research comparison, but there is still no evidence of TD3 benchmark
+superiority under the current protocol.
+
+Important methodological caveat: benchmark robust scores are computed from
+single deterministic histories using date-averaged DSR, while TD3 robust scores
+come from fold/seed candidate outputs using median-run DSR. This difference is
+now explicit in `dsr_method` and metadata.
+
+**Tests:**  
+
+- `python3 -m unittest tests/test_run_protocol_td3_comparison.py`: 17 tests OK
+- `python3 -m unittest tests/test_run_protocol_benchmark_comparison.py`: 7 tests OK
+- `python3 -m unittest discover tests`: 881 tests OK
+
+**Research implication:**  
+The protocol comparison runner can now compare benchmarks and TD3 candidates
+with a shared robust-score reporting layer. This closes the main ranking
+fairness issue in the combined protocol infrastructure.

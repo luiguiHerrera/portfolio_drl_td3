@@ -1655,3 +1655,100 @@ rescue the DRL candidate, which is methodologically healthy.
 **Warning note:**  
 DSR uses the Bailey / Lopez de Prado expected maximum Sharpe adjustment with
 `n_trials_effective = 25`. Sensitivity is computed for `n_trials = 10, 25, 50`.
+
+## Entry X — TD3 Decision Attribution Versus Simple Rules
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Diagnose why TD3 does not beat simple dynamic allocation rules. The goal was
+to move beyond aggregate Sharpe and inspect whether the learned dominant-asset
+choices add value ex post.
+
+**Implementation:**  
+Added `src/analysis/decision_attribution.py` and
+`tests/test_decision_attribution.py`. This is a pure analysis layer. It does
+not change reward, TD3 architecture, environment dynamics, training, or
+evaluation mechanics.
+
+**Output:**  
+`outputs/tables/v2_v5_dynamic_cash_benchmark_comparison_30ep_5seeds/decision_attribution`
+
+Files written:
+
+- `dominant_asset_regret_summary.csv`
+- `td3_vs_rule_choice_summary.csv`
+- `dominant_asset_hit_rate_by_horizon.csv`
+- `regret_by_regime.csv`
+- `decision_attribution_warnings.txt`
+
+**Tests:**  
+`python3 -m unittest tests/test_decision_attribution.py` ran 9 tests OK.
+`python3 -m unittest discover tests` ran 802 tests OK.
+
+**Regret summary:**  
+`V2_reference`:
+
+- Horizon 1: mean regret = 0.0385, best-hit rate = 0.1982, beats equal =
+  0.4917, and excess versus equal = -0.0017.
+- Horizon 4: mean regret = 0.0860, best-hit rate = 0.1932, beats equal =
+  0.4536, and excess versus equal = -0.0072.
+- Horizon 12: mean regret = 0.1978, best-hit rate = 0.1471, beats equal =
+  0.3548, and excess versus equal = -0.0306.
+
+`V5_dynamic_cash_025`:
+
+- Horizon 1: mean regret = 0.0392, best-hit rate = 0.2170, beats equal =
+  0.5053, and excess versus equal = -0.0023.
+- Horizon 4: mean regret = 0.0853, best-hit rate = 0.1916, beats equal =
+  0.4938, and excess versus equal = -0.0064.
+- Horizon 12: mean regret = 0.1846, best-hit rate = 0.1897, beats equal =
+  0.4340, and excess versus equal = -0.0174.
+
+`V5_no_cash_penalty`:
+
+- Horizon 1: mean regret = 0.0379, best-hit rate = 0.2097, beats equal =
+  0.5077, and excess versus equal = -0.0010.
+- Horizon 4: mean regret = 0.0856, best-hit rate = 0.2003, beats equal =
+  0.4638, and excess versus equal = -0.0068.
+- Horizon 12: mean regret = 0.1909, best-hit rate = 0.1607, beats equal =
+  0.3830, and excess versus equal = -0.0237.
+
+**TD3 versus simple rules, horizon 12:**  
+For `V5_dynamic_cash_025`:
+
+- Versus `defensive_risk_off_12p`: overlap = 0.2351, TD3 minus rule =
+  -0.0143, and win rate = 0.3253.
+- Versus `momentum_winner_12p`: overlap = 0.1921, TD3 minus rule = -0.0381,
+  and win rate = 0.3469.
+- Versus `risk_adjusted_momentum_winner_12p_12p`: overlap = 0.2267, TD3 minus
+  rule = -0.0355, and win rate = 0.3267.
+- Versus `trend_spy_cash_12p`: overlap = 0.1954, TD3 minus rule = -0.0118,
+  and win rate = 0.3639.
+
+**Regime error findings, horizon 12:**  
+For `V5_dynamic_cash_025`:
+
+- Outside `risk_off_state`: mean regret = 0.1851, best-hit rate = 0.1911,
+  beats equal = 0.4425, and excess versus equal = -0.0153.
+- Inside `risk_off_state`: mean regret = 0.1796, best-hit rate = 0.1838,
+  beats equal = 0.4000, and excess versus equal = -0.0305.
+
+**Interpretation:**  
+All TD3 variants have low future-best-asset hit rates, especially at horizon
+12. `V5_dynamic_cash_025` improves long-horizon decision quality versus
+`V2_reference` and `V5_no_cash_penalty`, but it still loses to simple dynamic
+rules on forward-return comparison.
+
+Overlap with simple rules is low, so the agent is not merely copying those
+rules. But its different decisions are not paying enough. The weakest
+comparison is against momentum-style rules at horizon 12. The remaining
+problem is less about CASH discipline and more about dominant-asset timing and
+selection quality. Risk-off grouping does not show a clean story that V5 fixes
+risk-off decisions.
+
+**Research implication:**  
+Do not keep tuning CASH, turnover, or mandate penalties blindly. The next
+modeling work should target dominant-asset timing and state representation.
+Future experiments should test whether the agent can learn or outperform
+simple momentum and trend signals, rather than just adding more penalties.

@@ -13,6 +13,8 @@ from src.backtest.dynamic_allocation_benchmarks import (
     build_dynamic_benchmark_suite,
     build_momentum_winner_weights,
     build_risk_adjusted_momentum_winner_weights,
+    build_rolling_markowitz_weights,
+    build_rolling_risk_parity_weights,
     build_trend_following_spy_cash_weights,
     compute_rolling_momentum,
     compute_rolling_volatility,
@@ -186,6 +188,227 @@ class DynamicAllocationBenchmarkTests(unittest.TestCase):
         weights = build_defensive_risk_off_weights(returns, window=2)
 
         self.assertEqual(weights.loc[returns.index[2], "GLD"], 1.0)
+
+    def test_rolling_risk_parity_weights_are_non_negative_and_sum_to_one(self):
+        weights = build_rolling_risk_parity_weights(self.returns, window=3)
+
+        self.assertTrue((weights >= 0.0).all().all())
+        self.assertTrue((weights.sum(axis=1).round(12) == 1.0).all())
+
+    def test_rolling_risk_parity_defaults_to_equal_weights_before_history(self):
+        weights = build_rolling_risk_parity_weights(self.returns, window=3)
+        risky_assets = ["SPY", "TLT", "GLD", "BTC-USD"]
+
+        for asset in risky_assets:
+            self.assertAlmostEqual(weights.loc[self.dates[0], asset], 0.25)
+            self.assertAlmostEqual(weights.loc[self.dates[1], asset], 0.25)
+            self.assertAlmostEqual(weights.loc[self.dates[2], asset], 0.25)
+        self.assertAlmostEqual(weights.loc[self.dates[0], "CASH"], 0.0)
+
+    def test_rolling_risk_parity_uses_information_only_through_prior_period(self):
+        dates = pd.date_range("2024-01-05", periods=5, freq="W-FRI")
+        returns = pd.DataFrame(
+            {
+                "SPY": [0.01, -0.01, 0.01, 0.50, -0.50],
+                "GLD": [0.10, -0.10, 0.10, 0.00, 0.00],
+                "CASH": [0.00, 0.00, 0.00, 0.00, 0.00],
+            },
+            index=dates,
+        )
+
+        weights = build_rolling_risk_parity_weights(returns, window=3)
+
+        self.assertGreater(weights.loc[dates[3], "SPY"], weights.loc[dates[3], "GLD"])
+        self.assertLess(weights.loc[dates[4], "SPY"], weights.loc[dates[4], "GLD"])
+
+    def test_rolling_risk_parity_gives_low_vol_asset_higher_weight_after_history(self):
+        dates = pd.date_range("2024-01-05", periods=4, freq="W-FRI")
+        returns = pd.DataFrame(
+            {
+                "SPY": [0.01, -0.01, 0.01, 0.00],
+                "BTC-USD": [0.10, -0.10, 0.10, 0.00],
+                "CASH": [0.00, 0.00, 0.00, 0.00],
+            },
+            index=dates,
+        )
+
+        weights = build_rolling_risk_parity_weights(returns, window=3)
+
+        self.assertGreater(weights.loc[dates[3], "SPY"], weights.loc[dates[3], "BTC-USD"])
+
+    def test_rolling_risk_parity_excludes_cash_by_default(self):
+        weights = build_rolling_risk_parity_weights(self.returns, window=3)
+
+        self.assertTrue((weights["CASH"] == 0.0).all())
+
+    def test_rolling_risk_parity_can_include_cash_explicitly(self):
+        weights = build_rolling_risk_parity_weights(
+            self.returns,
+            window=3,
+            include_cash=True,
+        )
+
+        self.assertGreater(weights.loc[self.dates[3], "CASH"], 0.0)
+
+    def test_rolling_risk_parity_rejects_cash_asset_unless_enabled(self):
+        with self.assertRaisesRegex(ValueError, "include_cash"):
+            build_rolling_risk_parity_weights(
+                self.returns,
+                window=3,
+                assets=["SPY", "CASH"],
+            )
+
+    def test_rolling_risk_parity_max_weight_caps_and_renormalizes(self):
+        weights = build_rolling_risk_parity_weights(
+            self.returns[["SPY", "TLT", "GLD"]],
+            window=3,
+            max_weight=0.50,
+        )
+
+        self.assertLessEqual(weights.max(axis=1).max(), 0.50 + 1e-12)
+        self.assertTrue((weights.sum(axis=1).round(12) == 1.0).all())
+
+    def test_rolling_risk_parity_evaluates_with_protocol_history_and_costs(self):
+        weights = build_rolling_risk_parity_weights(self.returns, window=3)
+
+        result = evaluate_weight_strategy(self.returns, weights, transaction_cost=0.01)
+        history = result["history"]
+
+        for column in [
+            "portfolio_return",
+            "financial_net_return",
+            "transaction_cost",
+            "turnover",
+            "portfolio_value",
+            "drawdown",
+            "weight_SPY",
+        ]:
+            self.assertIn(column, history.columns)
+        self.assertTrue((history["transaction_cost"] >= 0.0).all())
+        self.assertTrue(
+            (
+                history["financial_net_return"]
+                == history["portfolio_return"] - history["transaction_cost"]
+            )
+            .round(12)
+            .all()
+        )
+
+    def test_rolling_markowitz_weights_are_non_negative_and_sum_to_one(self):
+        weights = build_rolling_markowitz_weights(self.returns, window=3)
+
+        self.assertTrue((weights >= 0.0).all().all())
+        self.assertTrue((weights.sum(axis=1).round(12) == 1.0).all())
+
+    def test_rolling_markowitz_respects_max_weight_cap(self):
+        weights = build_rolling_markowitz_weights(
+            self.returns[["SPY", "TLT", "GLD"]],
+            window=3,
+            max_weight=0.50,
+        )
+
+        self.assertLessEqual(weights.max(axis=1).max(), 0.50 + 1e-8)
+
+    def test_rolling_markowitz_defaults_to_equal_weights_before_history(self):
+        weights = build_rolling_markowitz_weights(self.returns, window=3)
+        risky_assets = ["SPY", "TLT", "GLD", "BTC-USD"]
+
+        for asset in risky_assets:
+            self.assertAlmostEqual(weights.loc[self.dates[0], asset], 0.25)
+            self.assertAlmostEqual(weights.loc[self.dates[1], asset], 0.25)
+            self.assertAlmostEqual(weights.loc[self.dates[2], asset], 0.25)
+        self.assertAlmostEqual(weights.loc[self.dates[0], "CASH"], 0.0)
+
+    def test_rolling_markowitz_uses_information_only_through_prior_period(self):
+        dates = pd.date_range("2024-01-05", periods=5, freq="W-FRI")
+        returns = pd.DataFrame(
+            {
+                "SPY": [0.00, 0.00, 0.00, 0.50, 0.00],
+                "GLD": [0.01, -0.01, 0.01, 0.00, 0.00],
+                "CASH": [0.00, 0.00, 0.00, 0.00, 0.00],
+            },
+            index=dates,
+        )
+
+        weights = build_rolling_markowitz_weights(
+            returns,
+            window=3,
+            max_weight=0.90,
+            use_mean_returns=False,
+        )
+
+        self.assertGreater(weights.loc[dates[3], "SPY"], weights.loc[dates[3], "GLD"])
+        self.assertLess(weights.loc[dates[4], "SPY"], weights.loc[dates[3], "SPY"])
+
+    def test_rolling_markowitz_fallback_handles_singular_covariance(self):
+        dates = pd.date_range("2024-01-05", periods=5, freq="W-FRI")
+        returns = pd.DataFrame(
+            {
+                "SPY": [0.01, 0.01, 0.01, 0.01, 0.01],
+                "GLD": [0.01, 0.01, 0.01, 0.01, 0.01],
+                "CASH": [0.00, 0.00, 0.00, 0.00, 0.00],
+            },
+            index=dates,
+        )
+
+        weights = build_rolling_markowitz_weights(returns, window=3)
+
+        self.assertFalse(weights.isna().any().any())
+        self.assertTrue((weights.sum(axis=1).round(12) == 1.0).all())
+
+    def test_rolling_markowitz_excludes_cash_by_default(self):
+        weights = build_rolling_markowitz_weights(self.returns, window=3)
+
+        self.assertTrue((weights["CASH"] == 0.0).all())
+
+    def test_rolling_markowitz_rejects_cash_asset_unless_enabled(self):
+        with self.assertRaisesRegex(ValueError, "include_cash"):
+            build_rolling_markowitz_weights(
+                self.returns,
+                window=3,
+                assets=["SPY", "CASH"],
+            )
+
+    def test_rolling_markowitz_evaluates_with_protocol_history_and_costs(self):
+        weights = build_rolling_markowitz_weights(self.returns, window=3)
+
+        result = evaluate_weight_strategy(self.returns, weights, transaction_cost=0.01)
+        history = result["history"]
+
+        for column in [
+            "portfolio_return",
+            "financial_net_return",
+            "transaction_cost",
+            "turnover",
+            "portfolio_value",
+            "drawdown",
+            "weight_SPY",
+        ]:
+            self.assertIn(column, history.columns)
+        self.assertTrue(
+            (
+                history["financial_net_return"]
+                == history["portfolio_return"] - history["transaction_cost"]
+            )
+            .round(12)
+            .all()
+        )
+
+    def test_rolling_markowitz_turnover_uses_protocol_convention(self):
+        dates = pd.date_range("2024-01-05", periods=2, freq="W-FRI")
+        returns = pd.DataFrame(
+            {"SPY": [0.00, 0.00], "GLD": [0.00, 0.00]},
+            index=dates,
+        )
+        weights = pd.DataFrame(
+            {"SPY": [1.0, 0.0], "GLD": [0.0, 1.0]},
+            index=dates,
+        )
+
+        result = evaluate_weight_strategy(returns, weights, transaction_cost=0.01)
+
+        self.assertAlmostEqual(result["history"].loc[0, "turnover"], 1.0)
+        self.assertAlmostEqual(result["history"].loc[1, "turnover"], 2.0)
 
     def test_weight_rows_sum_to_one(self):
         weights = build_momentum_winner_weights(self.returns, window=2)
@@ -427,6 +650,8 @@ class DynamicAllocationBenchmarkTests(unittest.TestCase):
                 "risk_adjusted_momentum_winner_2p_2p",
                 "trend_spy_cash_2p",
                 "defensive_risk_off_2p",
+                "rolling_risk_parity_inverse_vol_2p",
+                "rolling_markowitz_long_only_52p",
             },
         )
 
@@ -444,6 +669,8 @@ class DynamicAllocationBenchmarkTests(unittest.TestCase):
                 "risk_adjusted_momentum_winner_4p_4p",
                 "trend_spy_cash_4p",
                 "defensive_risk_off_4p",
+                "rolling_risk_parity_inverse_vol_4p",
+                "rolling_markowitz_long_only_52p",
             },
         )
         self.assertFalse(any(name.endswith("12p") for name in result))
@@ -456,6 +683,18 @@ class DynamicAllocationBenchmarkTests(unittest.TestCase):
         )
 
         self.assertIn("risk_adjusted_momentum_winner_4p_3p", result)
+        self.assertIn("rolling_risk_parity_inverse_vol_3p", result)
+        self.assertIn("rolling_markowitz_long_only_52p", result)
+
+    def test_markowitz_benchmark_name_reflects_window(self):
+        result = build_dynamic_benchmark_suite(
+            self.returns,
+            momentum_window=2,
+            volatility_window=2,
+            markowitz_window=4,
+        )
+
+        self.assertIn("rolling_markowitz_long_only_4p", result)
 
     def test_save_dynamic_benchmark_suite_writes_history_and_summary_csvs(self):
         suite = build_dynamic_benchmark_suite(
@@ -519,6 +758,8 @@ class DynamicAllocationBenchmarkTests(unittest.TestCase):
             "risk_adjusted_momentum_winner_12p_12p",
             "trend_spy_cash_12p",
             "defensive_risk_off_12p",
+            "rolling_risk_parity_inverse_vol_12p",
+            "rolling_markowitz_long_only_52p",
         ]:
             self.assertTrue(summary.loc[benchmark_name, "signal_lagged"])
             self.assertTrue(
@@ -547,6 +788,16 @@ class DynamicAllocationBenchmarkTests(unittest.TestCase):
                 self.returns,
                 volatility_floor=0.0,
             )
+        with self.assertRaises(ValueError):
+            build_rolling_risk_parity_weights(self.returns, min_vol=0.0)
+        with self.assertRaises(ValueError):
+            build_rolling_risk_parity_weights(self.returns, max_weight=0.10)
+        with self.assertRaises(ValueError):
+            build_rolling_markowitz_weights(self.returns, risk_aversion=-0.1)
+        with self.assertRaises(ValueError):
+            build_rolling_markowitz_weights(self.returns, max_weight=0.10)
+        with self.assertRaises(ValueError):
+            build_rolling_markowitz_weights(self.returns, min_weight=0.7)
         with self.assertRaises(ValueError):
             evaluate_weight_strategy(self.returns, self.returns, transaction_cost=1.0)
         with self.assertRaises(ValueError):

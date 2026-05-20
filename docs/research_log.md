@@ -2272,3 +2272,161 @@ tables should not be used as final evidence after the cost-convention fix.
 The next common-protocol step should evaluate TD3 candidates and benchmarks
 through a unified net-return comparison layer, including rolling risk parity and
 rolling Markowitz baselines.
+
+## Entry X — Common Benchmark Protocol Runner Smoke Test
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Validate the new benchmark-only protocol runner before using it as the
+comparison base for TD3 candidates.
+
+**Implementation summary:**  
+Added a benchmark-only runner for the common experimental protocol. The runner
+evaluates static and dynamic benchmarks on the same aligned return matrix,
+using the same timing, turnover, and transaction-cost conventions.
+
+Static benchmarks are now evaluated as explicit weight strategies inside this
+runner, so they are net-cost comparable rather than only gross references.
+
+**Benchmarks included:**  
+
+- `BuyHold_SPY`
+- `BuyHold_TLT`
+- `BuyHold_GLD`
+- `BuyHold_BTC-USD`
+- `Equal_Weight`
+- `Equal_Weight_Risky`
+- `60_40_SPY_TLT`
+- `momentum_winner_12p`
+- `risk_adjusted_momentum_winner_12p_12p`
+- `trend_spy_cash_12p`
+- `defensive_risk_off_12p`
+- `rolling_risk_parity_inverse_vol_12p`
+- `rolling_markowitz_long_only_52p`
+- `rolling_markowitz_min_variance_52p`
+
+**New rolling baselines:**  
+
+`rolling_risk_parity_inverse_vol_12p` was implemented as rolling
+inverse-volatility risk parity, not full equal-risk-contribution optimization.
+
+`rolling_markowitz_long_only_52p` was implemented as a constrained rolling
+historical mean-variance benchmark using only past data, long-only weights,
+ridge covariance regularization, and a max-weight constraint.
+
+`rolling_markowitz_min_variance_52p` was also added as a constrained rolling
+minimum-variance variant.
+
+**Protocol conventions:**  
+
+All benchmark histories are evaluated through the common strategy evaluator:
+
+- information through `t-1`
+- weights selected for `t`
+- realized return applied at `t`
+- previous weights at first evaluated period default to equal weight
+- turnover = `sum(abs(w_t - w_{t-1}))`
+- transaction cost = `transaction_cost_rate * turnover`
+- financial net return = `portfolio_return - transaction_cost`
+
+**Smoke test with real data:**  
+The runner was executed on:
+
+`data/processed/returns_weekly_latest.csv`
+
+Output directory:
+
+`outputs/tables/protocol_benchmark_comparison_smoke`
+
+The smoke test produced:
+
+- `benchmark_metrics_table.csv`
+- `benchmark_comparison_summary.csv`
+- `benchmark_diagnostics.csv`
+- 14 benchmark history files under `histories/`
+
+All benchmark history files included the required comparison columns:
+
+- `portfolio_return`
+- `financial_net_return`
+- `transaction_cost`
+- `turnover`
+- `portfolio_value`
+- `drawdown`
+- `weight_*`
+
+**Smoke result:**  
+The benchmark runner produced coherent outputs. No missing history columns were
+detected. Rolling risk parity, constrained rolling Markowitz, and constrained
+minimum-variance benchmarks all appeared in the summary tables.
+
+The smoke outputs should be treated as functional validation, not final
+model-selection evidence.
+
+**Tests:**  
+
+- `python3 -m unittest tests/test_run_protocol_benchmark_comparison.py`: 7 tests OK
+- `python3 -m unittest tests/test_dynamic_allocation_benchmarks.py`: 55 tests OK
+- `python3 -m unittest discover tests`: 864 tests OK
+
+**Research implication:**  
+The project now has a common benchmark suite that is timing-aware,
+net-cost-comparable, and suitable as the baseline layer for the next TD3
+candidate comparison.
+
+The next step is to create a TD3 protocol comparison runner that evaluates
+V2, `V5_no_volatility_block`, and V6 against this benchmark suite under the
+same protocol.
+
+## Entry X — TD3 Protocol Comparison Runner Smoke Test
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Validate the unified TD3 protocol comparison runner as the official combined
+reporting layer for benchmark and TD3 candidate comparisons.
+
+**Implementation summary:**  
+Added a TD3 protocol comparison runner as an ingestion/reporting layer, not a
+TD3 training orchestrator.
+
+The runner reuses the benchmark protocol runner and can combine benchmark
+metrics with ingested TD3 candidate results under the same reporting schema.
+
+**Output files:**  
+
+The smoke run produced:
+
+- `protocol_comparison_metrics.csv`
+- `protocol_comparison_summary.csv`
+- `protocol_comparison_diagnostics.csv`
+- `protocol_model_selection_table.csv`
+- `benchmark_metrics_table.csv`
+- `td3_candidate_metrics_table.csv`
+- `protocol_metadata.json`
+- `histories/`
+
+**Smoke run:**  
+
+Command:
+
+```text
+python3 -m src.experiments.run_protocol_td3_comparison \
+  --returns-path data/processed/returns_weekly_latest.csv \
+  --output-dir outputs/tables/protocol_td3_comparison_smoke \
+  --smoke
+
+  **Real ingestion note:**  
+The real ingestion test successfully combined fresh protocol benchmarks with
+TD3 candidate rows ingested from the previous V6 validation experiment.
+
+This validates the reporting infrastructure, not final TD3 superiority. In this
+combined table, benchmark rows do not yet include protocol-level robust_score
+fields, so `protocol_model_selection_table.csv` should not be interpreted as a
+final model ranking. Financial metrics such as Sharpe, drawdown, turnover, and
+net-return comparability still show that simple benchmarks remain very strong.
+
+A final model-selection run should either compute robust_score for benchmarks
+inside the combined protocol runner or clearly separate benchmark financial
+ranking from TD3 robust-score ranking.

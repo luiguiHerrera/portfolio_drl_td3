@@ -302,9 +302,9 @@ class FeatureFactoryTests(unittest.TestCase):
         self.assertFalse(macro_data.empty)
 
     def test_unsupported_version_raises_value_error(self):
-        config = {"features": {"version": "v6"}}
+        config = {"features": {"version": "v7"}}
 
-        with self.assertRaisesRegex(ValueError, "Unsupported feature version: v6."):
+        with self.assertRaisesRegex(ValueError, "Unsupported feature version: v7."):
             build_configured_features(self.returns, config=config)
 
     def _patched_builders(self):

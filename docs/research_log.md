@@ -1867,3 +1867,260 @@ Do not add more CASH, turnover, or mandate penalty tuning now. Do not move yet
 to GARCH, cointegration, LSTM, or imitation learning. The next modeling work
 should target parsimonious momentum/trend state design and dominant-asset
 timing quality.
+
+## Entry X — V6 Financial State Features and First Validation
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Validate the new V6 financial state representation before committing it as an
+experimental candidate. The objective was to test whether a more parsimonious
+financial state, built from momentum/trend, regime probabilities, volatility
+proxies, and defensive attractiveness, improves over V2 and recent V5
+ablations without adding more reward tuning.
+
+**Implementation:**  
+Added `src/data/features_v6.py`, updated feature factory/config support for
+`features.version = v6`, and added `tests/test_features_v6.py`.
+
+V6 is opt-in and does not change V1-V5 behavior. No reward, TD3 architecture,
+environment dynamics, or training logic were changed.
+
+**V6 feature structure:**  
+- Momentum/trend: 24 features.
+- Cross-sectional momentum/ranks/winners: 16 features.
+- Risk regime probabilities: 5 features.
+- Volatility proxies: 16 features.
+- Defensive attractiveness: 7 features.
+- Total: 68 features.
+
+**Smoke checks:**  
+Using `data/processed/returns_weekly_latest.csv`, the V6 prepared dataset
+produced:
+
+- `train_features_shape = (371, 68)`
+- `validation_features_shape = (79, 68)`
+- `test_features_shape = (80, 68)`
+- `missing_value_count = 0`
+- `first_aligned_date = 2016-03-25`
+- `last_aligned_date = 2026-05-15`
+
+Additional checks:
+
+- No CASH momentum, trend, winner, or volatility proxy columns were created.
+- Probability features stayed within `[0, 1]`.
+- No duplicated columns or obvious redundant naming were detected.
+
+**Validation output:**  
+`outputs/tables/v6_financial_state_validation_30ep_5seeds`
+
+**Setup:**  
+- `returns_path = data/processed/returns_weekly_latest.csv`
+- Episodes: 30
+- Seeds: `[7, 21, 42, 84, 101]`
+- Expanding walk-forward folds.
+- V6 train starts later than V2/V5 because of rolling/z-score warmup:
+  - F1: 249 / 53 / 52
+  - F2: 302 / 52 / 52
+  - F3: 354 / 52 / 52
+  - F4: 406 / 52 / 72
+- V6 used dynamic cash permission through raw shifted `cash_permission_score`
+  as auxiliary `cash_risk_off_column`.
+- V5 references used `risk_off_state`.
+- V2 used no dynamic cash penalty.
+
+**Overall test results:**  
+
+`BuyHold_GLD`:
+- Robust Sharpe = 0.7111
+- Mean Sharpe = 1.1556
+- Return = 0.2764
+- Max drawdown = -0.1199
+
+`BuyHold_SPY`:
+- Robust Sharpe = 0.4040
+- Mean Sharpe = 1.0294
+- Return = 0.1509
+- Max drawdown = -0.1362
+
+`trend_spy_cash_12p`:
+- Robust Sharpe = 0.1132
+- Mean Sharpe = 0.9152
+- Return = 0.0905
+- Max drawdown = -0.0641
+
+`V6_financial_state`:
+- Robust Sharpe = 0.0248
+- Mean Sharpe = 0.5312
+- Return = 0.1878
+- Max drawdown = -0.2401
+
+`V5_no_volatility_block`:
+- Robust Sharpe = -0.1155
+- Mean Sharpe = 0.4480
+- Return = 0.0935
+- Max drawdown = -0.1836
+
+`V2_reference_full`:
+- Robust Sharpe = -0.1296
+- Mean Sharpe = 0.3836
+- Return = 0.0994
+- Max drawdown = -0.2306
+
+`V5_momentum_only`:
+- Robust Sharpe = -0.2761
+- Mean Sharpe = 0.3125
+- Return = 0.1628
+- Max drawdown = -0.3024
+
+**Robust score ranking after conservative DSR aggregation:**  
+
+The first robust-score report used pooled DSR across folds and seeds. A later
+audit showed that this overstated the statistical evidence because overlapping
+fold/seed returns were treated as too many independent observations.
+
+For V6:
+
+- `pooled_dsr_n25 = 0.6254`
+- `median_run_dsr_n25 = 0.0768`
+- `date_averaged_dsr_n25 = 0.2385`
+- `dsr_method = median_run`
+
+Pooled DSR remains reported for transparency, but composite `robust_score` now
+uses median run-level DSR when available.
+
+Corrected robust-score ranking:
+
+`Equal_Weight`:
+- `robust_score = 0.7019`
+
+`Equal_Weight_Risky`:
+- `robust_score = 0.6974`
+
+`BuyHold_GLD`:
+- `robust_score = 0.6315`
+
+`trend_spy_cash_12p`:
+- `robust_score = 0.6168`
+
+`BuyHold_SPY`:
+- `robust_score = 0.5792`
+
+`V5_no_volatility_block`:
+- `robust_score = 0.4271`
+
+`V6_financial_state`:
+- `robust_score = 0.4215`
+
+`V2_reference_full`:
+- `robust_score = 0.4158`
+
+**Decision attribution at horizon 12:**  
+
+`V5_momentum_only`:
+- Regret = 0.1534
+- Hit rate = 0.2725
+- Beats equal = 0.4838
+- Excess vs equal = 0.0138
+
+`V6_financial_state`:
+- Regret = 0.1581
+- Hit rate = 0.2349
+- Beats equal = 0.4921
+- Excess vs equal = 0.0091
+
+`V5_no_volatility_block`:
+- Regret = 0.1743
+- Hit rate = 0.1703
+- Beats equal = 0.4910
+- Excess vs equal = -0.0071
+
+`V2_reference_full`:
+- Regret = 0.1999
+- Hit rate = 0.1462
+- Beats equal = 0.3437
+- Excess vs equal = -0.0327
+
+**Versus simple rules at horizon 12:**  
+
+`V6_financial_state`:
+- TD3 minus `momentum_winner_12p` = -0.0116
+- Win rate vs momentum = 0.3410
+- TD3 minus `trend_spy_cash_12p` = 0.0147
+- Win rate vs trend = 0.3825
+
+`V2_reference_full`:
+- TD3 minus `momentum_winner_12p` = -0.0533
+- Win rate vs momentum = 0.3128
+- TD3 minus `trend_spy_cash_12p` = -0.0271
+- Win rate vs trend = 0.2927
+
+**Cash discipline:**  
+
+`V6_financial_state`:
+- Mean cash = 0.0014
+- Cash above 10% = 0.0028
+- Unjustified cash = 0.0011
+
+`V2_reference_full`:
+- Mean cash = 0.1536
+- Cash above 10% = 0.1856
+- Unjustified cash = 0.1332
+
+**Seed summary:**  
+V6 mean Sharpe was positive for all five seeds, but robust seed scores were
+mixed:
+
+- Seed 7: Sharpe = 0.5518, robust = 0.1286
+- Seed 21: Sharpe = 1.0367, robust = 0.6069
+- Seed 42: Sharpe = 0.2405, robust = -0.2944
+- Seed 84: Sharpe = 0.3137, robust = -0.4198
+- Seed 101: Sharpe = 0.5134, robust = -0.0406
+
+V6 is not just one lucky seed, but it remains fold/regime sensitive. F2/F3 were
+stronger, while F1/F4 were weaker.
+
+**Interpretation:**  
+V6 improves over V2 on cash discipline, dominant-asset regret, and
+rule-comparison quality. It also improves the financial structure of the state
+representation by centering the model on momentum/trend, interpretable regime
+probabilities, volatility proxies, and defensive attractiveness.
+
+However, after correcting DSR aggregation, V6 no longer clearly ranks above
+`V5_no_volatility_block` on composite `robust_score`. The corrected ranking is
+more conservative:
+
+- `V5_no_volatility_block`: `robust_score = 0.4271`
+- `V6_financial_state`: `robust_score = 0.4215`
+- `V2_reference_full`: `robust_score = 0.4158`
+
+This means V6 remains a valid experimental candidate, but not a clear empirical
+winner.
+
+V6 does not beat the simple benchmark set. Traditional benchmarks still
+dominate fold-level winners and top robust-score ranks. Therefore, V6 is worth
+committing as a candidate feature set, but not as evidence of TD3 benchmark
+superiority.
+
+The DSR audit is methodologically important: the initially high V6 DSR was
+overstated by pooled fold/seed returns. Pooled DSR remains useful as a
+diagnostic, but final model selection should rely on median run-level DSR or
+another conservative aggregation.
+
+**Research implication:**  
+V6 supports the financial design direction: a parsimonious state centered on
+momentum/trend, interpretable regime probabilities, volatility proxies, and
+defensive attractiveness is more coherent than the overloaded full V5 state.
+
+The corrected DSR aggregation also shows why model selection must be
+conservative. V6 improves several behavioral diagnostics, but it is not yet a
+robust winner over the strongest DRL alternatives or simple benchmarks.
+
+The next step should not be reward penalty tuning. It should be the common
+experimental protocol: reward/config cleanup, benchmark leakage audit, rolling
+risk parity/Markowitz benchmarks, and revalidation of V2/V6 under identical
+conditions.
+
+**Tests:**  
+`python3 -m unittest discover tests` ran 823 tests OK.
+

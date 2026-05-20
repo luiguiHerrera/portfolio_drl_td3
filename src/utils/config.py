@@ -192,9 +192,9 @@ def _validate_features(config: dict) -> None:
         raise ValueError("Config field features must be a mapping.")
 
     version = features.get("version", "v1")
-    if version not in {"v1", "v2", "v3", "v4", "v5"}:
+    if version not in {"v1", "v2", "v3", "v4", "v5", "v6"}:
         raise ValueError(
-            "Config field features.version must be one of: v1, v2, v3, v4, v5."
+            "Config field features.version must be one of: v1, v2, v3, v4, v5, v6."
         )
     if version == "v1":
         return
@@ -204,6 +204,9 @@ def _validate_features(config: dict) -> None:
         raise ValueError("Config field features.market_asset must be a non-empty string.")
     if market_asset not in config["data"]["assets"]:
         raise ValueError("Config field features.market_asset must exist in data.assets.")
+    if version == "v6":
+        _validate_v6_financial_state_config(features)
+        return
 
     short_window = features.get("short_window", 4)
     long_window = features.get("long_window", 12)
@@ -372,6 +375,34 @@ def _validate_v5_regime_feature_config(features: dict) -> None:
         risk_off_threshold,
         "features.risk_off_threshold",
     )
+
+
+def _validate_v6_financial_state_config(features: dict) -> None:
+    short_window = features.get("short_window", 4)
+    medium_window = features.get("medium_window", 12)
+    long_window = features.get("long_window", 26)
+    ewma_short_span = features.get("ewma_short_span", 4)
+    ewma_long_span = features.get("ewma_long_span", 12)
+    correlation_window = features.get("correlation_window", 12)
+    zscore_window = features.get("zscore_window", 52)
+
+    _validate_integer_at_least_two(short_window, "features.short_window")
+    _validate_integer_at_least_two(medium_window, "features.medium_window")
+    _validate_integer_at_least_two(long_window, "features.long_window")
+    _validate_integer_at_least_two(ewma_short_span, "features.ewma_short_span")
+    _validate_integer_at_least_two(ewma_long_span, "features.ewma_long_span")
+    _validate_integer_at_least_two(correlation_window, "features.correlation_window")
+    _validate_integer_at_least_two(zscore_window, "features.zscore_window")
+    if medium_window < short_window:
+        raise ValueError(
+            "Config field features.medium_window must be greater than or equal to "
+            "features.short_window."
+        )
+    if long_window < medium_window:
+        raise ValueError(
+            "Config field features.long_window must be greater than or equal to "
+            "features.medium_window."
+        )
 
 
 def _validate_ratio_sum(config: dict) -> None:

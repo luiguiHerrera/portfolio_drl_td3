@@ -24,3 +24,9 @@ data/processed/
 # Outputs generados
 outputs/
 reports/
+
+# Backup temporal de entorno Rosetta
+.venv_rosetta_backup/
+
+# Local environment lock snapshots
+requirements_arm64_lock.txt

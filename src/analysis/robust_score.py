@@ -23,6 +23,10 @@ DEFAULT_COMPOSITE_WEIGHTS = {
 }
 
 EULER_MASCHERONI = 0.5772156649
+POOLED_DSR_WARNING = (
+    "Pooled DSR can overstate evidence when folds/seeds contain overlapping dates. "
+    "Composite robust_score uses median run-level DSR when available."
+)
 
 
 def compute_annualized_sharpe(returns, periods_per_year: int = 52) -> float:
@@ -236,12 +240,7 @@ def compute_composite_robust_score(
         raise ValueError("Composite score weights must sum to a positive value.")
 
     result = metrics_df.copy()
-    if "dsr_score" not in result:
-        result["dsr_score"] = normalize_metric_series(
-            _numeric_column(result, "sharpe", default=np.nan),
-        )
-        result["dsr_available"] = False
-        result["dsr_method"] = "fallback_from_sharpe"
+    result = _ensure_dsr_score_columns(result)
 
     result["sortino_score"] = normalize_metric_series(
         _first_available_numeric(result, ["sortino", "mean_sortino"]),
@@ -293,25 +292,33 @@ def build_robust_score_report(
 
     metrics = _rename_report_columns(metrics)
     warnings: list[str] = []
-    dsr_values = []
-    dsr_n10_values = []
-    dsr_n25_values = []
-    dsr_n50_values = []
+    pooled_dsr_n10_values = []
+    pooled_dsr_n25_values = []
+    pooled_dsr_n50_values = []
+    mean_run_dsr_n25_values = []
+    median_run_dsr_n25_values = []
+    min_run_dsr_n25_values = []
+    max_run_dsr_n25_values = []
+    date_averaged_dsr_n25_values = []
     psr_values = []
     dsr_available = []
     dsr_methods = []
     for _, row in metrics.iterrows():
-        returns = _load_returns_for_strategy(
+        observations = _load_return_observations_for_strategy(
             comparison_path=comparison_path,
             strategy=str(row["strategy"]),
             strategy_type=str(row["type"]),
             split=split,
         )
-        if returns is None or returns.empty:
-            dsr_values.append(np.nan)
-            dsr_n10_values.append(np.nan)
-            dsr_n25_values.append(np.nan)
-            dsr_n50_values.append(np.nan)
+        if observations is None or observations.empty:
+            pooled_dsr_n10_values.append(np.nan)
+            pooled_dsr_n25_values.append(np.nan)
+            pooled_dsr_n50_values.append(np.nan)
+            mean_run_dsr_n25_values.append(np.nan)
+            median_run_dsr_n25_values.append(np.nan)
+            min_run_dsr_n25_values.append(np.nan)
+            max_run_dsr_n25_values.append(np.nan)
+            date_averaged_dsr_n25_values.append(np.nan)
             psr_values.append(np.nan)
             dsr_available.append(False)
             dsr_methods.append("fallback_from_sharpe")
@@ -319,6 +326,7 @@ def build_robust_score_report(
                 f"{row['strategy']}: returns unavailable; DSR falls back to Sharpe normalization.",
             )
             continue
+        returns = observations["return"]
         psr_values.append(
             compute_probabilistic_sharpe_ratio(
                 returns,
@@ -326,46 +334,68 @@ def build_robust_score_report(
                 periods_per_year=periods_per_year,
             ),
         )
-        dsr_n10 = compute_deflated_sharpe_ratio(
+        pooled_dsr_n10 = compute_deflated_sharpe_ratio(
             returns,
             n_trials=10,
             periods_per_year=periods_per_year,
             benchmark_sharpe=benchmark_sharpe,
         )
-        dsr_n25 = compute_deflated_sharpe_ratio(
+        pooled_dsr_n25 = compute_deflated_sharpe_ratio(
             returns,
             n_trials=25,
             periods_per_year=periods_per_year,
             benchmark_sharpe=benchmark_sharpe,
         )
-        dsr_n50 = compute_deflated_sharpe_ratio(
+        pooled_dsr_n50 = compute_deflated_sharpe_ratio(
             returns,
             n_trials=50,
             periods_per_year=periods_per_year,
             benchmark_sharpe=benchmark_sharpe,
         )
-        configured_dsr = compute_deflated_sharpe_ratio(
-            returns,
+        run_dsr_values = _compute_run_level_dsr(
+            observations=observations,
             n_trials=n_trials_effective,
             periods_per_year=periods_per_year,
             benchmark_sharpe=benchmark_sharpe,
         )
-        dsr_n10_values.append(dsr_n10)
-        dsr_n25_values.append(dsr_n25)
-        dsr_n50_values.append(dsr_n50)
-        dsr_values.append(configured_dsr)
+        date_averaged_dsr_n25 = _compute_date_averaged_dsr(
+            observations=observations,
+            n_trials=n_trials_effective,
+            periods_per_year=periods_per_year,
+            benchmark_sharpe=benchmark_sharpe,
+        )
+        pooled_dsr_n10_values.append(pooled_dsr_n10)
+        pooled_dsr_n25_values.append(pooled_dsr_n25)
+        pooled_dsr_n50_values.append(pooled_dsr_n50)
+        mean_run_dsr_n25_values.append(_finite_mean(run_dsr_values))
+        median_run_dsr_n25_values.append(_finite_median(run_dsr_values))
+        min_run_dsr_n25_values.append(_finite_min(run_dsr_values))
+        max_run_dsr_n25_values.append(_finite_max(run_dsr_values))
+        date_averaged_dsr_n25_values.append(date_averaged_dsr_n25)
         dsr_available.append(True)
-        dsr_methods.append("bailey_lopez_de_prado_from_returns")
+        dsr_methods.append(
+            _select_dsr_method(
+                median_run_dsr_n25_values[-1],
+                date_averaged_dsr_n25,
+                pooled_dsr_n25,
+            ),
+        )
 
     metrics["psr_score"] = psr_values
-    metrics["dsr_n10"] = dsr_n10_values
-    metrics["dsr_n25"] = dsr_n25_values
-    metrics["dsr_n50"] = dsr_n50_values
-    metrics["dsr_score"] = pd.Series(dsr_values, index=metrics.index).fillna(
-        normalize_metric_series(metrics["sharpe"]),
-    )
+    metrics["pooled_dsr_n10"] = pooled_dsr_n10_values
+    metrics["pooled_dsr_n25"] = pooled_dsr_n25_values
+    metrics["pooled_dsr_n50"] = pooled_dsr_n50_values
+    metrics["dsr_n10"] = metrics["pooled_dsr_n10"]
+    metrics["dsr_n25"] = metrics["pooled_dsr_n25"]
+    metrics["dsr_n50"] = metrics["pooled_dsr_n50"]
+    metrics["mean_run_dsr_n25"] = mean_run_dsr_n25_values
+    metrics["median_run_dsr_n25"] = median_run_dsr_n25_values
+    metrics["min_run_dsr_n25"] = min_run_dsr_n25_values
+    metrics["max_run_dsr_n25"] = max_run_dsr_n25_values
+    metrics["date_averaged_dsr_n25"] = date_averaged_dsr_n25_values
     metrics["dsr_available"] = dsr_available
     metrics["dsr_method"] = dsr_methods
+    metrics = _ensure_dsr_score_columns(metrics)
     metrics = _merge_diagnostic_columns(comparison_path, metrics)
     scored = compute_composite_robust_score(metrics)
 
@@ -374,9 +404,17 @@ def build_robust_score_report(
         "type",
         "robust_score",
         "dsr_score",
+        "pooled_dsr_n10",
+        "pooled_dsr_n25",
+        "pooled_dsr_n50",
         "dsr_n10",
         "dsr_n25",
         "dsr_n50",
+        "mean_run_dsr_n25",
+        "median_run_dsr_n25",
+        "min_run_dsr_n25",
+        "max_run_dsr_n25",
+        "date_averaged_dsr_n25",
         "dsr_available",
         "dsr_method",
         "sortino_score",
@@ -401,14 +439,17 @@ def build_robust_score_report(
     ranking.loc[:, ranking_columns].to_csv(ranking_path, index=False)
     scored.to_csv(details_path, index=False)
 
+    warning_lines = [POOLED_DSR_WARNING]
     if warnings:
-        warnings_text = "\n".join(warnings)
+        warning_lines.extend(warnings)
+        warnings_text = "\n".join(warning_lines)
     else:
-        warnings_text = (
+        warning_lines.append(
             "DSR uses Bailey/Lopez de Prado expected maximum Sharpe adjustment "
             f"with n_trials_effective={n_trials_effective}; sensitivity computed "
             "for n_trials 10/25/50."
         )
+        warnings_text = "\n".join(warning_lines)
     warnings_path.write_text(warnings_text + "\n")
 
     return {
@@ -425,6 +466,117 @@ def _clean_returns(returns) -> pd.Series:
     series = pd.Series(returns).apply(pd.to_numeric, errors="coerce")
     series = series.replace([np.inf, -np.inf], np.nan).dropna()
     return series.astype(float)
+
+
+def _ensure_dsr_score_columns(metrics: pd.DataFrame) -> pd.DataFrame:
+    result = metrics.copy()
+    if "dsr_score" in result:
+        if "dsr_available" not in result:
+            result["dsr_available"] = _numeric_column(result, "dsr_score").notna()
+        if "dsr_method" not in result:
+            result["dsr_method"] = "provided"
+        return result
+
+    median_run = _numeric_column(result, "median_run_dsr_n25", default=np.nan)
+    date_averaged = _numeric_column(result, "date_averaged_dsr_n25", default=np.nan)
+    pooled = _numeric_column(result, "pooled_dsr_n25", default=np.nan)
+    selected = median_run.combine_first(date_averaged).combine_first(pooled)
+    fallback = normalize_metric_series(_numeric_column(result, "sharpe", default=np.nan))
+    result["dsr_score"] = selected.combine_first(fallback)
+
+    methods = pd.Series("fallback_from_sharpe", index=result.index, dtype=object)
+    methods.loc[pooled.notna()] = "pooled"
+    methods.loc[date_averaged.notna()] = "date_averaged"
+    methods.loc[median_run.notna()] = "median_run"
+    result["dsr_method"] = methods
+    result["dsr_available"] = selected.notna()
+    return result
+
+
+def _select_dsr_method(
+    median_run_dsr: float,
+    date_averaged_dsr: float,
+    pooled_dsr: float,
+) -> str:
+    if np.isfinite(median_run_dsr):
+        return "median_run"
+    if np.isfinite(date_averaged_dsr):
+        return "date_averaged"
+    if np.isfinite(pooled_dsr):
+        return "pooled"
+    return "fallback_from_sharpe"
+
+
+def _compute_run_level_dsr(
+    observations: pd.DataFrame,
+    n_trials: int,
+    periods_per_year: int,
+    benchmark_sharpe: float,
+) -> pd.Series:
+    if observations.empty or "run_id" not in observations:
+        return pd.Series(dtype=float)
+    values = []
+    for _, group in observations.groupby("run_id", sort=False):
+        returns = _clean_returns(group["return"])
+        if returns.empty:
+            continue
+        values.append(
+            compute_deflated_sharpe_ratio(
+                returns,
+                n_trials=n_trials,
+                periods_per_year=periods_per_year,
+                benchmark_sharpe=benchmark_sharpe,
+            ),
+        )
+    return pd.Series(values, dtype=float)
+
+
+def _compute_date_averaged_dsr(
+    observations: pd.DataFrame,
+    n_trials: int,
+    periods_per_year: int,
+    benchmark_sharpe: float,
+) -> float:
+    if observations.empty or "date" not in observations:
+        return np.nan
+    dated = observations.dropna(subset=["date"]).copy()
+    if dated.empty:
+        return np.nan
+    date_averaged_returns = (
+        dated.groupby("date", sort=True)["return"].mean().replace([np.inf, -np.inf], np.nan).dropna()
+    )
+    if date_averaged_returns.empty:
+        return np.nan
+    return compute_deflated_sharpe_ratio(
+        date_averaged_returns,
+        n_trials=n_trials,
+        periods_per_year=periods_per_year,
+        benchmark_sharpe=benchmark_sharpe,
+    )
+
+
+def _finite_mean(values: pd.Series) -> float:
+    valid = _finite_values(values)
+    return float(valid.mean()) if not valid.empty else np.nan
+
+
+def _finite_median(values: pd.Series) -> float:
+    valid = _finite_values(values)
+    return float(valid.median()) if not valid.empty else np.nan
+
+
+def _finite_min(values: pd.Series) -> float:
+    valid = _finite_values(values)
+    return float(valid.min()) if not valid.empty else np.nan
+
+
+def _finite_max(values: pd.Series) -> float:
+    valid = _finite_values(values)
+    return float(valid.max()) if not valid.empty else np.nan
+
+
+def _finite_values(values: pd.Series) -> pd.Series:
+    return pd.Series(values).replace([np.inf, -np.inf], np.nan).dropna()
 
 
 def _standard_normal_cdf(value: float) -> float:
@@ -549,6 +701,23 @@ def _load_returns_for_strategy(
     strategy_type: str,
     split: str,
 ) -> pd.Series | None:
+    observations = _load_return_observations_for_strategy(
+        comparison_path,
+        strategy,
+        strategy_type,
+        split,
+    )
+    if observations is None or observations.empty:
+        return None
+    return observations["return"].dropna()
+
+
+def _load_return_observations_for_strategy(
+    comparison_path: Path,
+    strategy: str,
+    strategy_type: str,
+    split: str,
+) -> pd.DataFrame | None:
     if strategy_type == "drl":
         parts = []
         for history_path in sorted(comparison_path.glob(f"F*_{strategy}_seed_*/{split}_policy_history.csv")):
@@ -559,9 +728,19 @@ def _load_returns_for_strategy(
                 else "portfolio_return"
             )
             if return_column in history:
-                parts.append(pd.to_numeric(history[return_column], errors="coerce"))
+                returns = pd.to_numeric(history[return_column], errors="coerce")
+                dates = _history_dates(history, returns.index)
+                parts.append(
+                    pd.DataFrame(
+                        {
+                            "run_id": history_path.parent.name,
+                            "date": dates,
+                            "return": returns,
+                        },
+                    ),
+                )
         if parts:
-            return pd.concat(parts, ignore_index=True).dropna()
+            return _clean_return_observations(pd.concat(parts, ignore_index=True))
         return None
 
     equity_path = comparison_path / "benchmark_equity_curves_by_fold.csv"
@@ -576,7 +755,29 @@ def _load_returns_for_strategy(
         group = group.sort_values("date")
         returns = pd.to_numeric(group["equity_curve"], errors="coerce").pct_change().dropna()
         if not returns.empty:
-            parts.append(returns)
+            parts.append(
+                pd.DataFrame(
+                    {
+                        "run_id": f"{strategy}_{group['fold'].iloc[0]}",
+                        "date": pd.to_datetime(group.loc[returns.index, "date"], errors="coerce"),
+                        "return": returns,
+                    },
+                ),
+            )
     if not parts:
         return None
-    return pd.concat(parts, ignore_index=True).dropna()
+    return _clean_return_observations(pd.concat(parts, ignore_index=True))
+
+
+def _history_dates(history: pd.DataFrame, fallback_index: pd.Index) -> pd.Series:
+    if "date" not in history:
+        return pd.Series(pd.NaT, index=fallback_index)
+    return pd.to_datetime(history["date"], errors="coerce")
+
+
+def _clean_return_observations(observations: pd.DataFrame) -> pd.DataFrame:
+    result = observations.copy()
+    result["return"] = pd.to_numeric(result["return"], errors="coerce")
+    result["date"] = pd.to_datetime(result["date"], errors="coerce")
+    result = result.replace([np.inf, -np.inf], np.nan)
+    return result.dropna(subset=["return"]).reset_index(drop=True)

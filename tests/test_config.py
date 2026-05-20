@@ -526,6 +526,25 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded_config["features"]["version"], "v5")
 
+    def test_load_config_accepts_valid_v6_features_section(self):
+        config = _valid_config()
+        config["features"] = {
+            "version": "v6",
+            "market_asset": "SPY",
+            "short_window": 4,
+            "medium_window": 12,
+            "long_window": 26,
+            "ewma_short_span": 4,
+            "ewma_long_span": 12,
+            "correlation_window": 12,
+            "zscore_window": 52,
+        }
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["features"]["version"], "v6")
+
     def test_load_config_accepts_v3_macro_path_and_macro_date_column(self):
         config = _valid_config()
         config["features"] = {
@@ -573,7 +592,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_load_config_rejects_unsupported_feature_version(self):
         config = _valid_config()
-        config["features"] = {"version": "v6"}
+        config["features"] = {"version": "v7"}
 
         with self._temporary_config(config) as config_path:
             with self.assertRaisesRegex(ValueError, "features.version"):
@@ -604,6 +623,27 @@ class ConfigTests(unittest.TestCase):
             {"version": "v5", "drawdown_window": 1},
             {"version": "v5", "risk_off_threshold": -0.1},
             {"version": "v5", "risk_off_threshold": True},
+        )
+
+        for features in invalid_feature_sections:
+            config = _valid_config()
+            config["features"] = features
+            with self.subTest(features=features):
+                with self._temporary_config(config) as config_path:
+                    with self.assertRaises(ValueError):
+                        load_config(str(config_path))
+
+    def test_load_config_rejects_invalid_v6_feature_parameters(self):
+        invalid_feature_sections = (
+            {"version": "v6", "short_window": 1},
+            {"version": "v6", "medium_window": 1},
+            {"version": "v6", "long_window": 1},
+            {"version": "v6", "ewma_short_span": 1},
+            {"version": "v6", "ewma_long_span": 1},
+            {"version": "v6", "correlation_window": 1},
+            {"version": "v6", "zscore_window": 1},
+            {"version": "v6", "short_window": 12, "medium_window": 4},
+            {"version": "v6", "medium_window": 26, "long_window": 12},
         )
 
         for features in invalid_feature_sections:

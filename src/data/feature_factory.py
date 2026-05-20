@@ -7,6 +7,7 @@ from src.data.features_v2 import build_features_v2
 from src.data.features_v3 import build_features_v3
 from src.data.features_v4 import build_features_v4
 from src.data.features_v5 import build_features_v5
+from src.data.features_v6 import build_features_v6
 from src.data.macro_loader import load_macro_data_from_csv
 
 
@@ -70,6 +71,18 @@ def build_configured_features(
             correlation_window=features_config.get("correlation_window", 12),
             drawdown_window=features_config.get("drawdown_window", 12),
             risk_off_threshold=features_config.get("risk_off_threshold", 2.0),
+        )
+    if feature_version == "v6":
+        return build_features_v6(
+            returns,
+            market_asset=features_config.get("market_asset", "SPY"),
+            short_window=features_config.get("short_window", 4),
+            medium_window=features_config.get("medium_window", 12),
+            long_window=features_config.get("long_window", 26),
+            ewma_short_span=features_config.get("ewma_short_span", 4),
+            ewma_long_span=features_config.get("ewma_long_span", 12),
+            correlation_window=features_config.get("correlation_window", 12),
+            zscore_window=features_config.get("zscore_window", 52),
         )
 
     raise ValueError(f"Unsupported feature version: {feature_version}.")

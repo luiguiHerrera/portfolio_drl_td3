@@ -1353,3 +1353,235 @@ Weight 0.025 has the strongest robust Sharpe but remains highly concentrated.
 Both 0.010 and 0.025 should be treated as experimental candidates, not
 defaults. The next step is to evaluate them with more seeds and episodes, and
 inspect which assets receive the displaced allocation.
+
+## Entry X — V5 Dynamic CASH Walk-Forward Validation
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Test whether the dynamic CASH penalty candidates survive across expanding
+walk-forward folds, and resolve the disagreement between fixed validation and
+fixed test results.
+
+**Experiment:**  
+Output folder:
+`outputs/tables/v5_dynamic_cash_walk_forward_30ep_5seeds`. The run used V5
+features, raw auxiliary V5 regime features, `episodes = 30`, seeds
+`[7, 21, 42, 84, 101]`, `turnover_penalty_mode = excess_linear`,
+`turnover_free_band = 0.20`, and mandate penalty disabled.
+
+Candidates:
+
+- `V5_tfb020_no_cash_penalty`
+- `V5_tfb020_dynamic_cash_weight_010`
+- `V5_tfb020_dynamic_cash_weight_025`
+
+**Actual folds:**  
+F1: train 2015-04-03 to 2020-12-25, validation 2021-01-01 to 2021-12-31,
+test 2022-01-07 to 2022-12-30; n_train = 300, n_val = 53, n_test = 52.
+
+F2: train 2015-04-03 to 2021-12-31, validation 2022-01-07 to 2022-12-30,
+test 2023-01-06 to 2023-12-29; n_train = 353, n_val = 52, n_test = 52.
+
+F3: train 2015-04-03 to 2022-12-30, validation 2023-01-06 to 2023-12-29,
+test 2024-01-05 to 2024-12-27; n_train = 405, n_val = 52, n_test = 52.
+
+F4: train 2015-04-03 to 2023-12-29, validation 2024-01-05 to 2024-12-27,
+test 2025-01-03 to 2026-05-15; n_train = 457, n_val = 52, n_test = 72.
+
+**Overall test aggregate:**  
+`V5_tfb020_dynamic_cash_weight_025`: robust Sharpe = -0.2246, mean Sharpe =
+0.4265, mean return = 0.0703, mean drawdown = -0.2649, worst drawdown =
+-0.6329, turnover = 0.6007, effective assets = 1.1204, and cash above 10%
+rate = 0.0000.
+
+`V5_tfb020_no_cash_penalty`: robust Sharpe = -0.4139, mean Sharpe = 0.1583,
+mean return = -0.0152, mean drawdown = -0.2640, worst drawdown = -0.6697,
+turnover = 0.5912, effective assets = 1.1339, and cash above 10% rate =
+0.1932.
+
+`V5_tfb020_dynamic_cash_weight_010`: robust Sharpe = -0.5597, mean Sharpe =
+-0.0206, mean return = -0.0623, mean drawdown = -0.2867, worst drawdown =
+-0.6303, turnover = 0.5799, effective assets = 1.1219, and cash above 10%
+rate = 0.1097.
+
+**Fold-level winners:**  
+F1: `dynamic_cash_weight_010`, robust Sharpe = -1.4782.
+
+F2: `dynamic_cash_weight_025`, robust Sharpe = 1.4430.
+
+F3: `dynamic_cash_weight_025`, robust Sharpe = 1.1929.
+
+F4: `no_cash_penalty`, robust Sharpe = -0.0951.
+
+**Cash attribution:**  
+`dynamic_cash_weight_025` eliminated high cash and unjustified cash.
+`dynamic_cash_weight_010` reduced high cash, but left unjustified cash excess
+= 0.0828. `no_cash_penalty` had unjustified cash excess = 0.1316.
+
+**Concentration quality, horizon 12:**  
+`dynamic_cash_weight_025`: best-rate = 0.1897, beats equal weight = 0.4340,
+excess versus equal weight = -0.0174, and mean rank = 3.0037.
+
+`no_cash_penalty`: best-rate = 0.1607, beats equal weight = 0.3830, excess
+versus equal weight = -0.0237, and mean rank = 3.2388.
+
+`dynamic_cash_weight_010`: best-rate = 0.1556, beats equal weight = 0.3545,
+excess versus equal weight = -0.0299, and mean rank = 3.2758.
+
+**Win rates versus no cash:**  
+`dynamic_cash_weight_025`: robust Sharpe win rate = 0.75, cash reduction rate
+= 1.00, and H12 quality improvement rate = 0.50.
+
+`dynamic_cash_weight_010`: robust Sharpe win rate = 0.25, cash reduction rate
+= 1.00, and H12 quality improvement rate = 0.00.
+
+**Interpretation:**  
+Walk-forward evidence favors `dynamic_cash_weight_025` over 0.010. The 0.025
+candidate beats no-cash in 3 of 4 test folds and fully removes unjustified
+high CASH. The 0.010 candidate is not robust enough and should be dropped for
+now.
+
+However, no candidate is cleanly robust in absolute terms. Overall robust
+Sharpe remains negative and F1 is weak across all candidates. The 0.025
+candidate remains experimental, not a default.
+
+**Decision:**  
+Next step: compare 0.025 against V2/V5 baselines and traditional benchmarks
+before claiming improvement.
+
+## Entry X — V5 Dynamic CASH Candidate Versus V2 and Benchmarks
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Compare the current experimental candidate, `V5_dynamic_cash_025`, against
+`V2_reference`, `V5_no_cash_penalty`, and traditional benchmarks. The goal was
+to determine whether the dynamic CASH penalty candidate is a real improvement
+or only an internal V5 improvement.
+
+**Experiment:**  
+Output folder:
+`outputs/tables/v2_v5_dynamic_cash_benchmark_comparison_30ep_5seeds`.
+
+Setup: `episodes = 30`, seeds `[7, 21, 42, 84, 101]`, and the same expanding
+walk-forward folds as the prior run.
+
+`V5_dynamic_cash_025` used V5 features, `turnover_penalty_mode =
+excess_linear`, `turnover_free_band = 0.20`, dynamic CASH penalty enabled,
+`cash_penalty_weight = 0.025`, `cash_risk_off_column = risk_off_state`, and
+auxiliary raw V5 regime features. `V5_no_cash_penalty` used the same V5 and
+turnover setup without the CASH penalty. `V2_reference` used V2 features and
+the original/current V2 reference reward. Benchmarks included `BuyHold_GLD`,
+`BuyHold_SPY`, `Equal_Weight`, `60_40_SPY_TLT`, `BuyHold_BTC-USD`, and
+`BuyHold_TLT`.
+
+**Actual folds:**  
+F1: train 2015-04-03 to 2020-12-25, validation 2021-01-01 to 2021-12-31,
+test 2022-01-07 to 2022-12-30; counts 300 / 53 / 52.
+
+F2: train 2015-04-03 to 2021-12-31, validation 2022-01-07 to 2022-12-30,
+test 2023-01-06 to 2023-12-29; counts 353 / 52 / 52.
+
+F3: train 2015-04-03 to 2022-12-30, validation 2023-01-06 to 2023-12-29,
+test 2024-01-05 to 2024-12-27; counts 405 / 52 / 52.
+
+F4: train 2015-04-03 to 2023-12-29, validation 2024-01-05 to 2024-12-27,
+test 2025-01-03 to 2026-05-15; counts 457 / 52 / 72.
+
+**Overall test aggregate:**  
+`BuyHold_GLD`: robust Sharpe = 0.7178, mean Sharpe = 1.1618, mean return =
+0.2776, mean drawdown = -0.1199, and worst drawdown = -0.1735.
+
+`BuyHold_SPY`: robust Sharpe = 0.4094, mean Sharpe = 1.0359, mean return =
+0.1521, mean drawdown = -0.1362, and worst drawdown = -0.2248.
+
+`Equal_Weight`: robust Sharpe = -0.0259, mean Sharpe = 0.9224, mean return =
+0.1370, mean drawdown = -0.1124, and worst drawdown = -0.2513.
+
+`60_40_SPY_TLT`: robust Sharpe = -0.1566, mean Sharpe = 0.5183, mean return =
+0.0550, mean drawdown = -0.1265, and worst drawdown = -0.2483.
+
+`V5_dynamic_cash_025`: robust Sharpe = -0.2246, mean Sharpe = 0.4265, mean
+return = 0.0703, mean drawdown = -0.2649, worst drawdown = -0.6329, turnover
+= 0.6007, effective assets = 1.1204, and cash above 10% rate = 0.0000.
+
+`V2_reference`: robust Sharpe = -0.2653, mean Sharpe = 0.3379, mean return =
+0.0538, mean drawdown = -0.2391, worst drawdown = -0.5333, turnover = 0.5440,
+effective assets = 1.1192, and cash above 10% rate = 0.2187.
+
+`BuyHold_BTC-USD`: robust Sharpe = -0.3141, mean Sharpe = 0.5025, mean return
+= 0.4927, mean drawdown = -0.3776, and worst drawdown = -0.6430.
+
+`V5_no_cash_penalty`: robust Sharpe = -0.4139, mean Sharpe = 0.1583, mean
+return = -0.0152, mean drawdown = -0.2640, worst drawdown = -0.6697, turnover
+= 0.5912, effective assets = 1.1339, and cash above 10% rate = 0.1932.
+
+**Validation:**  
+Top validation robust Sharpe was `BuyHold_SPY = 0.6225`. Among DRL strategies,
+`V5_dynamic_cash_025 = -0.1395`, `V2_reference = -0.3291`, and
+`V5_no_cash_penalty = -0.4089`.
+
+**Fold winners by test robust Sharpe:**  
+F1: `BuyHold_GLD`, robust Sharpe = 0.0147.
+
+F2: `Equal_Weight`, robust Sharpe = 2.1161.
+
+F3: `Equal_Weight_Risky`, robust Sharpe = 2.2754.
+
+F4: `BuyHold_GLD`, robust Sharpe = 1.9948.
+
+**Win rates for `V5_dynamic_cash_025`:**  
+Against `V2_reference`: robust Sharpe wins = 2/4, return wins = 2/4, and
+drawdown wins = 2/4.
+
+Against `V5_no_cash_penalty`: robust Sharpe wins = 3/4, return wins = 3/4,
+and drawdown wins = 2/4.
+
+Against `Equal_Weight`: robust Sharpe wins = 1/4, return wins = 2/4, and
+drawdown wins = 0/4.
+
+Against `60_40_SPY_TLT`: robust Sharpe wins = 2/4, return wins = 2/4, and
+drawdown wins = 1/4.
+
+Against `BuyHold_SPY`: robust Sharpe wins = 0/4, return wins = 2/4, and
+drawdown wins = 0/4.
+
+**Cash attribution:**  
+`V5_dynamic_cash_025`: mean cash = 0.0001, high cash rate = 0.0000,
+risk-off rate = 0.1851, high cash in risk-off = 0.0000, and unjustified cash
+excess = 0.0000.
+
+`V5_no_cash_penalty`: mean cash = 0.1635, high cash rate = 0.1932, risk-off
+rate = 0.1851, high cash in risk-off = 0.0284, and unjustified cash excess =
+0.1316.
+
+**Concentration quality, horizon 12:**  
+`V5_dynamic_cash_025`: best-asset rate = 0.1897, beats-equal rate = 0.4340,
+excess versus equal weight = -0.0174, and mean rank = 3.0037.
+
+`V5_no_cash_penalty`: best-asset rate = 0.1607, beats-equal rate = 0.3830,
+excess versus equal weight = -0.0237, and mean rank = 3.2388.
+
+`V2_reference`: best-asset rate = 0.1471, beats-equal rate = 0.3548, excess
+versus equal weight = -0.0306, and mean rank = 3.3519.
+
+**Interpretation:**  
+`V5_dynamic_cash_025` is an internal improvement over `V5_no_cash_penalty`,
+especially on cash discipline. It removes high CASH exposure and improves
+horizon-12 concentration quality relative to both `V5_no_cash_penalty` and
+`V2_reference`.
+
+It is not clearly better than `V2_reference`: it only wins 2 of 4 folds
+against V2 on robust Sharpe, return, and drawdown. It is also not competitive
+against traditional benchmarks. GLD and SPY dominate robust Sharpe, while
+Equal Weight wins key folds.
+
+The DRL candidate improves mandate discipline, but it does not yet deliver
+superior out-of-sample performance. Therefore, `V5_dynamic_cash_025` remains
+an experimental candidate, not a final/default model.
+
+**Next step:**  
+Implement robust score / DSR as an evaluation layer, not as a training reward.
+Then re-rank all candidates and benchmarks using a composite robustness
+metric.

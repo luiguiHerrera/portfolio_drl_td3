@@ -2124,3 +2124,70 @@ conditions.
 **Tests:**  
 `python3 -m unittest discover tests` ran 823 tests OK.
 
+## Entry X — Reward Configuration Semantics Cleanup
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Clean the active reward/configuration semantics before continuing with the
+common experimental protocol. The objective was to remove misleading inactive
+parameters and confirm that evaluation metrics such as DSR and `robust_score`
+do not affect training.
+
+**Audit finding:**  
+`lambda_sharpe` was present in active YAML configs and test fixtures, but it
+was not used by `src/rewards/reward.py` or `src/env/portfolio_env.py`.
+
+This created methodological ambiguity because the config suggested that Sharpe
+was part of the reward, while the actual reward calculation did not use it.
+
+**Decision implemented:**  
+Removed `lambda_sharpe` from tracked active configs and test fixtures. Added
+config validation so unsupported reward keys fail clearly. `lambda_sharpe` is
+now rejected as an active reward field.
+
+**Confirmed active reward semantics:**  
+The active base reward remains financially interpretable and uses:
+
+- `lambda_return`
+- `lambda_transaction_cost`
+- `lambda_turnover`
+- `lambda_concentration`
+- `lambda_drawdown`
+
+Optional extensions remain opt-in:
+
+- mandate penalty
+- cash risk-off penalty
+- turnover penalty modes
+
+No TD3 architecture, environment dynamics, training loop, or reward formula
+math was changed.
+
+**DSR / robust_score audit:**  
+DSR and `robust_score` were confirmed as evaluation/reporting-only. They appear
+in analysis/reporting code, not in reward, environment, or training modules.
+
+This preserves the distinction between:
+
+- training reward: used to optimize the agent;
+- evaluation metrics: used to compare strategies after training.
+
+**Files modified:**  
+- `configs/config.yaml`
+- `configs/empirical_long_history.yaml`
+- `src/utils/config.py`
+- reward/config-related tests and fixtures.
+
+**Tests:**  
+- `python3 -m unittest tests/test_config.py`: 62 tests OK
+- `python3 -m unittest tests/test_reward.py`: 14 tests OK
+- `python3 -m unittest discover tests`: 830 tests OK
+
+**Research implication:**  
+The project now has cleaner reward semantics. Future experiments should not
+interpret `lambda_sharpe` as part of the reward, and any new reward term must
+be explicitly implemented, validated, and documented.
+
+This supports the common experimental protocol phase by reducing hidden
+configuration ambiguity before revalidating V2, V6, and future benchmarks.

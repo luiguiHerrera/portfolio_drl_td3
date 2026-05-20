@@ -36,7 +36,6 @@ SUPPORTED_FREQUENCIES = {"daily", "weekly"}
 RATIO_SUM_TOLERANCE = 1e-8
 OPTIONAL_REWARD_LAMBDAS = (
     "lambda_return",
-    "lambda_sharpe",
     "lambda_drawdown",
     "lambda_transaction_cost",
     "lambda_turnover",
@@ -56,6 +55,20 @@ TURNOVER_PENALTY_MODES = {
     "none",
     "excess_linear",
     "excess_quadratic",
+}
+SUPPORTED_REWARD_FIELDS = set(OPTIONAL_REWARD_LAMBDAS) | {
+    "use_mandate_penalty",
+    "mandate_profile",
+    "mandate_penalty_weights",
+    "mandate_volatility_window",
+    "use_cash_risk_off_penalty",
+    "normal_cash_max",
+    "cash_penalty_weight",
+    "cash_risk_off_state",
+    "cash_risk_off_column",
+    "turnover_penalty_mode",
+    "turnover_free_band",
+    "turnover_quadratic_weight",
 }
 
 
@@ -138,6 +151,8 @@ def _validate_environment(config: dict) -> None:
 def _validate_reward(config: dict) -> None:
     if not isinstance(config["reward"], dict):
         raise ValueError("Config field reward must be a mapping.")
+
+    _validate_supported_reward_fields(config["reward"])
 
     for field_name in OPTIONAL_REWARD_LAMBDAS:
         if field_name in config["reward"]:
@@ -248,6 +263,15 @@ def _validate_assets(config: dict) -> None:
         raise ValueError("Config field data.assets must not contain duplicate assets.")
 
 
+def _validate_supported_reward_fields(reward: dict) -> None:
+    unsupported_keys = set(reward) - SUPPORTED_REWARD_FIELDS
+    if unsupported_keys:
+        raise ValueError(
+            "Config field reward contains unsupported keys: "
+            f"{sorted(unsupported_keys)}."
+        )
+
+
 def _validate_reward_mandate_fields(reward: dict) -> None:
     use_mandate_penalty = reward.get("use_mandate_penalty")
     if use_mandate_penalty is not None and not isinstance(use_mandate_penalty, bool):
@@ -259,6 +283,13 @@ def _validate_reward_mandate_fields(reward: dict) -> None:
         raise ValueError(
             "Config field reward.mandate_profile must be one of: "
             f"{valid_profiles}."
+        )
+
+    mandate_volatility_window = reward.get("mandate_volatility_window")
+    if mandate_volatility_window is not None:
+        _validate_integer_at_least_one(
+            mandate_volatility_window,
+            "reward.mandate_volatility_window",
         )
 
     mandate_penalty_weights = reward.get("mandate_penalty_weights")

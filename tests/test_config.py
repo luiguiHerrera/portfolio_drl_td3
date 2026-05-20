@@ -237,6 +237,64 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded_config["reward"]["lambda_concentration"], 0.3)
 
+    def test_load_config_rejects_unknown_reward_field(self):
+        config = _valid_config()
+        config["reward"]["unknown_reward_term"] = 0.1
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(
+                ValueError,
+                "reward contains unsupported keys",
+            ):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_lambda_sharpe_as_active_reward_field(self):
+        config = _valid_config()
+        config["reward"]["lambda_sharpe"] = 0.5
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(
+                ValueError,
+                "reward contains unsupported keys",
+            ):
+                load_config(str(config_path))
+
+    def test_load_config_accepts_all_active_reward_fields(self):
+        config = _valid_config()
+        config["reward"].update(
+            {
+                "lambda_concentration": 0.1,
+                "use_mandate_penalty": True,
+                "lambda_mandate": 0.2,
+                "mandate_profile": "moderate",
+                "mandate_volatility_window": 12,
+                "mandate_penalty_weights": {
+                    "drawdown_breach": 1.0,
+                    "volatility_breach": 1.0,
+                    "max_weight_breach": 1.0,
+                    "effective_assets_breach": 1.0,
+                    "turnover_breach": 1.0,
+                },
+                "use_cash_risk_off_penalty": True,
+                "normal_cash_max": 0.10,
+                "cash_penalty_weight": 0.025,
+                "cash_risk_off_state": False,
+                "cash_risk_off_column": "risk_off_state",
+                "turnover_penalty_mode": "excess_linear",
+                "turnover_free_band": 0.20,
+                "turnover_quadratic_weight": 0.0,
+            }
+        )
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["reward"]["mandate_volatility_window"], 12)
+        self.assertEqual(
+            loaded_config["reward"]["turnover_penalty_mode"],
+            "excess_linear",
+        )
+
     def test_load_config_accepts_missing_mandate_reward_fields(self):
         config = _valid_config()
 
@@ -718,7 +776,6 @@ def _valid_config() -> dict:
             },
             "reward": {
                 "lambda_return": 1.0,
-                "lambda_sharpe": 0.5,
                 "lambda_drawdown": 1.0,
                 "lambda_transaction_cost": 0.2,
                 "lambda_turnover": 0.1,

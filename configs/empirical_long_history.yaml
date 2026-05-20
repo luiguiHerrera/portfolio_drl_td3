@@ -21,7 +21,6 @@ environment:
 
 reward:
   lambda_return: 1.0
-  lambda_sharpe: 0.0
   lambda_drawdown: 0.02
   lambda_transaction_cost: 1.0
   lambda_turnover: 0.0005

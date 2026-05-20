@@ -1,6 +1,7 @@
 """Tests for portfolio reward functions."""
 
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -55,7 +56,6 @@ class RewardTests(unittest.TestCase):
                 "lambda_turnover": 0.1,
                 "lambda_concentration": 0.4,
                 "lambda_drawdown": 0.5,
-                "lambda_sharpe": 99.0,
             },
         )
 
@@ -74,6 +74,28 @@ class RewardTests(unittest.TestCase):
         )
 
         self.assertAlmostEqual(reward, compute_net_return_reward(0.04, 0.01))
+
+    def test_robust_score_and_dsr_are_not_training_reward_dependencies(self):
+        forbidden_terms = (
+            "compute_deflated_sharpe_ratio",
+            "compute_composite_robust_score",
+            "robust_score",
+        )
+        checked_roots = (
+            Path("src/rewards"),
+            Path("src/env"),
+            Path("src/train"),
+        )
+
+        offenders = []
+        for root in checked_roots:
+            for source_path in sorted(root.rglob("*.py")):
+                source_text = source_path.read_text(encoding="utf-8")
+                for term in forbidden_terms:
+                    if term in source_text:
+                        offenders.append(f"{source_path}:{term}")
+
+        self.assertEqual(offenders, [])
 
     def test_compute_risk_aware_reward_rejects_negative_lambda(self):
         with self.assertRaisesRegex(ValueError, "lambda_turnover"):

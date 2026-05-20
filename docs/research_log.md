@@ -2608,3 +2608,319 @@ overfitting.
 - `python3 -m unittest tests/test_run_protocol_pure_td3_revalidation.py`: 5 tests OK
 - `python3 -m unittest tests/test_run_protocol_td3_comparison.py`: 17 tests OK
 - `python3 -m unittest discover tests`: 886 tests OK
+
+## Entry X — Robust Score Bias Audit and Recovery-Based Mandate-Aware Evaluation Design
+
+**Date:** 2026-05-20
+
+**Purpose:**  
+Audit whether the current `robust_score` is biased toward momentum-like
+strategies, high DSR, high Sharpe-like behavior, and insufficiently penalizes
+drawdown, turnover, and concentration.
+
+The motivation came from the protocol-pure TD3 comparison, where
+`momentum_winner_12p` ranked first by `robust_score` despite a maximum drawdown
+above 50%. This raised a methodological concern: a strategy can be attractive
+under a performance-oriented risk-return score while still being unsuitable for
+a realistic portfolio mandate.
+
+---
+
+### Robust score bias audit
+
+**Implementation:**  
+Added a separate audit/reporting layer without changing production
+`robust_score` logic.
+
+Files created:
+
+- `src/analysis/audit_robust_score_bias.py`
+- `tests/test_audit_robust_score_bias.py`
+
+Audit outputs:
+
+- `robust_score_component_audit.csv`
+- `robust_score_rank_sensitivity.csv`
+- `robust_score_drawdown_turnover_flags.csv`
+- `robust_score_method_comparison.csv`
+
+**Current robust_score weights:**  
+
+- DSR: 0.30
+- Sortino: 0.20
+- Calmar: 0.20
+- Drawdown: 0.15
+- Stability: 0.10
+- Discipline: 0.05
+
+**Findings:**  
+The current `robust_score` is materially driven by DSR, Sortino, and Calmar.
+Together, these components represent 70% of the composite score.
+
+Drawdown is only min-max normalized and has no hard cap. Turnover and
+concentration enter weakly through the 5% discipline component. Effective assets
+affect discipline, but average max weight is not directly scored.
+
+As a result, concentrated or high-turnover strategies can still rank highly if
+their DSR, Sortino, and Calmar components are strong.
+
+**Momentum result:**  
+`momentum_winner_12p` ranks first mainly because of very high:
+
+- `dsr_score = 0.9873`
+- `sortino_score = 1.0000`
+- `calmar_score = 0.9819`
+
+However, it also has:
+
+- `max_drawdown = -0.5127`
+
+This implies that the current `robust_score` should not be interpreted as a
+mandate-aware score. A drawdown of approximately 50% requires a subsequent gain
+of approximately 100% on the remaining capital to recover to breakeven, which is
+not acceptable for a base multi-asset portfolio mandate.
+
+**DSR method concern:**  
+Benchmark rows using `date_averaged` DSR showed much higher DSR scores than TD3
+rows using `median_run` DSR.
+
+Observed means:
+
+- `date_averaged` benchmark rows: mean `dsr_score = 0.8058`
+- `median_run` TD3 rows: mean `dsr_score = 0.0647`
+
+This is not necessarily a code bug, but it confirms that benchmark and TD3 DSR
+methods are not identical evidence structures.
+
+**Sensitivity result:**  
+Alternative scoring variants showed that rankings are sensitive to the DSR and
+mandate assumptions:
+
+- Removing DSR moved TD3 candidates upward; `V2_reference_full` became rank 1
+  in the audit recomputation.
+- Adding a drawdown hard cap penalized high-drawdown momentum and Markowitz-like
+  strategies.
+- A mandate-style score moved risk parity and minimum-variance Markowitz toward
+  the top, and improved V6's relative position.
+
+**Conclusion of the audit:**  
+No implementation bug was found in production `robust_score`. The issue is
+scoring design.
+
+The current `robust_score` is best interpreted as a performance-oriented
+robustness score, not a mandate-aware patrimonial score.
+
+---
+
+### Mandate-aware design decision
+
+A separate `mandate_aware_score` was created on top of the existing
+`robust_score`. The original `robust_score` was not replaced.
+
+The objective is to distinguish between:
+
+1. `performance_robust_score`: performance-oriented risk-return robustness.
+2. `mandate_aware_score`: suitability under realistic portfolio drawdown
+   constraints.
+
+This prevents the evaluation framework from confusing aggressive performance
+with investable robustness.
+
+---
+
+### Drawdown mandate buckets
+
+Since `max_drawdown` is represented as a negative number, the mandate buckets
+are:
+
+- `clean_mandate`:  
+  `max_drawdown >= -0.20`
+
+- `eligible_yellow`:  
+  `-0.25 <= max_drawdown < -0.20`
+
+- `eligible_red`:  
+  `-0.30 <= max_drawdown < -0.25`
+
+- `not_eligible`:  
+  `max_drawdown < -0.30`
+
+These buckets define mandate eligibility only. They do not directly define the
+score multiplier.
+
+The interpretation is:
+
+1. Clean mandate strategies: drawdown up to 20%.
+2. Eligible but penalized strategies: drawdown between 20% and 30%.
+3. Not eligible for the base mandate: drawdown above 30%.
+
+This avoids treating high-drawdown momentum strategies as superior mandate
+candidates solely because they rank highly under performance-oriented metrics.
+
+---
+
+### Recovery-based multiplier
+
+The initial mandate-aware design considered discrete step multipliers by
+drawdown bucket. This was replaced by a recovery-based continuous multiplier,
+which is more directly grounded in drawdown recovery asymmetry.
+
+Let:
+
+`abs_dd = abs(max_drawdown)`
+
+The recovery return required to return to breakeven is:
+
+`recovery_required = abs_dd / (1 - abs_dd)`
+
+The drawdown multiplier is:
+
+`drawdown_multiplier = max(0, 1 - recovery_required)`
+
+The mandate-aware score is:
+
+`mandate_aware_score = robust_score * drawdown_multiplier`
+
+For strategies classified as `not_eligible`, `mandate_aware_score` is forced to
+zero regardless of the formula-based multiplier.
+
+This separates two concepts:
+
+1. `mandate_bucket`: eligibility classification.
+2. `drawdown_multiplier`: continuous penalty based on recovery asymmetry.
+
+Examples:
+
+- DD = -1% → recovery required ≈ 1.01% → multiplier ≈ 0.9899
+- DD = -20% → recovery required = 25.0% → multiplier = 0.7500
+- DD = -25% → recovery required = 33.3% → multiplier ≈ 0.6667
+- DD = -30% → recovery required = 42.9% → multiplier ≈ 0.5714
+- DD < -30% → not eligible for the base mandate → mandate-aware score = 0
+
+This avoids arbitrary step penalties while keeping the base drawdown mandate
+explicit.
+
+---
+
+### Mandate-aware implementation
+
+Files created:
+
+- `src/analysis/mandate_aware_score.py`
+- `tests/test_mandate_aware_score.py`
+
+Generated outputs:
+
+- `outputs/tables/mandate_aware_score/mandate_aware_ranking.csv`
+- `outputs/tables/mandate_aware_score/mandate_bucket_summary.csv`
+- `outputs/tables/mandate_aware_score/mandate_eligibility_flags.csv`
+
+The scoring layer does not modify:
+
+- production `robust_score`
+- TD3 architecture
+- reward function
+- environment dynamics
+- training logic
+- benchmark logic
+
+It is a separate reporting/evaluation layer.
+
+---
+
+### Recovery-based mandate-aware ranking
+
+After applying the recovery-based mandate-aware score, the top mandate-aware
+strategies were:
+
+- `BuyHold_GLD`: `mandate_aware_score = 0.5244`
+- `trend_spy_cash_12p`: `mandate_aware_score = 0.4841`
+- `V2_reference_full`: `mandate_aware_score = 0.4691`
+- `rolling_markowitz_min_variance_52p`: `mandate_aware_score = 0.4533`
+- `defensive_risk_off_12p`: `mandate_aware_score = 0.4414`
+- `rolling_risk_parity_inverse_vol_12p`: `mandate_aware_score = 0.4262`
+- `60_40_SPY_TLT`: `mandate_aware_score = 0.3848`
+- `V6_financial_state`: `mandate_aware_score = 0.3159`
+- `V5_no_volatility_block`: `mandate_aware_score = 0.0829`
+- `momentum_winner_12p`: `mandate_aware_score = 0.0000`
+
+The best clean mandate strategies were:
+
+- `BuyHold_GLD`
+- `trend_spy_cash_12p`
+
+The strongest TD3 candidate under the recovery-based mandate-aware score was:
+
+- `V2_reference_full`
+
+V6 remained eligible, but ranked below several more conservative benchmark
+strategies.
+
+The following strategies were classified as not eligible for the base mandate:
+
+- `momentum_winner_12p`
+- `Equal_Weight_Risky`
+- `Equal_Weight`
+- `risk_adjusted_momentum_winner_12p_12p`
+- `rolling_markowitz_long_only_52p`
+- `BuyHold_SPY`
+- `BuyHold_BTC-USD`
+- `BuyHold_TLT`
+
+---
+
+### Interpretation
+
+The mandate-aware layer does not claim that high-drawdown strategies are invalid
+in absolute terms. It classifies them as outside the base mandate.
+
+Under the performance-oriented robust score, momentum-style strategies can rank
+highly because of strong DSR, Sortino, and Calmar components.
+
+Under the recovery-based mandate-aware score, strategies with excessive
+drawdowns are either continuously penalized or excluded from the base mandate if
+their maximum drawdown exceeds 30%.
+
+This makes the evaluation more consistent with a real-world multi-asset mandate,
+where drawdown depth affects investor survival, recovery burden, behavioral
+risk, and capital preservation.
+
+---
+
+### Research implication
+
+The project should report both rankings:
+
+- performance robust ranking
+- mandate-aware ranking
+
+This allows momentum-style strategies to be recognized for strong performance
+while clearly marking them as unsuitable for the base mandate when their
+drawdown violates realistic portfolio constraints.
+
+The strongest claim is not that TD3 dominates benchmarks. The stronger and more
+honest contribution is that the framework separates:
+
+1. raw performance robustness,
+2. mandate eligibility,
+3. drawdown recovery burden,
+4. and real-world investability.
+
+Under this framework, TD3 does not dominate the full benchmark universe, but
+`V2_reference_full` becomes a competitive mandate-aware candidate, ranking third
+overall under the recovery-based mandate-aware score.
+
+---
+
+### Tests
+
+Robust score bias audit:
+
+- `python3 -m unittest tests/test_audit_robust_score_bias.py`: 5 tests OK
+- `python3 -m unittest tests/test_robust_score.py`: 19 tests OK
+- `python3 -m unittest discover tests`: 891 tests OK
+
+Mandate-aware scoring layer:
+
+- `python3 -m unittest tests/test_mandate_aware_score.py`: 7 tests OK
+- `python3 -m unittest discover tests`: 898 tests OK

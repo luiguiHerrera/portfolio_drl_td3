@@ -3860,3 +3860,307 @@ for further comparison, but not yet made a global default.
 
 The next step is to compare capped TD3 candidates against uncapped TD3
 candidates and the full benchmark suite under the common protocol.
+
+## Entry X — Capped TD3 vs Benchmarks Protocol Comparison
+
+**Date:** 2026-05-21
+
+**Purpose:**  
+Compare capped and uncapped TD3 candidates against the full benchmark suite
+under the common protocol.
+
+Previous experiments showed that `max_weight_cap = 0.60` improved V2, V5, and
+V6 relative to their uncapped paired baselines. This entry evaluates whether
+the capped TD3 candidates are also competitive against benchmarks.
+
+**Implementation:**  
+Added a reporting-only capped-vs-uncapped TD3 protocol comparison layer.
+
+Files created:
+
+- `src/experiments/run_capped_td3_protocol_comparison.py`
+- `tests/test_run_capped_td3_protocol_comparison.py`
+
+Output directory:
+
+`outputs/tables/capped_td3_protocol_comparison_60ep_10seeds_cap060`
+
+Output files:
+
+- `capped_td3_vs_benchmarks_summary.csv`
+- `capped_td3_pairwise_deltas.csv`
+- `capped_td3_mandate_ranking.csv`
+- `capped_td3_performance_ranking.csv`
+- `capped_td3_protocol_metadata.json`
+
+The runner is reporting-only. It regenerates protocol benchmarks, loads the
+capped TD3 experiment summaries, combines them, adds mandate-aware ranking
+fields, and writes pairwise capped-vs-uncapped deltas. It does not train TD3 or
+modify reward, environment, or training logic.
+
+**Top performance robust ranking:**  
+
+The highest `robust_score` strategies remained aggressive benchmark strategies:
+
+- `momentum_winner_12p`: `robust_score = 0.8575`, `mandate_score = 0.0000`, `max_drawdown = -0.5127`
+- `Equal_Weight_Risky`: `robust_score = 0.8123`, `mandate_score = 0.0000`, `max_drawdown = -0.3672`
+- `Equal_Weight`: `robust_score = 0.8004`, `mandate_score = 0.0000`, `max_drawdown = -0.3044`
+- `risk_adjusted_momentum_winner_12p_12p`: `robust_score = 0.7789`, `mandate_score = 0.0000`, `max_drawdown = -0.5303`
+- `rolling_markowitz_long_only_52p`: `robust_score = 0.7677`, `mandate_score = 0.0000`, `max_drawdown = -0.5380`
+
+However, these top robust-score benchmarks are not eligible under the base
+mandate because their drawdowns exceed the mandate threshold.
+
+The best capped TD3 candidates by `robust_score` were:
+
+- `V5_cap_0.60`: `robust_score = 0.7021`, `mandate_score = 0.5627`, `max_drawdown = -0.1656`
+- `V2_cap_0.60`: `robust_score = 0.6877`, `mandate_score = 0.5473`, `max_drawdown = -0.1696`
+- `V6_cap_0.60`: `robust_score = 0.6541`, `mandate_score = 0.5039`, `max_drawdown = -0.1867`
+
+**Top mandate-aware ranking:**  
+
+Under the recovery-based mandate-aware score, capped TD3 candidates ranked at
+the top:
+
+- `V5_cap_0.60`: `mandate_aware_score = 0.5627`
+- `V2_cap_0.60`: `mandate_aware_score = 0.5473`
+- `BuyHold_GLD`: `mandate_aware_score = 0.5244`
+- `V6_cap_0.60`: `mandate_aware_score = 0.5039`
+- `trend_spy_cash_12p`: `mandate_aware_score = 0.4841`
+- `rolling_markowitz_min_variance_52p`: `mandate_aware_score = 0.4533`
+- `defensive_risk_off_12p`: `mandate_aware_score = 0.4414`
+- `rolling_risk_parity_inverse_vol_12p`: `mandate_aware_score = 0.4262`
+- `60_40_SPY_TLT`: `mandate_aware_score = 0.3848`
+
+**Best capped TD3 candidate:**  
+
+The best capped TD3 candidate was:
+
+- `V5_cap_0.60`
+
+by mandate-aware score.
+
+**Clean benchmark comparison:**  
+`V5_cap_0.60` and `V2_cap_0.60` beat the best clean benchmark,
+`BuyHold_GLD`, by mandate-aware score.
+
+They do not beat the highest robust-score benchmarks overall, because those are
+high-drawdown, non-eligible momentum-style benchmarks.
+
+**Pairwise cap conclusions:**  
+
+- `V2`: `cap_dominates_uncapped`
+- `V5`: `cap_dominates_uncapped`
+- `V6`: `cap_improves_mandate_but_hurts_return`
+
+**Interpretation:**  
+This is the strongest evidence so far that the TD3 framework becomes materially
+more competitive when concentration is controlled through a direct allocation
+constraint rather than through a reward penalty.
+
+The uncapped TD3 candidates were not competitive because they learned extreme
+single-asset-like concentration. With `max_weight_cap = 0.60`, the capped TD3
+candidates improved diversification, drawdown behavior, turnover, and
+mandate-aware ranking.
+
+The result does not imply that TD3 dominates all benchmarks. Aggressive
+momentum-style benchmarks still dominate the performance-oriented robust score.
+However, once realistic drawdown mandate constraints are applied, capped TD3
+becomes competitive and ranks above the best clean benchmark in this run.
+
+**Research implication:**  
+The project narrative should distinguish three layers:
+
+1. Unconstrained TD3 does not dominate benchmarks and suffers from learned
+   extreme concentration.
+2. Direct concentration penalties in the reward diversify mechanically but hurt
+   performance and increase turnover.
+3. A direct max-weight allocation constraint, especially `max_weight_cap = 0.60`,
+   materially improves TD3 mandate-aware behavior.
+
+Therefore, `max_weight_cap = 0.60` should be treated as a candidate protocol
+enhancement for the constrained TD3 portfolio allocation framework, not as a
+global default yet.
+
+Further validation should test whether the capped TD3 result remains stable
+under broader seeds, alternative caps, and final paper-level robustness checks.
+
+**Tests:**  
+
+- `python3 -m unittest tests/test_run_capped_td3_protocol_comparison.py`: 9 tests OK
+- `python3 -m unittest discover tests`: 933 tests OK
+
+## Entry X — Executive Results Report: Capped TD3 vs Benchmarks
+
+**Date:** 2026-05-21
+
+**Purpose:**  
+Create a paper-ready executive reporting layer for the capped TD3 protocol
+comparison.
+
+The goal was to summarize the final comparison across:
+
+- aggressive benchmarks
+- mandate-eligible benchmarks
+- uncapped TD3 candidates
+- capped TD3 candidates
+
+**Implementation:**  
+Added:
+
+- `src/analysis/build_executive_results_report.py`
+- `tests/test_build_executive_results_report.py`
+
+Input directory:
+
+- `outputs/tables/capped_td3_protocol_comparison_60ep_10seeds_cap060`
+
+Output directory:
+
+- `outputs/tables/executive_results_report_60ep_10seeds_cap060`
+
+Output files:
+
+- `executive_main_ranking.csv`
+- `executive_mandate_eligible_ranking.csv`
+- `executive_non_eligible_strategies.csv`
+- `executive_td3_cap_impact.csv`
+- `executive_strategy_groups_summary.csv`
+- `executive_results_summary.md`
+
+The module is reporting-only. It does not modify TD3 architecture, reward,
+environment, training logic, `robust_score`, or `mandate_aware_score`.
+
+**Top robust-score result:**  
+The highest `robust_score` strategies remained aggressive benchmarks:
+
+- `momentum_winner_12p`
+- `Equal_Weight_Risky`
+- `Equal_Weight`
+- `risk_adjusted_momentum_winner_12p_12p`
+- `rolling_markowitz_long_only_52p`
+
+However, these strategies had high drawdowns and received zero mandate-aware
+score under the current mandate filter.
+
+**Top mandate-aware result:**  
+
+The top mandate-eligible strategies were:
+
+- `V5_cap_0.60`: `mandate_aware_score = 0.5627`
+- `V2_cap_0.60`: `mandate_aware_score = 0.5473`
+- `BuyHold_GLD`: `mandate_aware_score = 0.5244`
+- `V6_cap_0.60`: `mandate_aware_score = 0.5039`
+- `trend_spy_cash_12p`: `mandate_aware_score = 0.4841`
+
+**TD3 cap impact:**  
+
+- `V2_reference_full`: `cap_dominates_uncapped`
+- `V5_no_volatility_block`: `cap_dominates_uncapped`
+- `V6_financial_state`: `cap_improves_mandate_but_hurts_return`
+
+The cap improved mandate-aware score, robust score, drawdown behavior, turnover,
+and effective diversification across all three TD3 candidates.
+
+**Core generated claim:**  
+
+> TD3 does not dominate benchmarks in unconstrained form, but a max-weight
+> constrained TD3 variant becomes competitive under a mandate-aware evaluation
+> layer.
+
+**Interpretation:**  
+This result provides the cleanest current narrative for the project. The main
+contribution is not that unconstrained TD3 dominates simple benchmarks. It does
+not. The stronger and more defensible result is that TD3 requires realistic
+portfolio constraints to become competitive under a mandate-aware investment
+framework.
+
+Aggressive benchmarks still dominate performance-oriented `robust_score`, but
+they fail mandate-aware evaluation due to large drawdowns. Capped TD3 variants
+rank at the top once drawdown recovery and mandate eligibility are considered.
+
+**Caveat:**  
+This evidence remains conditional on the current asset universe, sample window,
+feature construction, TD3 implementation, cap level, and mandate-aware scoring
+design. It should not be generalized as a universal TD3 dominance claim.
+
+**Tests:**  
+
+- `python3 -m unittest tests/test_build_executive_results_report.py`: 7 tests OK
+- `python3 -m unittest discover tests`: 940 tests OK
+
+## Entry X — Executive Results Consistency Audit
+
+**Date:** 2026-05-21
+
+**Purpose:**  
+Audit whether the executive capped TD3 comparison is methodologically consistent
+before using it as a results-layer finding.
+
+**Implementation:**  
+Added:
+
+- `src/analysis/audit_executive_results_consistency.py`
+- `tests/test_audit_executive_results_consistency.py`
+
+Output directory:
+
+- `outputs/tables/executive_results_consistency_audit_60ep_10seeds_cap060`
+
+Output files:
+
+- `executive_consistency_checks.csv`
+- `executive_consistency_issues.csv`
+- `executive_consistency_summary.md`
+
+**Audit result:**  
+
+Verdict:
+
+- usable with caveats
+
+Checks:
+
+- total checks = 12
+- pass = 11
+- warning = 1
+- fail = 0
+
+Passed checks included:
+
+- TD3 rows use `split == test` only
+- benchmarks use the same returns/protocol
+- mandate-aware formula consistency
+- drawdown bucket consistency
+- no duplicate strategy rows
+- metric column consistency
+- correct TD3 source folders
+- no train/validation rows in executive report
+- not-eligible strategies have zero mandate-aware score
+- eligible strategies have nonzero mandate-aware score
+- V5/V2 capped are genuinely above BuyHold_GLD by mandate-aware score
+
+**Main caveat:**  
+The only warning is that benchmark DSR uses `date_averaged`, while TD3 DSR uses
+`median_run`. This is documented in metadata, so the comparison is usable, but
+the robust-score component should be interpreted with this caveat.
+
+**Validated key result:**  
+
+- `V5_cap_0.60`: `mandate_aware_score = 0.562728`
+- `V2_cap_0.60`: `mandate_aware_score = 0.547303`
+- `BuyHold_GLD`: `mandate_aware_score = 0.524407`
+
+Therefore, `V5_cap_0.60` and `V2_cap_0.60` are genuinely above `BuyHold_GLD`
+by mandate-aware score in the final executive output.
+
+**Interpretation:**  
+The executive comparison is reliable enough for reporting, provided the DSR
+aggregation caveat is disclosed. The main claim should remain mandate-aware and
+constraint-focused, not a broad claim that TD3 dominates all benchmarks by
+performance robust score.
+
+**Tests:**  
+
+- `python3 -m unittest tests/test_audit_executive_results_consistency.py`: 7 tests OK
+- `python3 -m unittest discover tests`: 947 tests OK

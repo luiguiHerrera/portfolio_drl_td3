@@ -2924,3 +2924,313 @@ Mandate-aware scoring layer:
 
 - `python3 -m unittest tests/test_mandate_aware_score.py`: 7 tests OK
 - `python3 -m unittest discover tests`: 898 tests OK
+
+## Entry X — Protocol-Pure TD3 Revalidation: 60 Episodes × 10 Seeds
+
+**Date:** 2026-05-21
+
+**Purpose:**  
+Run a larger protocol-pure TD3 revalidation to test whether the 30ep × 5seeds
+results were stable across more seeds and a longer training budget.
+
+The goal was to answer two questions:
+
+1. Whether the relative ranking of V2, V5, and V6 was stable across more seeds.
+2. Whether 30 episodes had materially undertrained the TD3 candidates.
+
+**Setup:**  
+
+Candidates:
+
+- `V2_reference_full`
+- `V5_no_volatility_block`
+- `V6_financial_state`
+
+Run configuration:
+
+- `returns_path = data/processed/returns_weekly_latest.csv`
+- episodes = 60
+- seeds = `[7, 21, 42, 84, 101, 123, 202, 303, 404, 505]`
+- expanding walk-forward
+- transaction cost = 0.001
+- current common experimental protocol
+- current cleaned reward/config semantics
+- current recovery-based mandate-aware scoring layer
+
+Output directories:
+
+- `outputs/tables/protocol_pure_td3_revalidation_60ep_10seeds`
+- `outputs/tables/protocol_pure_td3_comparison_60ep_10seeds`
+- `outputs/tables/mandate_aware_score_60ep_10seeds`
+
+The run was executed after commit:
+
+`303d932`
+
+**Tests before run:**  
+
+- `python3 -m unittest discover tests`: 898 tests OK
+
+---
+
+### TD3 aggregate results
+
+Test split aggregate:
+
+`V2_reference_full`:
+
+- mean Sharpe = 0.2076
+- robust Sharpe = -0.2643
+- cumulative return = 0.0297
+- annualized return = 0.0154
+- annualized volatility = 0.2099
+- max drawdown = -0.1953
+- average turnover = 0.6065
+- effective assets = 1.0834
+- mean cash weight = 0.2387
+- worst max drawdown = -0.5717
+
+`V5_no_volatility_block`:
+
+- mean Sharpe = 0.4874
+- robust Sharpe = -0.0828
+- cumulative return = 0.0626
+- annualized return = 0.0489
+- annualized volatility = 0.2757
+- max drawdown = -0.2360
+- average turnover = 0.6246
+- effective assets = 1.0869
+- mean cash weight ≈ 0.0000
+- worst max drawdown = -0.6341
+
+`V6_financial_state`:
+
+- mean Sharpe = 0.2669
+- robust Sharpe = -0.2723
+- cumulative return = 0.1280
+- annualized return = 0.1389
+- annualized volatility = 0.3409
+- max drawdown = -0.2885
+- average turnover = 0.4860
+- effective assets = 1.0660
+- mean cash weight = 0.0004
+- worst max drawdown = -0.6247
+
+---
+
+### TD3 robust score ranking
+
+The TD3-only robust score ranking changed relative to the earlier 30ep × 5seeds
+run:
+
+1. `V5_no_volatility_block`: `robust_score = 0.5469`
+2. `V2_reference_full`: `robust_score = 0.2975`
+3. `V6_financial_state`: `robust_score = 0.2944`
+
+This suggests that V6 did not strengthen with additional episodes/seeds, while
+V5 improved meaningfully under the larger run.
+
+---
+
+### Combined protocol comparison
+
+Benchmarks continued to dominate the performance-oriented robust score ranking.
+
+Top performance robust strategies:
+
+- `momentum_winner_12p`: `robust_score = 0.8575`
+- `Equal_Weight_Risky`: `robust_score = 0.8123`
+- `Equal_Weight`: `robust_score = 0.8004`
+- `risk_adjusted_momentum_winner_12p_12p`: `robust_score = 0.7789`
+- `rolling_markowitz_long_only_52p`: `robust_score = 0.7677`
+- `rolling_risk_parity_inverse_vol_12p`: `robust_score = 0.7355`
+- `BuyHold_GLD`: `robust_score = 0.6967`
+- `rolling_markowitz_min_variance_52p`: `robust_score = 0.6870`
+- `trend_spy_cash_12p`: `robust_score = 0.6362`
+- `BuyHold_SPY`: `robust_score = 0.6324`
+
+The best TD3 candidate in this larger run, `V5_no_volatility_block`, ranked
+below several benchmark strategies under the performance-oriented robust score.
+
+---
+
+### Recovery-based mandate-aware ranking
+
+After applying the recovery-based mandate-aware score, the top mandate-aware
+strategies were:
+
+- `BuyHold_GLD`: `mandate_aware_score = 0.5244`
+- `trend_spy_cash_12p`: `mandate_aware_score = 0.4841`
+- `rolling_markowitz_min_variance_52p`: `mandate_aware_score = 0.4533`
+- `defensive_risk_off_12p`: `mandate_aware_score = 0.4414`
+- `rolling_risk_parity_inverse_vol_12p`: `mandate_aware_score = 0.4262`
+- `60_40_SPY_TLT`: `mandate_aware_score = 0.3848`
+- `V5_no_volatility_block`: `mandate_aware_score = 0.3780`
+- `V2_reference_full`: `mandate_aware_score = 0.2253`
+- `V6_financial_state`: `mandate_aware_score = 0.1750`
+
+The best TD3 candidate under the 60ep × 10seeds mandate-aware ranking was:
+
+- `V5_no_volatility_block`
+
+This differs from the earlier 30ep × 5seeds result, where `V2_reference_full`
+was the strongest TD3 candidate under the mandate-aware layer.
+
+---
+
+### Interpretation
+
+The larger run changed the TD3 ranking:
+
+- `V5_no_volatility_block` became the strongest TD3 candidate by both
+  performance-oriented robust score and recovery-based mandate-aware score.
+- `V2_reference_full` remained the cleanest TD3 candidate by drawdown bucket,
+  but its performance profile weakened.
+- `V6_financial_state` did not improve with more episodes/seeds and ranked last
+  among the three TD3 candidates under mandate-aware scoring.
+
+However, all TD3 candidates remained highly concentrated, with effective assets
+close to one. This means the learned policies are behaving closer to
+single-asset selectors than diversified portfolio allocators.
+
+The larger run therefore strengthens two conclusions:
+
+1. TD3 does not dominate the benchmark universe under the current protocol.
+2. The main TD3 behavioral issue is structural concentration, not merely
+   insufficient training episodes.
+
+---
+
+### Research implication
+
+The 60ep × 10seeds revalidation provides a more reliable stress test than the
+initial 30ep × 5seeds run.
+
+The result does not justify claiming TD3 benchmark superiority. Instead, it
+suggests that further work should focus on understanding and controlling the
+concentration behavior of learned TD3 policies.
+
+This motivates the next audit: whether the active reward configuration,
+especially transaction-cost and turnover penalties combined with zero
+concentration penalty, is indirectly allowing or encouraging excessive
+concentration.
+
+**Tests:**  
+
+- `python3 -m unittest discover tests`: 898 tests OK before the overnight run
+
+
+## Entry X — Reward Incentive Audit: Turnover, Transaction Costs, and Concentration
+
+**Date:** 2026-05-21
+
+**Purpose:**  
+Audit whether the active reward configuration is indirectly encouraging
+excessive concentration through transaction-cost and turnover penalties.
+
+The concern was that if transaction costs and turnover penalties discourage
+rebalancing, while concentration penalties are zero or weak, TD3 may learn to
+concentrate in one asset and remain there. This would reduce costs but would not
+necessarily represent a useful portfolio allocation signal.
+
+**Implementation:**  
+Added a reporting-only reward incentive audit. No reward, TD3 architecture,
+environment dynamics, training logic, `robust_score`, `mandate_aware_score`,
+README, or docs were modified by the audit itself.
+
+Files created:
+
+- `src/analysis/audit_reward_incentives.py`
+- `tests/test_audit_reward_incentives.py`
+
+Generated outputs:
+
+- `outputs/tables/reward_incentive_audit/reward_concentration_turnover_audit.csv`
+- `outputs/tables/reward_incentive_audit/reward_lazy_concentration_flags.csv`
+- `outputs/tables/reward_incentive_audit/reward_candidate_behavior_summary.csv`
+- `outputs/tables/reward_incentive_audit/reward_30ep_vs_60ep_comparison.csv`
+
+**Inspected files:**  
+
+- `src/rewards/reward.py`
+- `src/env/portfolio_env.py`
+- `tests/test_reward.py`
+- `configs/config.yaml`
+- `configs/empirical_long_history.yaml`
+- `src/experiments/run_protocol_pure_td3_revalidation.py`
+
+**Active reward terms:**  
+
+- `lambda_return`: active; rewards period portfolio return.
+- `lambda_transaction_cost`: active; pushes reward toward net return and discourages trading.
+- `lambda_turnover`: active; separately penalizes turnover and can discourage rebalancing.
+- `lambda_concentration`: active if configured, but current main configs use `0.0`.
+- `lambda_drawdown`: active; mild in the empirical config.
+- Cash risk-off penalty: active for V5/V6 protocol candidates.
+- Mandate penalty: available but disabled in protocol-pure revalidation.
+- Turnover modes: V2 uses `linear`; V5/V6 use `excess_linear` with `turnover_free_band = 0.20`.
+
+**Finding:**  
+`lambda_transaction_cost` and `lambda_turnover` plausibly encourage portfolio
+stickiness. However, the 60ep × 10seeds evidence is not a clean lazy
+low-turnover concentration story.
+
+All TD3 candidates remain extremely concentrated, but V2 and V5 also show high
+turnover:
+
+- `V2_reference_full`: turnover = 0.6065, effective assets = 1.0834, robust_score = 0.2975
+- `V5_no_volatility_block`: turnover = 0.6246, effective assets = 1.0869, robust_score = 0.5469
+- `V6_financial_state`: turnover = 0.4860, effective assets = 1.0660, robust_score = 0.2944
+
+This suggests that the agent is not simply holding one concentrated allocation
+to avoid trading costs. Instead, it is often rotating between highly concentrated
+allocations.
+
+**Diagnostic classification:**  
+All three TD3 candidates were flagged as `lazy_concentration_candidate` by the
+diagnostic layer because concentration is extreme and performance/stability is
+not strong enough to justify it.
+
+None were flagged as `justified_concentration_candidate`.
+
+These flags are diagnostic, not final truth.
+
+**30ep × 5seeds vs 60ep × 10seeds:**  
+
+- Concentration persisted and worsened slightly for all candidates.
+- Turnover persisted.
+- V2 turnover remained roughly high.
+- V5 turnover remained roughly high.
+- V6 turnover increased.
+- The best TD3 candidate changed from `V2_reference_full` at 30ep × 5seeds to
+  `V5_no_volatility_block` at 60ep × 10seeds.
+- Higher episodes/seeds did not reduce concentration.
+
+**Interpretation:**  
+The current issue is not only transaction-cost-induced inactivity. The broader
+issue is structural concentration in the learned TD3 policies.
+
+The reward and action behavior currently allow the agent to behave closer to a
+single-asset selector than a diversified portfolio allocator.
+
+**Research implication:**  
+A strong concentration penalty should not be activated by default, because it
+may force artificial diversification and obscure whether concentration is
+sometimes useful.
+
+The next appropriate step is a controlled soft concentration experiment:
+
+- baseline: `lambda_concentration = 0.0`
+- soft: `lambda_concentration = 0.01`
+- moderate: `lambda_concentration = 0.03`
+- aggressive diagnostic only: `lambda_concentration = 0.05`
+
+The goal is not to force diversification. The goal is to test whether soft
+concentration pressure improves mandate-aware behavior without destroying
+performance.
+
+**Tests:**  
+
+- `python3 -m unittest tests/test_reward.py`: 14 tests OK
+- `python3 -m unittest tests/test_audit_reward_incentives.py`: 5 tests OK
+- `python3 -m unittest discover tests`: 903 tests OK

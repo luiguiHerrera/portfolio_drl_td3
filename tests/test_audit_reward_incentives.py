@@ -20,25 +20,30 @@ class RewardIncentiveAuditTests(unittest.TestCase):
         frame = pd.DataFrame(
             [
                 {
-                    "strategy": "lazy",
+                    "strategy": "V6_financial_state",
+                    "strategy_type": "td3",
                     "average_turnover": 0.10,
                     "average_effective_number_of_assets": 1.10,
                     "sharpe": 0.20,
                     "robust_score": 0.10,
+                    "mandate_aware_score": 0.05,
                     "max_drawdown": -0.20,
                     "abs_validation_test_sharpe_gap": 0.10,
                 },
                 {
-                    "strategy": "justified",
+                    "strategy": "V5_no_volatility_block",
+                    "strategy_type": "td3",
                     "average_turnover": 0.30,
                     "average_effective_number_of_assets": 1.30,
                     "sharpe": 0.90,
-                    "robust_score": 0.60,
+                    "robust_score": 0.65,
+                    "mandate_aware_score": 0.45,
                     "max_drawdown": -0.18,
                     "abs_validation_test_sharpe_gap": 0.20,
                 },
                 {
                     "strategy": "high_turnover",
+                    "strategy_type": "benchmark",
                     "average_turnover": 0.70,
                     "average_effective_number_of_assets": 2.00,
                     "sharpe": 0.80,
@@ -51,13 +56,53 @@ class RewardIncentiveAuditTests(unittest.TestCase):
 
         scored = compute_reward_incentive_flags(frame).set_index("strategy")
 
-        self.assertTrue(scored.loc["lazy", "high_concentration_flag"])
-        self.assertTrue(scored.loc["lazy", "extreme_concentration_flag"])
-        self.assertTrue(scored.loc["lazy", "low_turnover_high_concentration_flag"])
-        self.assertTrue(scored.loc["lazy", "lazy_concentration_candidate"])
-        self.assertFalse(scored.loc["lazy", "justified_concentration_candidate"])
-        self.assertTrue(scored.loc["justified", "justified_concentration_candidate"])
+        self.assertTrue(scored.loc["V6_financial_state", "high_concentration_flag"])
+        self.assertTrue(scored.loc["V6_financial_state", "extreme_concentration_flag"])
+        self.assertTrue(
+            scored.loc["V6_financial_state", "low_turnover_high_concentration_flag"]
+        )
+        self.assertTrue(
+            scored.loc[
+                "V6_financial_state",
+                "suspicious_or_lazy_concentration_candidate",
+            ]
+        )
+        self.assertFalse(
+            scored.loc["V6_financial_state", "justified_concentration_candidate"]
+        )
+        self.assertTrue(
+            scored.loc["V5_no_volatility_block", "justified_concentration_candidate"]
+        )
         self.assertTrue(scored.loc["high_turnover", "high_turnover_flag"])
+
+    def test_structural_single_asset_benchmark_is_not_flagged_lazy(self):
+        frame = pd.DataFrame(
+            [
+                {
+                    "strategy": "BuyHold_GLD",
+                    "strategy_type": "benchmark",
+                    "average_turnover": 0.0,
+                    "average_effective_number_of_assets": 1.0,
+                    "sharpe": 0.9,
+                    "robust_score": 0.7,
+                    "mandate_aware_score": 0.5,
+                    "max_drawdown": -0.18,
+                    "abs_validation_test_sharpe_gap": pd.NA,
+                }
+            ]
+        )
+
+        scored = compute_reward_incentive_flags(frame).iloc[0]
+
+        self.assertEqual(scored["strategy_role"], "single_asset_benchmark")
+        self.assertEqual(scored["concentration_origin"], "structural")
+        self.assertEqual(
+            scored["concentration_classification"],
+            "structural_concentration_benchmark",
+        )
+        self.assertTrue(scored["structural_concentration_flag"])
+        self.assertFalse(scored["suspicious_or_lazy_concentration_candidate"])
+        self.assertIn("Structural single-asset benchmark", scored["concentration_reason"])
 
     def test_load_reward_incentive_metrics_merges_robust_and_mandate_scores(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -91,6 +136,7 @@ class RewardIncentiveAuditTests(unittest.TestCase):
             self.assertAlmostEqual(row["robust_score"], 0.55)
             self.assertAlmostEqual(row["mandate_aware_score"], 0.42)
             self.assertAlmostEqual(row["validation_test_sharpe_gap"], -0.20)
+            self.assertAlmostEqual(row["validation_test_return_gap"], -0.01)
 
     def test_compare_experiment_folders_computes_deltas(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -111,6 +157,8 @@ class RewardIncentiveAuditTests(unittest.TestCase):
             self.assertEqual(len(comparison), 1)
             self.assertAlmostEqual(comparison["delta_robust_score"].iloc[0], 0.15)
             self.assertAlmostEqual(comparison["delta_average_turnover"].iloc[0], 0.15)
+            self.assertIn("delta_cumulative_return", comparison.columns)
+            self.assertIn("delta_annualized_return", comparison.columns)
 
     def test_write_reward_incentive_audit_creates_outputs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -129,6 +177,12 @@ class RewardIncentiveAuditTests(unittest.TestCase):
                 self.assertTrue(Path(path).exists())
             self.assertIn("lazy_concentration_candidate", report["flags"].columns)
             self.assertIn("average_turnover", report["audit"].columns)
+            self.assertIn("cumulative_return", report["audit"].columns)
+            self.assertIn("concentration_reason", report["audit"].columns)
+            self.assertIn(
+                "n_learned_extreme_concentration_models",
+                report["summary"].columns,
+            )
 
     def test_production_reward_logic_is_not_modified(self):
         reward = compute_risk_aware_reward(

@@ -3234,3 +3234,629 @@ performance.
 - `python3 -m unittest tests/test_reward.py`: 14 tests OK
 - `python3 -m unittest tests/test_audit_reward_incentives.py`: 5 tests OK
 - `python3 -m unittest discover tests`: 903 tests OK
+
+### Role-aware concentration audit update
+
+The reward incentive audit was updated to distinguish structural benchmark
+concentration from learned TD3 concentration.
+
+This was necessary because not all concentration has the same interpretation.
+For example, `BuyHold_GLD` has effective assets close to one by design. It is a
+single-asset benchmark, so its concentration is structural and should not be
+classified as lazy learned behavior.
+
+The updated audit now classifies strategy roles and concentration origin:
+
+- `BuyHold_GLD`, `BuyHold_SPY`, `BuyHold_BTC-USD`, and `BuyHold_TLT` are
+  classified as `structural_concentration_benchmark`.
+- `momentum_winner_12p` and
+  `risk_adjusted_momentum_winner_12p_12p` are also treated as structurally
+  concentrated or winner-take-all benchmarks.
+- `V2_reference_full`, `V5_no_volatility_block`, and `V6_financial_state` are
+  classified as learned TD3 allocators with learned extreme concentration.
+
+The audit no longer labels structurally concentrated benchmarks as lazy.
+`BuyHold_GLD` is now correctly treated as a structurally concentrated benchmark,
+with the reason:
+
+`Structural single-asset benchmark; concentration expected by design.`
+
+The audit also now exposes explicit return fields, including:
+
+- cumulative return
+- annualized return
+- annualized volatility
+- Sharpe
+- Sortino
+- Calmar
+- robust_score
+- mandate_aware_score
+
+This makes the concentration diagnosis more transparent because concentration
+can only be judged relative to return, risk, drawdown, turnover, and stability.
+
+Current diagnostic thresholds:
+
+- high concentration: effective assets `< 1.5`
+- extreme concentration: effective assets `< 1.2`
+- high turnover: turnover `> 0.50`
+- low-turnover high concentration: turnover `< 0.25` and effective assets `< 1.5`
+
+A learned concentration candidate is only considered justified if it satisfies:
+
+- Sharpe `>= 0.75`
+- robust_score `>= 0.60`
+- mandate_aware_score `>= 0.40`, if available
+- max_drawdown `>= -0.25`
+- turnover `<= 0.50`
+- no extreme validation-test Sharpe gap
+
+Under these thresholds, no TD3 candidate qualifies as justified concentration.
+
+The 30ep × 5seeds vs 60ep × 10seeds comparison showed:
+
+- `V2_reference_full`: robust_score fell by `-0.3322`; effective assets fell by
+  `-0.0549`; turnover remained high.
+- `V5_no_volatility_block`: robust_score rose by `+0.4291`; effective assets
+  fell by `-0.0457`; turnover stayed high.
+- `V6_financial_state`: robust_score fell by `-0.1675`; effective assets fell
+  by `-0.0219`; turnover rose by `+0.0628`.
+
+Interpretation:
+
+The concentration problem is not simply that some strategies are concentrated.
+Structural benchmark concentration is expected. The relevant concern is that
+the learned TD3 allocators converge toward extreme concentration despite having
+the ability to diversify, and the current evidence is not strong enough to
+classify that learned concentration as justified.
+
+**Updated tests:**
+
+- `python3 -m unittest tests/test_audit_reward_incentives.py`: 6 tests OK
+- `python3 -m unittest tests/test_reward.py`: 14 tests OK
+- `python3 -m unittest discover tests`: 904 tests OK
+
+## Entry X — Controlled Soft Concentration Penalty Experiment
+
+**Date:** 2026-05-21
+
+**Purpose:**  
+Test whether a soft positive `lambda_concentration` can reduce learned extreme
+concentration in the strongest TD3 candidate without destroying performance or
+mandate-aware behavior.
+
+The experiment was run only as an isolated experimental layer. It did not
+modify the default config, TD3 architecture, reward implementation,
+environment, training logic, `robust_score`, or `mandate_aware_score`.
+
+**Setup:**  
+
+Candidate:
+
+- `V5_no_volatility_block`
+
+Grid:
+
+- `lambda_concentration = 0.00`
+- `lambda_concentration = 0.01`
+- `lambda_concentration = 0.03`
+- `lambda_concentration = 0.05`
+
+Run configuration:
+
+- episodes = 60
+- seeds = `[7, 21, 42, 84, 101]`
+- folds = 4
+- current protocol-pure training stack
+- output directory:
+  `outputs/tables/concentration_penalty_experiment_v5_60ep_5seeds`
+
+**Baseline result:**  
+
+`lambda_concentration = 0.00`:
+
+- robust_score = 0.7088
+- mandate_aware_score = 0.5505
+- Sharpe = 0.5348
+- annualized_return = 0.1179
+- max_drawdown = -0.1825
+- average_turnover = 0.6154
+- effective assets = 1.0783
+- average max weight = 0.9672
+
+The baseline remains an extreme learned concentration case.
+
+**Grid results:**  
+
+`lambda_concentration = 0.01`:
+
+- effective assets increased by 0.0606
+- average max weight decreased by 0.0260
+- robust_score fell by 0.2382
+- mandate_aware_score fell by 0.2063
+- turnover increased by 0.1401
+- decision label: `no_behavioral_improvement`
+
+`lambda_concentration = 0.03`:
+
+- effective assets increased by 0.3024
+- average max weight decreased by 0.1177
+- robust_score fell by 0.3239
+- mandate_aware_score fell by 0.2749
+- turnover increased by 0.1926
+- decision label: `diversifies_but_hurts_performance`
+
+`lambda_concentration = 0.05`:
+
+- effective assets increased by 0.6444
+- average max weight decreased by 0.2267
+- robust_score fell by 0.6251
+- mandate_aware_score fell by 0.4929
+- turnover increased by 0.1729
+- decision label: `diversifies_but_hurts_performance`
+
+**Interpretation:**  
+A direct concentration penalty successfully increased diversification, but it
+did not improve the candidate's mandate-aware behavior. Instead, it materially
+reduced `robust_score` and `mandate_aware_score`, while increasing turnover.
+
+This suggests that V5's concentration is not fixed by a simple soft
+concentration penalty. The learned policy appears to rely on concentrated
+positions for its performance, and forcing diversification through this reward
+term leads to worse risk-adjusted and mandate-aware outcomes.
+
+**Research implication:**  
+A strong or default `lambda_concentration` should not be activated based on the
+current evidence.
+
+The result rejects the simplistic solution:
+
+`extreme concentration -> add concentration penalty by default`
+
+A more careful next step is needed. Possible directions include:
+
+- testing whether concentration constraints should be handled at the action or
+  allocation layer rather than only through reward penalties;
+- designing a conditional concentration penalty that distinguishes justified
+  concentration from unstable concentration;
+- reviewing action geometry and policy output behavior;
+- comparing against explicit max-weight constrained baselines.
+
+**Tests:**  
+
+- `python3 -m unittest discover tests`: 911 tests OK before the experiment
+
+
+## Entry X — Experiment-Only Max-Weight Cap Test
+
+**Date:** 2026-05-21
+
+**Purpose:**  
+Test whether learned TD3 concentration is better controlled through an
+allocation/action constraint rather than through a direct reward penalty.
+
+This experiment was motivated by the previous concentration penalty grid, where
+positive `lambda_concentration` increased diversification mechanically but
+reduced `robust_score`, reduced `mandate_aware_score`, and increased turnover.
+
+The new hypothesis was that concentration may be better controlled by limiting
+the maximum portfolio weight directly.
+
+**Implementation:**  
+Added an experiment-only max-weight cap runner.
+
+Files created:
+
+- `src/experiments/run_max_weight_cap_experiment.py`
+- `tests/test_run_max_weight_cap_experiment.py`
+
+The runner does not modify:
+
+- default config behavior
+- global `PortfolioEnv` behavior
+- TD3 architecture
+- production `robust_score`
+- `mandate_aware_score`
+- README
+
+The cap is implemented through an experiment-only `CappedPortfolioEnv` and pure
+projection utilities:
+
+- `project_weights_to_max_cap(weights, max_weight)`
+- `apply_max_weight_cap_to_action(weights, max_weight)`
+
+The projection enforces:
+
+- non-negative weights
+- weights sum to one
+- maximum weight less than or equal to the cap
+
+The uncapped baseline leaves weights unchanged.
+
+**Experiment setup:**  
+
+Candidate:
+
+- `V5_no_volatility_block`
+
+Grid:
+
+- uncapped
+- max weight cap = 0.80
+- max weight cap = 0.70
+- max weight cap = 0.60
+
+Run configuration:
+
+- episodes = 60
+- seeds = `[7, 21, 42, 84, 101]`
+- folds = 4
+- output directory:
+  `outputs/tables/max_weight_cap_experiment_v5_60ep_5seeds`
+
+**Main result:**  
+
+Uncapped baseline:
+
+- robust_score = 0.1599
+- mandate_aware_score = 0.1207
+- annualized_return = 0.0776
+- Sharpe = 0.5858
+- max_drawdown = -0.1965
+- average_turnover = 0.6712
+- effective assets = 1.1015
+- average max weight = 0.9565
+
+Max-weight cap 0.80:
+
+- robust_score = 0.3077
+- mandate_aware_score = 0.2297
+- annualized_return = 0.1134
+- Sharpe = 0.6121
+- max_drawdown = -0.2021
+- average_turnover = 0.6105
+- effective assets = 1.5652
+- average max weight = 0.7855
+- decision label: `reduces_concentration_and_turnover`
+
+Max-weight cap 0.70:
+
+- robust_score = 0.2899
+- mandate_aware_score = 0.2222
+- annualized_return = 0.0672
+- Sharpe = 0.5765
+- max_drawdown = -0.1894
+- average_turnover = 0.4553
+- effective assets = 1.9501
+- average max weight = 0.6928
+- decision label: `reduces_concentration_and_turnover`
+
+Max-weight cap 0.60:
+
+- robust_score = 0.7257
+- mandate_aware_score = 0.5960
+- annualized_return = 0.1235
+- Sharpe = 0.8858
+- max_drawdown = -0.1516
+- average_turnover = 0.3618
+- effective assets = 2.4645
+- average max weight = 0.5978
+- decision label: `reduces_concentration_and_turnover`
+
+**Interpretation:**  
+Within this paired max-weight cap experiment, the 0.60 cap produced the best
+result. It increased diversification, reduced maximum weight, reduced turnover,
+improved drawdown, improved Sharpe, improved `robust_score`, and improved
+`mandate_aware_score`.
+
+This contrasts sharply with the direct `lambda_concentration` experiment, where
+greater diversification came at the cost of lower performance and higher
+turnover.
+
+Therefore, the evidence suggests that concentration control is more promising
+as an allocation/action constraint than as a direct reward penalty.
+
+**Baseline equivalence audit:**  
+Because the uncapped baseline in the max-weight cap experiment differed from
+previous V5 baselines, an additional audit was performed.
+
+Verified:
+
+- `max_weight_cap = None` does not patch `PortfolioEnv`.
+- `apply_max_weight_cap_to_action(weights, None)` returns weights unchanged.
+- `CappedPortfolioEnv` with `max_weight_cap = None` behaves identically to
+  normal `PortfolioEnv` for a synthetic step.
+- The uncapped cap-run config matched the concentration-penalty baseline config
+  for F1 seed 7.
+- Fold dates also matched.
+
+Observed checks:
+
+- `config_equal = True`
+- `folds_equal = True`
+
+No max-weight cap runner bug was found in the uncapped path.
+
+The baseline difference is therefore interpreted as training/evaluation
+stochasticity and experiment-level robust score normalization, not as cap leakage
+into the uncapped run.
+
+**Caveat:**  
+The max-weight cap result should be interpreted internally within its paired
+experiment. It should not be treated as directly interchangeable with older
+baselines from separate runs.
+
+If this result becomes central to the thesis, it should be repeated with a
+larger paired validation, for example 60ep × 10seeds or 100ep × 10seeds.
+
+**Research implication:**  
+A default concentration penalty should not be activated based on current
+evidence.
+
+A max-weight cap is a more promising path for controlling TD3 concentration
+because it directly constrains the allocation space rather than asking the
+reward function to indirectly punish concentration.
+
+Future experiments should test whether max-weight caps remain beneficial across:
+
+- more seeds
+- other TD3 candidates
+- alternative cap levels
+- final protocol comparison against benchmarks
+
+**Tests:**  
+
+Initial max-weight cap runner:
+
+- `python3 -m unittest tests/test_run_max_weight_cap_experiment.py`: 10 tests OK
+- `python3 -m unittest discover tests`: 921 tests OK
+
+Baseline equivalence audit:
+
+- `python3 -m unittest tests/test_run_max_weight_cap_experiment.py`: 13 tests OK
+- `python3 -m unittest discover tests`: 924 tests OK
+
+## Entry X — Paired Max-Weight Cap Validation: V5 60 Episodes × 10 Seeds
+
+**Date:** 2026-05-21
+
+**Purpose:**  
+Validate whether a direct max-weight allocation constraint can control learned
+TD3 concentration better than a direct reward concentration penalty.
+
+Previous experiments showed that increasing `lambda_concentration` made the
+portfolio more diversified, but reduced `robust_score`, reduced
+`mandate_aware_score`, and increased turnover.
+
+The new hypothesis was that concentration should be controlled directly at the
+allocation/action layer rather than indirectly through the reward.
+
+**Setup:**  
+
+Candidate:
+
+- `V5_no_volatility_block`
+
+Experiment:
+
+- uncapped baseline
+- max weight cap = 0.60
+
+Run configuration:
+
+- episodes = 60
+- seeds = `[7, 21, 42, 84, 101, 123, 202, 303, 404, 505]`
+- folds = 4
+- output directory:
+  `outputs/tables/max_weight_cap_experiment_v5_60ep_10seeds_cap060`
+
+The experiment was paired: uncapped and capped variants were produced within the
+same runner and should be interpreted relative to each other.
+
+**Uncapped baseline:**  
+
+- annualized_return = 0.0407
+- Sharpe = 0.3557
+- robust_score = 0.1256
+- mandate_aware_score = 0.0870
+- max_drawdown = -0.2350
+- average_turnover = 0.6149
+- effective assets = 1.0819
+- average max weight = 0.9651
+
+**Max-weight cap 0.60:**  
+
+- annualized_return = 0.0702
+- Sharpe = 0.6833
+- robust_score = 0.7021
+- mandate_aware_score = 0.5627
+- max_drawdown = -0.1656
+- average_turnover = 0.3758
+- effective assets = 2.4667
+- average max weight = 0.5983
+
+**Delta versus uncapped:**  
+
+- annualized_return improved by 0.0295
+- Sharpe improved by 0.3276
+- robust_score improved by 0.5765
+- mandate_aware_score improved by 0.4757
+- max_drawdown improved by 0.0694
+- average_turnover fell by 0.2391
+- effective assets increased by 1.3848
+- average max weight fell by 0.3667
+
+Decision label:
+
+- `reduces_concentration_and_turnover`
+
+**Interpretation:**  
+The 0.60 max-weight cap dominated the uncapped baseline inside this paired
+validation. It improved diversification, reduced average max weight, reduced
+turnover, improved drawdown, improved Sharpe, improved `robust_score`, improved
+`mandate_aware_score`, and improved annualized return.
+
+This contrasts with the `lambda_concentration` experiment, where diversification
+came with lower performance and higher turnover.
+
+**Research implication:**  
+For V5, controlling concentration through a direct allocation constraint appears
+more promising than adding a concentration penalty to the reward.
+
+This does not yet justify making the cap a global default. The result should be
+treated as a candidate protocol enhancement requiring additional validation
+across other TD3 candidates and against the benchmark suite.
+
+Next validation step:
+
+- test cap 0.60 on `V2_reference_full`
+- test cap 0.60 on `V6_financial_state`
+- compare capped TD3 candidates against uncapped TD3 and benchmarks under the
+  common protocol
+
+  ## Entry X — Max-Weight Cap Validation Across V2 and V6
+
+**Date:** 2026-05-21
+
+**Purpose:**  
+Test whether the promising V5 max-weight cap result generalizes to other TD3
+candidates.
+
+Previous evidence showed that `max_weight_cap = 0.60` improved V5 relative to
+its uncapped paired baseline. The next question was whether this was specific to
+V5 or whether the cap addresses a broader TD3 concentration problem.
+
+**Setup:**  
+
+Candidates:
+
+- `V2_reference_full`
+- `V6_financial_state`
+
+Experiment:
+
+- uncapped baseline
+- max weight cap = 0.60
+
+Run configuration:
+
+- episodes = 60
+- seeds = `[7, 21, 42, 84, 101, 123, 202, 303, 404, 505]`
+- folds = 4
+
+Output directories:
+
+- `outputs/tables/max_weight_cap_experiment_v2_60ep_10seeds_cap060`
+- `outputs/tables/max_weight_cap_experiment_v6_60ep_10seeds_cap060`
+
+---
+
+### V2 result
+
+Uncapped baseline:
+
+- annualized_return = -0.0007
+- Sharpe = 0.0336
+- robust_score = 0.1104
+- mandate_aware_score = 0.0692
+- max_drawdown = -0.2721
+- average_turnover = 0.6456
+- effective assets = 1.0963
+- average max weight = 0.9594
+
+Max-weight cap 0.60:
+
+- annualized_return = 0.0911
+- Sharpe = 0.7613
+- robust_score = 0.6877
+- mandate_aware_score = 0.5473
+- max_drawdown = -0.1696
+- average_turnover = 0.3683
+- effective assets = 2.4616
+- average max weight = 0.5972
+
+Delta versus uncapped:
+
+- annualized_return improved by 0.0918
+- Sharpe improved by 0.7278
+- robust_score improved by 0.5773
+- mandate_aware_score improved by 0.4781
+- max_drawdown improved by 0.1026
+- average_turnover fell by 0.2772
+- effective assets increased by 1.3652
+- average max weight fell by 0.3622
+
+Decision label:
+
+- `reduces_concentration_and_turnover`
+
+---
+
+### V6 result
+
+Uncapped baseline:
+
+- annualized_return = 0.1868
+- Sharpe = 0.3276
+- robust_score = 0.1169
+- mandate_aware_score = 0.0716
+- max_drawdown = -0.2793
+- average_turnover = 0.4643
+- effective assets = 1.0658
+- average max weight = 0.9720
+
+Max-weight cap 0.60:
+
+- annualized_return = 0.1340
+- Sharpe = 0.4904
+- robust_score = 0.6541
+- mandate_aware_score = 0.5039
+- max_drawdown = -0.1867
+- average_turnover = 0.3016
+- effective assets = 2.4638
+- average max weight = 0.5981
+
+Delta versus uncapped:
+
+- annualized_return fell by 0.0528
+- Sharpe improved by 0.1627
+- robust_score improved by 0.5372
+- mandate_aware_score improved by 0.4323
+- max_drawdown improved by 0.0926
+- average_turnover fell by 0.1626
+- effective assets increased by 1.3980
+- average max weight fell by 0.3740
+
+Decision label:
+
+- `reduces_concentration_and_turnover`
+
+---
+
+### Interpretation
+
+The 0.60 max-weight cap improved both V2 and V6 in the dimensions most relevant
+to the concentration problem:
+
+- effective assets increased materially
+- average max weight fell to approximately 60%
+- turnover decreased
+- max drawdown improved
+- robust_score improved
+- mandate_aware_score improved
+
+For V2, the cap also improved annualized return substantially. For V6, the cap
+reduced annualized return but still improved Sharpe, drawdown, turnover,
+robust_score, and mandate_aware_score.
+
+Together with the previous V5 result, this suggests that the learned TD3
+concentration problem is not candidate-specific. A max-weight allocation
+constraint appears to be a more promising concentration-control mechanism than
+a direct concentration penalty in the reward.
+
+**Research implication:**  
+`max_weight_cap = 0.60` should be promoted to a candidate protocol enhancement
+for further comparison, but not yet made a global default.
+
+The next step is to compare capped TD3 candidates against uncapped TD3
+candidates and the full benchmark suite under the common protocol.

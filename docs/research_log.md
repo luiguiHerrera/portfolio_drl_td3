@@ -4358,3 +4358,112 @@ framework for final comparison, rather than unconstrained TD3.
 
 - `python3 -m unittest tests/test_run_cap_sensitivity_experiment.py`: 10 tests OK
 - `python3 -m unittest discover tests`: 965 tests OK
+
+## Entry X — Final Best-Constrained TD3 Report
+
+**Date:** 2026-05-22
+
+**Purpose:**  
+Build the final reporting layer comparing the best constrained TD3 variants
+against uncapped TD3, cap 0.60 reference variants, and the full benchmark suite.
+
+This report incorporates the full cap sensitivity experiment, where the best cap
+was selected by mandate-aware score for each TD3 candidate.
+
+**Implementation:**  
+Added:
+
+- `src/analysis/build_final_constrained_td3_report.py`
+- `tests/test_build_final_constrained_td3_report.py`
+
+Output directory:
+
+- `outputs/tables/final_constrained_td3_report_60ep_10seeds`
+
+Output files:
+
+- `final_constrained_td3_main_ranking.csv`
+- `final_constrained_td3_mandate_ranking.csv`
+- `final_constrained_td3_selected_candidates.csv`
+- `final_constrained_td3_vs_benchmarks.csv`
+- `final_constrained_td3_summary.md`
+- `final_constrained_td3_metadata.json`
+
+**Selected best caps:**  
+
+| Candidate | Selected cap | Mandate-aware score | Robust score | Max drawdown |
+|---|---:|---:|---:|---:|
+| `V6_financial_state` | `0.50` | `0.5492` | `0.6757` | `-0.1576` |
+| `V2_reference_full` | `0.50` | `0.5482` | `0.6553` | `-0.1405` |
+| `V5_no_volatility_block` | `0.70` | `0.5294` | `0.6641` | `-0.1686` |
+
+**Top mandate-aware ranking:**  
+
+1. `V6_cap_0.50`: `0.5492`
+2. `V2_cap_0.50`: `0.5482`
+3. `V5_cap_0.70`: `0.5294`
+4. `BuyHold_GLD`: `0.5244`
+5. `trend_spy_cash_12p`: `0.4841`
+
+**Top robust-score ranking:**  
+
+The top robust-score strategies remain aggressive benchmarks:
+
+1. `momentum_winner_12p`
+2. `Equal_Weight_Risky`
+3. `Equal_Weight`
+4. `risk_adjusted_momentum_winner_12p_12p`
+5. `rolling_markowitz_long_only_52p`
+
+However, these aggressive strategies are mandate-ineligible due to high
+drawdowns.
+
+**Key comparison:**  
+
+Best constrained TD3:
+
+- `V6_cap_0.50`
+
+Best clean benchmark:
+
+- `BuyHold_GLD`
+
+Comparison by mandate-aware score:
+
+- `V6_cap_0.50`: `0.5492`
+- `BuyHold_GLD`: `0.5244`
+- Difference: `+0.0248`
+
+`V6_cap_0.50` also beats `trend_spy_cash_12p` by mandate-aware score:
+
+- `V6_cap_0.50`: `0.5492`
+- `trend_spy_cash_12p`: `0.4841`
+- Difference: `+0.0651`
+
+**Interpretation:**  
+Unconstrained TD3 does not dominate the benchmark suite. However, TD3 with an
+empirically selected max-weight constraint becomes competitive under
+mandate-aware evaluation and can outperform the best clean benchmark in this
+experimental setting.
+
+The optimal cap is candidate-sensitive:
+
+- V6 prefers `0.50`
+- V2 prefers `0.50`
+- V5 prefers `0.70`
+
+Therefore, the result should not be framed as "`0.60` is the best cap." The
+stronger and more defensible conclusion is that max-weight constraints improve
+TD3 behavior, while the optimal cap level depends on the candidate.
+
+**Final defensible claim:**  
+
+> Unconstrained TD3 does not dominate the benchmark suite. However, TD3 with an
+> empirically selected max-weight constraint becomes competitive under
+> mandate-aware evaluation and can outperform the best clean benchmark in this
+> experimental setting. The optimal cap is candidate-sensitive.
+
+**Tests:**  
+
+- `python3 -m unittest tests/test_build_final_constrained_td3_report.py`: 8 tests OK
+- `python3 -m unittest discover tests`: 973 tests OK

@@ -4164,3 +4164,197 @@ performance robust score.
 
 - `python3 -m unittest tests/test_audit_executive_results_consistency.py`: 7 tests OK
 - `python3 -m unittest discover tests`: 947 tests OK
+
+## Entry X — Mandate-Aware Score Sensitivity Analysis
+
+**Date:** 2026-05-21**
+
+**Purpose:**  
+Test whether the capped TD3 mandate-aware result depends too strongly on the
+specific drawdown mandate thresholds used in the base evaluation.
+
+**Implementation:**  
+Added a reporting-only mandate-aware score sensitivity layer.
+
+Files created:
+
+- `src/analysis/mandate_score_sensitivity.py`
+- `tests/test_mandate_score_sensitivity.py`
+
+Input directory:
+
+- `outputs/tables/capped_td3_protocol_comparison_60ep_10seeds_cap060`
+
+Output directory:
+
+- `outputs/tables/mandate_score_sensitivity_60ep_10seeds_cap060`
+
+Output files:
+
+- `mandate_score_sensitivity_all_scenarios.csv`
+- `mandate_score_sensitivity_top10_by_scenario.csv`
+- `mandate_score_sensitivity_td3_focus.csv`
+- `mandate_score_sensitivity_summary.csv`
+- `mandate_score_sensitivity_summary.md`
+
+**Sensitivity scenarios:**  
+
+Three mandate scenarios were tested:
+
+- `strict`
+- `base`
+- `flexible`
+
+Each scenario recalculates mandate buckets and the recovery-based
+mandate-aware score. No model is retrained.
+
+**Result:**  
+
+The top five strategies were stable across all three scenarios:
+
+1. `V5_cap_0.60`
+2. `V2_cap_0.60`
+3. `BuyHold_GLD`
+4. `V6_cap_0.60`
+5. `trend_spy_cash_12p`
+
+`V5_cap_0.60` and `V2_cap_0.60` remained above `BuyHold_GLD` under all tested
+mandate scenarios.
+
+Summary:
+
+- strict: best strategy = `V5_cap_0.60`; best benchmark = `BuyHold_GLD`; TD3 beats benchmark = True
+- base: best strategy = `V5_cap_0.60`; best benchmark = `BuyHold_GLD`; TD3 beats benchmark = True
+- flexible: best strategy = `V5_cap_0.60`; best benchmark = `BuyHold_GLD`; TD3 beats benchmark = True
+
+Under the strict scenario, `V5_cap_0.60` and `V2_cap_0.60` move from
+`clean_mandate` to `eligible_yellow`, but remain above `BuyHold_GLD`.
+
+**Interpretation:**  
+The capped TD3 result is not strongly dependent on the base mandate threshold.
+The ranking is stable across strict, base, and flexible mandate scenarios.
+
+Because the recovery-based multiplier is continuous, bucket changes do not alter
+the score unless a strategy becomes `not_eligible`. Therefore, this sensitivity
+test mainly verifies that the capped TD3 strategies remain eligible and remain
+above the best clean benchmark under reasonable mandate definitions.
+
+**Core implication:**  
+The claim that capped TD3 becomes competitive under a mandate-aware evaluation
+layer is more robust after this sensitivity check.
+
+**Tests:**  
+
+- `python3 -m unittest tests/test_mandate_score_sensitivity.py`: 8 tests OK
+- `python3 -m unittest discover tests`: 955 tests OK
+
+## Entry X — Full Max-Weight Cap Sensitivity: 60 Episodes × 10 Seeds
+
+**Date:** 2026-05-22
+
+**Purpose:**  
+Test whether the previous `max_weight_cap = 0.60` result was a cherry-picked cap
+level or whether the benefit comes more generally from imposing a reasonable
+maximum-weight allocation constraint.
+
+**Implementation:**  
+Added and ran a full cap sensitivity experiment.
+
+Files created:
+
+- `src/experiments/run_cap_sensitivity_experiment.py`
+- `tests/test_run_cap_sensitivity_experiment.py`
+
+Output directory:
+
+- `outputs/tables/cap_sensitivity_experiment_60ep_10seeds`
+
+Output files:
+
+- `cap_sensitivity_all_results.csv`
+- `cap_sensitivity_pairwise_deltas.csv`
+- `cap_sensitivity_best_caps.csv`
+- `cap_sensitivity_summary.csv`
+- `cap_sensitivity_summary.md`
+- `cap_sensitivity_metadata.json`
+- `per_candidate/`
+
+Run configuration:
+
+- candidates:
+  - `V2_reference_full`
+  - `V5_no_volatility_block`
+  - `V6_financial_state`
+- caps:
+  - `uncapped`
+  - `0.50`
+  - `0.60`
+  - `0.70`
+  - `0.80`
+- episodes = 60
+- seeds = `[7, 21, 42, 84, 101, 123, 202, 303, 404, 505]`
+
+Runtime:
+
+- started: `2026-05-22 00:28:46 CEST`
+- ended: `2026-05-22 04:14:49 CEST`
+- total runtime: approximately `3h 46m`
+
+**Summary:**  
+
+| Candidate | Best mandate cap | Best mandate score | Best robust cap | Best robust score | Interpretation |
+|---|---:|---:|---:|---:|---|
+| `V2_reference_full` | `0.50` | `0.5482` | `0.50` | `0.6553` | `threshold_sensitive` |
+| `V5_no_volatility_block` | `0.70` | `0.5294` | `0.70` | `0.6641` | `stable_cap_benefit` |
+| `V6_financial_state` | `0.50` | `0.5492` | `0.50` | `0.6757` | `threshold_sensitive` |
+
+**Top result per candidate:**  
+
+- `V2_reference_full`: `cap_0.50` dominates uncapped.
+- `V5_no_volatility_block`: `cap_0.70` dominates uncapped.
+- `V6_financial_state`: `cap_0.50` dominates uncapped.
+
+**Does 0.60 remain best?**  
+
+No. In the broader grid:
+
+- V2 best cap is `0.50`, not `0.60`.
+- V5 best cap is `0.70`, not `0.60`.
+- V6 best cap is `0.50`, not `0.60`.
+
+**Do capped versions consistently beat uncapped?**  
+
+- V5: yes. All tested caps beat uncapped on both `robust_score` and
+  `mandate_aware_score`.
+- V6: yes. All tested caps beat uncapped on both `robust_score` and
+  `mandate_aware_score`.
+- V2: mixed. Caps `0.50` and `0.70` beat uncapped; caps `0.60` and `0.80`
+  underperform uncapped on `robust_score` and `mandate_aware_score`.
+
+All capped variants improved turnover and effective assets versus uncapped
+across all three candidates.
+
+**Interpretation:**  
+The result does not support claiming that `max_weight_cap = 0.60` is universally
+optimal. Instead, the stronger conclusion is that a maximum-weight allocation
+constraint improves TD3 behavior, while the best cap level is
+candidate-sensitive.
+
+This reduces the cherry-picking concern around the original `0.60` result. The
+benefit appears to come from imposing a reasonable allocation constraint, not
+from one isolated cap value.
+
+**Research implication:**  
+The paper/TFM narrative should avoid claiming that `0.60` is the definitive cap.
+A better claim is:
+
+> A max-weight allocation constraint materially improves TD3 behavior, although
+> the optimal cap level is candidate-sensitive.
+
+This supports using max-weight constrained TD3 as the more realistic candidate
+framework for final comparison, rather than unconstrained TD3.
+
+**Tests:**  
+
+- `python3 -m unittest tests/test_run_cap_sensitivity_experiment.py`: 10 tests OK
+- `python3 -m unittest discover tests`: 965 tests OK

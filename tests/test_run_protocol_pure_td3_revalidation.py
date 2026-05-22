@@ -8,8 +8,11 @@ from unittest.mock import patch
 import pandas as pd
 
 from src.experiments.run_protocol_pure_td3_revalidation import (
+    DEFAULT_V3_MACRO_PATH,
     PROTOCOL_CANDIDATES,
     _build_candidate_run_config,
+    _build_v3_features,
+    _candidate_raw_features,
     _select_candidates,
     _validate_protocol_reward_semantics,
     run_protocol_pure_td3_revalidation,
@@ -122,6 +125,82 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
     def test_unknown_candidate_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unknown candidates"):
             _select_candidates(["not_a_candidate"])
+
+    def test_v3_candidate_is_available_but_not_default_enabled(self):
+        default_names = {candidate["name"] for candidate in _select_candidates(None)}
+        explicit_names = {
+            candidate["name"]
+            for candidate in _select_candidates(["V3_real_macro_current"])
+        }
+
+        self.assertNotIn("V3_real_macro_current", default_names)
+        self.assertIn("V2_reference_full", default_names)
+        self.assertIn("V5_no_volatility_block", default_names)
+        self.assertIn("V6_financial_state", default_names)
+        self.assertEqual(explicit_names, {"V3_real_macro_current"})
+
+    def test_v3_candidate_config_uses_required_macro_path(self):
+        base_config = self._base_config()
+        candidate = _candidate("V3_real_macro_current")
+
+        config = _build_candidate_run_config(
+            base_config=base_config,
+            candidate=candidate,
+            seed=7,
+            episodes=5,
+            batch_size=32,
+            actor_learning_rate=0.0005,
+            critic_learning_rate=0.0005,
+        )
+
+        self.assertEqual(config["features"]["version"], "v3")
+        self.assertEqual(config["features"]["macro_path"], DEFAULT_V3_MACRO_PATH)
+        self.assertFalse(config["reward"]["use_cash_risk_off_penalty"])
+
+    def test_v3_raw_feature_generation_includes_macro_columns(self):
+        returns = self._long_returns()
+        macro_path = self._write_macro_csv_for_returns(returns)
+        candidate = {
+            **_candidate("V3_real_macro_current"),
+            "macro_path": macro_path,
+        }
+
+        features = _build_v3_features(
+            returns=returns,
+            base_config=self._base_config(),
+            candidate=candidate,
+        )
+
+        self.assertTrue(any(column.startswith("macro_") for column in features.columns))
+        self.assertIs(_candidate_raw_features(candidate, {"v3_features": features}), features)
+
+    def test_v3_missing_macro_path_raises_error(self):
+        candidate = {
+            **_candidate("V3_real_macro_current"),
+            "macro_path": "does/not/exist.csv",
+        }
+
+        with self.assertRaises(FileNotFoundError):
+            _build_v3_features(
+                returns=self._long_returns(),
+                base_config=self._base_config(),
+                candidate=candidate,
+            )
+
+    def test_v3_stale_macro_coverage_raises_error(self):
+        returns = self._long_returns()
+        macro_path = self._write_macro_csv_for_returns(returns.iloc[:-10])
+        candidate = {
+            **_candidate("V3_real_macro_current"),
+            "macro_path": macro_path,
+        }
+
+        with self.assertRaisesRegex(ValueError, "stale"):
+            _build_v3_features(
+                returns=returns,
+                base_config=self._base_config(),
+                candidate=candidate,
+            )
 
     def _patched_dependencies(self):
         patches = [
@@ -265,6 +344,42 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
             "training": {"seed": 42, "episodes": 30},
             "features": {"version": "v2"},
         }
+
+    @staticmethod
+    def _long_returns() -> pd.DataFrame:
+        index = pd.date_range("2021-01-01", periods=80, freq="W-FRI")
+        pattern = [0.01, -0.01, 0.02, 0.00, 0.015, -0.005, 0.008, -0.004]
+        return pd.DataFrame(
+            {
+                "SPY": (pattern * 10)[: len(index)],
+                "TLT": ([0.00, 0.01, -0.01, 0.01] * 20)[: len(index)],
+                "GLD": ([0.005, 0.002, -0.003, 0.004] * 20)[: len(index)],
+                "BTC-USD": ([0.03, -0.02, 0.01, -0.01] * 20)[: len(index)],
+                "CASH": [0.0] * len(index),
+            },
+            index=index,
+        )
+
+    def _write_macro_csv_for_returns(self, returns: pd.DataFrame) -> str:
+        temp_dir = tempfile.mkdtemp()
+        path = Path(temp_dir) / "macro.csv"
+        index = pd.date_range(
+            returns.index.min() - pd.offsets.Week(weekday=4),
+            returns.index.max(),
+            freq="W-FRI",
+        )
+        macro = pd.DataFrame(
+            {
+                "date": index,
+                "DGS10": [4.0 + i * 0.001 for i in range(len(index))],
+                "DGS2": [3.0 + i * 0.001 for i in range(len(index))],
+                "VIX": [20.0 + (i % 5) for i in range(len(index))],
+                "DXY": [100.0 + i * 0.01 for i in range(len(index))],
+                "CPI": [300.0 + i * 0.02 for i in range(len(index))],
+            }
+        )
+        macro.to_csv(path, index=False)
+        return str(path)
 
 
 def _candidate(name):

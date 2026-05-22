@@ -4467,3 +4467,366 @@ TD3 behavior, while the optimal cap level depends on the candidate.
 
 - `python3 -m unittest tests/test_build_final_constrained_td3_report.py`: 8 tests OK
 - `python3 -m unittest discover tests`: 973 tests OK
+
+## Entry X — V3 Real Macro Full Revalidation
+
+**Date:** 2026-05-22
+
+**Purpose:**  
+Evaluate `V3_real_macro_current`, the current-window macro-enhanced TD3
+candidate, under the same protocol used for the other TD3 candidates.
+
+**Setup:**  
+
+Candidate:
+
+- `V3_real_macro_current`
+
+Configuration:
+
+- episodes = 60
+- seeds = `[7, 21, 42, 84, 101, 123, 202, 303, 404, 505]`
+- folds = 4
+- returns file = `data/processed/returns_weekly_latest.csv`
+- macro file = `data/processed/macro_weekly_latest.csv`
+
+The macro dataset covers the full current returns window and is loaded locally.
+No macro data is downloaded inside training.
+
+**Test results:**  
+
+- mean Sharpe = `0.2155`
+- robust Sharpe 0.5 = `-0.3652`
+- cumulative return = `0.0321`
+- annualized return = `0.0219`
+- annualized volatility = `0.1860`
+- max drawdown = `-0.1920`
+- worst max drawdown = `-0.4790`
+- average turnover = `0.3078`
+- effective assets = `1.0464`
+- average max weight = `0.9802`
+- robust score = `0.3748`
+- DSR method = `median_run`
+
+**Benchmark comparison:**  
+
+`V3_real_macro_current` underperformed the main benchmark set by robust score:
+
+- `V3_real_macro_current`: `0.3748`
+- `BuyHold_GLD`: `0.6967`
+- `trend_spy_cash_12p`: `0.6362`
+- `60_40_SPY_TLT`: `0.6084`
+- `rolling_risk_parity_inverse_vol_12p`: `0.7355`
+
+**Interpretation:**  
+V3 is now technically valid as a current-window macro candidate, but the full
+60ep × 10seeds revalidation does not show that macro features improve TD3
+performance under the current protocol.
+
+The candidate also remains highly concentrated:
+
+- effective assets = `1.0464`
+- average max weight = `0.9802`
+
+Therefore, V3 should be documented as a valid but weak candidate unless further
+cap-constrained testing changes the result.
+
+**Caveat:**  
+CPI still uses a conservative four-week lag rather than a full real-time
+release-calendar or vintage-data treatment.
+
+**Decision:**  
+Do not promote V3 as a final unconstrained candidate. Consider cap testing only
+as a secondary robustness check, not as the next priority.
+
+## Entry X — V3 Real Macro Cap Sensitivity
+
+**Date:** 2026-05-22
+
+**Purpose:**  
+Evaluate whether `V3_real_macro_current` remains weak after applying the same
+max-weight cap sensitivity framework used for V2, V5, and V6.
+
+The uncapped V3 full run showed weak performance and extreme concentration.
+However, previous TD3 experiments showed that unconstrained TD3 candidates often
+fail because they learn near single-asset allocations. Therefore, V3 should not
+be rejected only from its uncapped result.
+
+**Setup:**  
+
+Candidate:
+
+- `V3_real_macro_current`
+
+Cap grid:
+
+- `uncapped`
+- `0.50`
+- `0.60`
+- `0.70`
+- `0.80`
+
+Configuration:
+
+- episodes = 60
+- seeds = `[7, 21, 42, 84, 101, 123, 202, 303, 404, 505]`
+
+Output directory:
+
+- `outputs/tables/cap_sensitivity_experiment_v3_60ep_10seeds`
+
+**Implementation note:**  
+Updated the cap experiment wrapper so the selected candidate is passed into the
+feature context builder. This ensures `V3_real_macro_current` uses the guarded
+macro candidate path instead of defaulting to the V2/V5/V6 feature context.
+
+Modified:
+
+- `src/experiments/run_max_weight_cap_experiment.py`
+- `tests/test_run_max_weight_cap_experiment.py`
+
+**Results:**  
+
+| cap | robust_score | mandate_aware_score | Sharpe | annualized_return | max_drawdown | worst_drawdown | turnover | effective_assets | average_max_weight |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| uncapped | 0.1287 | 0.0982 | 0.3291 | 0.0182 | -0.1918 | -0.5082 | 0.3827 | 1.0577 | 0.9754 |
+| 0.50 | 0.7309 | 0.6287 | 0.9418 | 0.1000 | -0.1227 | -0.3191 | 0.1921 | 3.1471 | 0.4999 |
+| 0.60 | 0.5265 | 0.4419 | 0.6795 | 0.0739 | -0.1384 | -0.3443 | 0.2084 | 2.4777 | 0.5987 |
+| 0.70 | 0.3304 | 0.2703 | 0.4482 | 0.0384 | -0.1538 | -0.3375 | 0.3010 | 1.9462 | 0.6964 |
+| 0.80 | 0.3872 | 0.3165 | 0.5943 | 0.0449 | -0.1544 | -0.5265 | 0.3172 | 1.5529 | 0.7922 |
+
+Best V3 cap:
+
+- by mandate-aware score: `0.50`
+- by robust score: `0.50`
+
+**Interpretation:**  
+`V3_real_macro_current_cap_0.50` materially improves over uncapped V3 across
+robust score, mandate-aware score, Sharpe, annualized return, max drawdown,
+turnover, effective assets, and average max weight.
+
+Against the previous best constrained TD3 candidates, V3 now appears highly
+competitive:
+
+- `V3_cap_0.50`: mandate-aware `0.6287`, robust `0.7309`
+- `V6_cap_0.50`: mandate-aware `0.5492`, robust `0.6757`
+- `V2_cap_0.50`: mandate-aware `0.5482`, robust `0.6553`
+- `V5_cap_0.70`: mandate-aware `0.5294`, robust `0.6641`
+
+This suggests that macro features may become useful once the TD3 allocation
+space is constrained.
+
+**Caveat:**  
+The V3 macro dataset uses current-vintage macro data and a conservative CPI
+four-week lag, not a full real-time vintage or release-calendar macro database.
+
+A further consistency audit is needed because the uncapped V3 robust score in
+the cap sensitivity run differs from the standalone V3 protocol revalidation.
+The capped result should therefore be treated as promising but not final until
+the baseline equivalence is checked.
+
+**Tests:**  
+
+- `python3 -m unittest tests/test_run_max_weight_cap_experiment.py`: 14 tests OK
+- `python3 -m unittest tests/test_run_cap_sensitivity_experiment.py`: 10 tests OK
+- `python3 -m unittest discover tests`: 986 tests OK
+
+## Entry X — ReplayBuffer Seed Reproducibility Fix
+
+**Date:** 2026-05-22
+
+**Purpose:**  
+Fix the reproducibility issue identified during the V3 uncapped baseline
+equivalence audit.
+
+The audit found that the standalone V3 protocol run and the V3 cap-sensitivity
+uncapped baseline were methodologically comparable but not numerically
+equivalent. One reason was that they were independent stochastic training
+realizations. Source inspection found that `ReplayBuffer` supports seeding, but
+the TD3 training paths were not passing `training_config["seed"]` into the
+buffer.
+
+**Implementation:**  
+Updated both TD3 training paths so `ReplayBuffer(...)` receives the configured
+training seed.
+
+Modified:
+
+- `src/train/train_td3.py`
+- `src/experiments/run_feature_block_ablation.py`
+- `tests/test_train_td3.py`
+- `tests/test_run_feature_block_ablation.py`
+
+No TD3 architecture, reward, environment dynamics, robust score,
+mandate-aware score, README, or experiment outputs were changed.
+
+**Tests:**  
+
+- `python3 -m unittest tests/test_replay_buffer.py`: 17 OK
+- `python3 -m unittest tests/test_train_td3.py`: 13 OK
+- `python3 -m unittest tests/test_run_protocol_pure_td3_revalidation.py`: 10 OK
+- `python3 -m unittest tests/test_run_feature_block_ablation.py`: 7 OK
+- `python3 -m unittest discover tests`: 993 OK
+
+**Reproducibility smoke:**  
+
+Two identical in-memory TD3 runs with the same seed/config produced:
+
+- `episode_logs_match = True`
+- `replay_sample_match = True`
+
+**Interpretation:**  
+This does not retroactively make previous experiment outputs bitwise
+equivalent, but it strengthens reproducibility for all future TD3 protocol and
+cap-sensitivity runs.
+
+The V3 cap-sensitivity result remains usable as an internally paired cap-grid
+result, with the documented caveat that previous standalone and cap-grid
+robust scores came from different scoring universes and independent stochastic
+runs.
+
+## Entry X — V3 Seeded Cap Sensitivity Rerun
+
+**Date:** 2026-05-22
+
+**Purpose:**  
+Rerun the V3 cap sensitivity experiment after fixing ReplayBuffer seeding, to
+check whether the promising V3 capped result remains stable under improved
+training reproducibility.
+
+**Setup:**  
+
+Candidate:
+
+- `V3_real_macro_current`
+
+Cap grid:
+
+- `uncapped`
+- `0.50`
+- `0.60`
+- `0.70`
+- `0.80`
+
+Configuration:
+
+- episodes = 60
+- seeds = `[7, 21, 42, 84, 101, 123, 202, 303, 404, 505]`
+- output directory:
+  `outputs/tables/cap_sensitivity_experiment_v3_60ep_10seeds_seeded`
+
+**Result:**  
+
+| cap | robust_score | mandate_aware_score | Sharpe | annualized_return | max_drawdown | worst_drawdown | turnover | effective_assets | average_max_weight |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| uncapped | 0.1372 | 0.1032 | 0.1777 | -0.0198 | -0.1984 | -0.4871 | 0.3628 | 1.0499 | 0.9785 |
+| 0.50 | 0.6868 | 0.5769 | 0.6233 | 0.0611 | -0.1379 | -0.4083 | 0.1920 | 3.1472 | 0.4999 |
+| 0.60 | 0.7010 | 0.5907 | 0.7987 | 0.0849 | -0.1360 | -0.4048 | 0.2461 | 2.4727 | 0.5985 |
+| 0.70 | 0.3457 | 0.2763 | 0.4485 | 0.0311 | -0.1671 | -0.4544 | 0.2479 | 1.9496 | 0.6955 |
+| 0.80 | 0.1852 | 0.1444 | 0.2638 | 0.0029 | -0.1806 | -0.4177 | 0.3037 | 1.5555 | 0.7913 |
+
+Best cap:
+
+- by mandate-aware score: `0.60`
+- by robust score: `0.60`
+- by max drawdown: `0.60`
+- by turnover: `0.50`
+- by effective assets: `0.50`
+
+**Interpretation:**  
+The seeded rerun confirms that capped V3 remains materially stronger than
+uncapped V3. All tested caps improved mandate-aware score, robust score,
+turnover, and effective assets versus the uncapped baseline.
+
+The best cap changed from the previous unseeded run:
+
+- previous best: `0.50`
+- seeded best: `0.60`
+
+This reinforces that the exact cap level is somewhat stochastic and
+candidate-sensitive. However, the broader conclusion is stable: V3 benefits
+substantially from a max-weight constraint.
+
+After the seeded rerun, `V3_real_macro_current_cap_0.60` is currently the
+strongest constrained TD3 candidate by mandate-aware score and robust score
+among the evaluated TD3 variants.
+
+**Caveat:**  
+V3 still uses current-vintage macro data and a conservative CPI lag
+approximation. It is not a full real-time vintage macro implementation.
+
+**Decision:**  
+Use `V3_real_macro_current_cap_0.60` as the current leading constrained TD3
+candidate in the next final comparison report.
+
+## Entry X — Final Constrained TD3 Report with Seeded V3
+
+**Date:** 2026-05-22
+
+**Purpose:**  
+Update the final constrained TD3 report to include the seeded V3 cap sensitivity
+result after the ReplayBuffer seeding fix.
+
+**Implementation:**  
+Updated:
+
+- `src/analysis/build_final_constrained_td3_report.py`
+- `tests/test_build_final_constrained_td3_report.py`
+
+The report builder now accepts an optional:
+
+- `--v3-cap-sensitivity-dir`
+
+This allows the final constrained report to include the seeded
+`V3_real_macro_current` cap sensitivity result while preserving compatibility
+with the previous report when no V3 directory is provided.
+
+Output directory:
+
+- `outputs/tables/final_constrained_td3_report_with_v3_seeded_60ep_10seeds`
+
+**Selected best constrained TD3 candidates:**  
+
+| strategy | cap | mandate-aware | robust | max drawdown | turnover | effective assets |
+|---|---:|---:|---:|---:|---:|---:|
+| `V3_cap_0.60` | `0.60` | `0.5907` | `0.7010` | `-0.1360` | `0.2461` | `2.4727` |
+| `V6_cap_0.50` | `0.50` | `0.5492` | `0.6757` | `-0.1576` | `0.2370` | `3.1407` |
+| `V2_cap_0.50` | `0.50` | `0.5482` | `0.6553` | `-0.1405` | `0.3555` | `3.1109` |
+| `V5_cap_0.70` | `0.70` | `0.5294` | `0.6641` | `-0.1686` | `0.4169` | `1.9457` |
+
+**Key comparisons:**  
+
+Against `BuyHold_GLD`:
+
+- `V3_cap_0.60`: mandate-aware `0.5907`, robust `0.7010`
+- `BuyHold_GLD`: mandate-aware `0.5244`, robust `0.6967`
+
+Against `trend_spy_cash_12p`:
+
+- `V3_cap_0.60`: mandate-aware `0.5907`, robust `0.7010`
+- `trend_spy_cash_12p`: mandate-aware `0.4841`, robust `0.6362`
+
+`V3_cap_0.60` beats both by mandate-aware score and also slightly beats
+`BuyHold_GLD` and `trend_spy_cash_12p` by robust score.
+
+However, it does not beat the aggressive high-drawdown benchmarks by robust
+score. Strategies such as `momentum_winner_12p`, `Equal_Weight_Risky`, and
+`Equal_Weight` still rank higher by robust score, but they are not
+mandate-eligible due to drawdown.
+
+**Updated final claim:**  
+
+> After adding real macro features and applying a max-weight constraint, V3
+> becomes the strongest constrained TD3 candidate in the current protocol.
+> Unconstrained TD3 remains weak, but constrained TD3 with macro features is
+> competitive under mandate-aware evaluation. This result remains subject to the
+> macro vintage/release-timing caveat.
+
+**Caveat:**  
+V3 uses current-vintage macro data and a conservative CPI lag approximation. It
+is not yet a full real-time vintage or release-calendar macro implementation.
+
+**Tests:**  
+
+- `python3 -m unittest tests/test_build_final_constrained_td3_report.py`: 14 OK
+- `python3 -m unittest discover tests`: 999 OK

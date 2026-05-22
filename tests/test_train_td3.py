@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from src.memory.replay_buffer import ReplayBuffer
 from src.train.train_td3 import train_td3
 
 
@@ -60,6 +61,22 @@ class TrainTD3Tests(unittest.TestCase):
         result, _ = self._run_train_td3()
 
         self.assertGreater(len(result["replay_buffer"]), 0)
+
+    def test_replay_buffer_receives_training_seed(self):
+        with self._temporary_config() as (config_path, _):
+            with (
+                patch(
+                    "src.train.train_td3.prepare_train_validation_test_datasets",
+                    return_value=self.datasets,
+                ),
+                patch(
+                    "src.train.train_td3.ReplayBuffer",
+                    side_effect=ReplayBuffer,
+                ) as replay_buffer,
+            ):
+                train_td3(config_path)
+
+        self.assertEqual(replay_buffer.call_args.kwargs["seed"], 42)
 
     def test_each_episode_log_contains_required_summary_fields(self):
         result, _ = self._run_train_td3()

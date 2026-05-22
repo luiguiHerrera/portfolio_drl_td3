@@ -59,6 +59,7 @@ def train_td3_on_datasets(
         state_dim=state_dim,
         action_dim=action_dim,
         max_size=td3_config["replay_buffer_size"],
+        seed=training_config["seed"],
     )
 
     episode_logs = []

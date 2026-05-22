@@ -9,12 +9,14 @@ import pandas as pd
 
 from src.data.features_v2 import build_features_v2
 from src.data.features_v5 import build_features_v5, build_v5_regime_auxiliary_features
+from src.memory.replay_buffer import ReplayBuffer
 from src.experiments.run_feature_block_ablation import (
     FEATURE_VARIANTS,
     build_ablation_fold_datasets,
     build_cash_attribution_summary,
     build_feature_block_map,
     select_feature_columns,
+    train_td3_ablation_on_datasets,
 )
 
 
@@ -125,6 +127,40 @@ class FeatureBlockAblationTests(unittest.TestCase):
             )
         self.assertIn("mean_unjustified_cash_excess", summary["aggregate"].columns)
         self.assertEqual(summary["aggregate"].loc[0, "strategy"], "strategy")
+
+    def test_ablation_replay_buffer_receives_training_seed(self):
+        datasets = {
+            "train_returns": self.returns.iloc[:3],
+            "validation_returns": self.returns.iloc[3:5],
+            "test_returns": self.returns.iloc[5:7],
+            "train_features": pd.DataFrame({"feature": [0.0, 1.0, 2.0]}, index=self.returns.index[:3]),
+            "validation_features": pd.DataFrame({"feature": [3.0, 4.0]}, index=self.returns.index[3:5]),
+            "test_features": pd.DataFrame({"feature": [5.0, 6.0]}, index=self.returns.index[5:7]),
+        }
+        config = {
+            "environment": {"initial_cash": 100000, "transaction_cost": 0.001},
+            "reward": {"lambda_return": 1.0, "lambda_transaction_cost": 1.0},
+            "training": {"seed": 123, "episodes": 1},
+            "td3": {
+                "actor_learning_rate": 0.0003,
+                "critic_learning_rate": 0.0003,
+                "gamma": 0.99,
+                "tau": 0.005,
+                "policy_noise": 0.2,
+                "noise_clip": 0.5,
+                "policy_delay": 2,
+                "batch_size": 10,
+                "replay_buffer_size": 50,
+            },
+        }
+
+        with unittest.mock.patch(
+            "src.experiments.run_feature_block_ablation.ReplayBuffer",
+            side_effect=ReplayBuffer,
+        ) as replay_buffer:
+            train_td3_ablation_on_datasets(datasets, config)
+
+        self.assertEqual(replay_buffer.call_args.kwargs["seed"], 123)
 
 
 def _variant(name: str) -> dict:

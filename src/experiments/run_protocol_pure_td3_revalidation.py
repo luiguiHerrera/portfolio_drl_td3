@@ -20,12 +20,18 @@ import pandas as pd
 import yaml
 
 from src.analysis.robust_score import build_robust_score_report
+from src.analysis.validate_v3_macro_current import (
+    build_macro_coverage_table,
+    validate_macro_coverage,
+)
 from src.data.feature_factory import build_configured_features
 from src.data.features_v2 import build_features_v2
+from src.data.features_v3 import build_features_v3
 from src.data.features_v5 import (
     build_features_v5,
     build_v5_regime_auxiliary_features,
 )
+from src.data.macro_loader import load_macro_data_from_csv
 from src.experiments.run_feature_block_ablation import (
     ACTOR_LR,
     BASE_CONFIG_PATH,
@@ -52,12 +58,28 @@ from src.experiments.save_experiment_outputs import save_basic_experiment_output
 OUTPUT_DIR = "outputs/tables/protocol_pure_td3_revalidation_30ep_5seeds"
 TIMING_CONVENTION = "information through t-1, weights for t, realized return at t"
 DSR_METHOD = "median_run -> date_averaged -> pooled -> fallback_from_sharpe"
+DEFAULT_V3_MACRO_PATH = "data/processed/macro_weekly_latest.csv"
 
 PROTOCOL_CANDIDATES = [
     {
         "name": "V2_reference_full",
         "feature_version": "v2",
         "description": "Full V2 reference features with current cleaned reference reward.",
+        "default_enabled": True,
+        "exclude_blocks": [],
+        "use_dynamic_cash": False,
+        "cash_risk_off_column": None,
+    },
+    {
+        "name": "V3_real_macro_current",
+        "feature_version": "v3",
+        "description": (
+            "V2 plus current-window local real macro features. Requires a valid "
+            "macro CSV with coverage through the returns end date."
+        ),
+        "default_enabled": False,
+        "macro_path": DEFAULT_V3_MACRO_PATH,
+        "macro_date_column": "date",
         "exclude_blocks": [],
         "use_dynamic_cash": False,
         "cash_risk_off_column": None,
@@ -66,6 +88,7 @@ PROTOCOL_CANDIDATES = [
         "name": "V5_no_volatility_block",
         "feature_version": "v5",
         "description": "V5 with volatility block removed, dynamic CASH penalty active.",
+        "default_enabled": True,
         "exclude_blocks": ["volatility"],
         "use_dynamic_cash": True,
         "cash_risk_off_column": "risk_off_state",
@@ -74,6 +97,7 @@ PROTOCOL_CANDIDATES = [
         "name": "V6_financial_state",
         "feature_version": "v6",
         "description": "Parsimonious V6 financial state with cash-permission auxiliary signal.",
+        "default_enabled": True,
         "exclude_blocks": [],
         "use_dynamic_cash": True,
         "cash_risk_off_column": "cash_permission_score",
@@ -114,7 +138,7 @@ def run_protocol_pure_td3_revalidation(
     base_config = _build_base_config(base_config_path, returns_path, selected_episodes)
     _validate_protocol_reward_semantics(base_config)
     returns = build_returns_dataset_from_config(base_config, configs_dir / "_returns_config.yaml")
-    feature_context = _build_feature_context(returns, base_config)
+    feature_context = _build_feature_context(returns, base_config, selected_candidates)
 
     fold_rows = []
     metric_rows = []
@@ -240,32 +264,127 @@ def run_protocol_pure_td3_revalidation(
     }
 
 
-def _build_feature_context(returns: pd.DataFrame, base_config: dict) -> dict[str, Any]:
-    v2_features = build_features_v2(returns)
-    v5_features = build_features_v5(returns)
-    block_map = build_feature_block_map(list(returns.columns))
-
-    v6_config = deepcopy(base_config)
-    v6_config["features"] = _feature_config("v6")
-    v6_features = build_configured_features(returns, v6_config)
-
-    v5_auxiliary = build_v5_regime_auxiliary_features(returns).shift(1).dropna()
-    v6_auxiliary = v6_features[["cash_permission_score"]].shift(1).dropna()
-
-    return {
-        "v2_features": v2_features,
-        "v5_features": v5_features,
-        "v6_features": v6_features,
-        "v5_auxiliary": v5_auxiliary,
-        "v6_auxiliary": v6_auxiliary,
-        "block_map": block_map,
+def _build_feature_context(
+    returns: pd.DataFrame,
+    base_config: dict,
+    candidates: list[dict] | None = None,
+) -> dict[str, Any]:
+    requested_versions = _requested_feature_versions(candidates)
+    context: dict[str, Any] = {
+        "block_map": build_feature_block_map(list(returns.columns)),
     }
+
+    if "v2" in requested_versions:
+        context["v2_features"] = build_features_v2(returns)
+    if "v3" in requested_versions:
+        v3_candidate = _candidate_for_feature_version(candidates, "v3")
+        context["v3_features"] = _build_v3_features(
+            returns=returns,
+            base_config=base_config,
+            candidate=v3_candidate,
+        )
+    if "v5" in requested_versions:
+        context["v5_features"] = build_features_v5(returns)
+        context["v5_auxiliary"] = (
+            build_v5_regime_auxiliary_features(returns).shift(1).dropna()
+        )
+    if "v6" in requested_versions:
+        v6_config = deepcopy(base_config)
+        v6_config["features"] = _feature_config("v6")
+        context["v6_features"] = build_configured_features(returns, v6_config)
+        context["v6_auxiliary"] = (
+            context["v6_features"][["cash_permission_score"]].shift(1).dropna()
+        )
+
+    return context
+
+
+def _requested_feature_versions(candidates: list[dict] | None) -> set[str]:
+    if candidates is None:
+        candidates = _select_candidates(None)
+    return {candidate["feature_version"] for candidate in candidates}
+
+
+def _candidate_for_feature_version(
+    candidates: list[dict] | None,
+    feature_version: str,
+) -> dict:
+    if candidates is None:
+        candidates = _select_candidates(None)
+    for candidate in candidates:
+        if candidate["feature_version"] == feature_version:
+            return candidate
+    raise ValueError(f"No candidate found for feature version: {feature_version}")
+
+
+def _build_v3_features(
+    returns: pd.DataFrame,
+    base_config: dict,
+    candidate: dict,
+) -> pd.DataFrame:
+    """Build guarded current-window V3 macro features."""
+    features_config = _feature_config("v3", candidate)
+    macro_path = features_config.get("macro_path")
+    if not macro_path:
+        raise ValueError("V3_real_macro_current requires features.macro_path.")
+    if not Path(macro_path).exists():
+        raise FileNotFoundError(f"V3 macro path does not exist: {macro_path}")
+
+    macro_data = load_macro_data_from_csv(
+        macro_path,
+        date_column=features_config.get("macro_date_column", "date"),
+    )
+    coverage = build_macro_coverage_table(
+        returns,
+        macro_data,
+        returns_path=base_config.get("data", {}).get("returns_path", "<in-memory>"),
+        macro_path=macro_path,
+    )
+    validate_macro_coverage(coverage)
+
+    features = build_features_v3(
+        returns=returns,
+        macro_data=macro_data,
+        market_asset=features_config.get("market_asset", "SPY"),
+        short_window=features_config.get("short_window", 4),
+        long_window=features_config.get("long_window", 12),
+        ewma_span=features_config.get("ewma_span", 12),
+    )
+    _validate_v3_feature_alignment(returns, features)
+    return features
+
+
+def _validate_v3_feature_alignment(
+    returns: pd.DataFrame,
+    features: pd.DataFrame,
+) -> None:
+    macro_columns = [
+        column
+        for column in features.columns
+        if isinstance(column, str) and column.startswith("macro_")
+    ]
+    if not macro_columns:
+        raise ValueError("V3_real_macro_current produced no macro feature columns.")
+    if features.index.max() > returns.index.max():
+        raise ValueError("V3 feature dates overrun returns dates.")
+
+    shifted_features = features.shift(1).dropna()
+    aligned_index = returns.index[returns.index.isin(shifted_features.index)]
+    aligned_features = shifted_features.loc[aligned_index]
+    if aligned_features.empty:
+        raise ValueError("V3 aligned features are empty after one-period shift.")
+    if aligned_features.index.max() > returns.index.max():
+        raise ValueError("V3 aligned feature dates overrun returns dates.")
+    if aligned_features.loc[:, macro_columns].isna().any().any():
+        raise ValueError("V3 aligned features contain missing macro values.")
 
 
 def _candidate_raw_features(candidate: dict, context: dict[str, Any]) -> pd.DataFrame:
     feature_version = candidate["feature_version"]
     if feature_version == "v2":
         return context["v2_features"]
+    if feature_version == "v3":
+        return context["v3_features"]
     if feature_version == "v6":
         return context["v6_features"]
     if feature_version == "v5":
@@ -311,7 +430,7 @@ def _build_candidate_run_config(
     config["td3"]["actor_learning_rate"] = actor_learning_rate
     config["td3"]["critic_learning_rate"] = critic_learning_rate
     config["environment"]["transaction_cost"] = 0.001
-    config["features"] = _feature_config(candidate["feature_version"])
+    config["features"] = _feature_config(candidate["feature_version"], candidate)
     config["reward"]["use_mandate_penalty"] = False
 
     if candidate.get("use_dynamic_cash", False):
@@ -334,7 +453,7 @@ def _build_candidate_run_config(
     return config
 
 
-def _feature_config(version: str) -> dict:
+def _feature_config(version: str, candidate: dict | None = None) -> dict:
     if version == "v2":
         return {
             "version": "v2",
@@ -342,6 +461,17 @@ def _feature_config(version: str) -> dict:
             "short_window": 4,
             "long_window": 12,
             "ewma_span": 12,
+        }
+    if version == "v3":
+        candidate = {} if candidate is None else candidate
+        return {
+            "version": "v3",
+            "market_asset": "SPY",
+            "short_window": 4,
+            "long_window": 12,
+            "ewma_span": 12,
+            "macro_path": candidate.get("macro_path", DEFAULT_V3_MACRO_PATH),
+            "macro_date_column": candidate.get("macro_date_column", "date"),
         }
     if version == "v5":
         return {
@@ -371,7 +501,11 @@ def _feature_config(version: str) -> dict:
 
 def _select_candidates(candidate_names: list[str] | None) -> list[dict]:
     if candidate_names is None:
-        return [deepcopy(candidate) for candidate in PROTOCOL_CANDIDATES]
+        return [
+            deepcopy(candidate)
+            for candidate in PROTOCOL_CANDIDATES
+            if candidate.get("default_enabled", True)
+        ]
     known = {candidate["name"]: candidate for candidate in PROTOCOL_CANDIDATES}
     missing = [name for name in candidate_names if name not in known]
     if missing:

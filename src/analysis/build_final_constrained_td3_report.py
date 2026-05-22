@@ -29,8 +29,16 @@ BENCHMARK_SUMMARY_FILE = "capped_td3_vs_benchmarks_summary.csv"
 
 BASE_LABELS = {
     "V2_reference_full": "V2",
+    "V3_real_macro_current": "V3",
     "V5_no_volatility_block": "V5",
     "V6_financial_state": "V6",
+}
+
+FEATURE_FAMILIES = {
+    "V2_reference_full": "reference_full",
+    "V3_real_macro_current": "real_macro_current",
+    "V5_no_volatility_block": "no_volatility_block",
+    "V6_financial_state": "financial_state",
 }
 
 RANKING_COLUMNS = [
@@ -41,6 +49,8 @@ RANKING_COLUMNS = [
     "strategy_group",
     "strategy_type",
     "base_candidate",
+    "feature_family",
+    "source",
     "selected_cap",
     "constraint_status",
     "robust_score",
@@ -66,6 +76,7 @@ RANKING_COLUMNS = [
 
 def build_final_constrained_td3_report(
     cap_sensitivity_dir: str = DEFAULT_CAP_SENSITIVITY_DIR,
+    v3_cap_sensitivity_dir: str | None = None,
     benchmark_comparison_dir: str = DEFAULT_BENCHMARK_COMPARISON_DIR,
     output_dir: str = DEFAULT_OUTPUT_DIR,
 ) -> dict[str, Any]:
@@ -77,6 +88,16 @@ def build_final_constrained_td3_report(
 
     cap_results = pd.read_csv(cap_dir / CAP_ALL_RESULTS_FILE)
     best_caps = pd.read_csv(cap_dir / CAP_BEST_FILE)
+    cap_results["source"] = "cap_sensitivity"
+    best_caps["source"] = "cap_sensitivity"
+    if v3_cap_sensitivity_dir:
+        v3_cap_dir = Path(v3_cap_sensitivity_dir)
+        v3_results = pd.read_csv(v3_cap_dir / CAP_ALL_RESULTS_FILE)
+        v3_best_caps = pd.read_csv(v3_cap_dir / CAP_BEST_FILE)
+        v3_results["source"] = "seeded_cap_sensitivity"
+        v3_best_caps["source"] = "seeded_cap_sensitivity"
+        cap_results = pd.concat([cap_results, v3_results], ignore_index=True, sort=False)
+        best_caps = pd.concat([best_caps, v3_best_caps], ignore_index=True, sort=False)
     benchmark_summary = pd.read_csv(benchmark_dir / BENCHMARK_SUMMARY_FILE)
 
     selected_td3 = build_selected_td3_rows(cap_results, best_caps)
@@ -94,6 +115,7 @@ def build_final_constrained_td3_report(
     )
     metadata = build_metadata(
         cap_sensitivity_dir=cap_sensitivity_dir,
+        v3_cap_sensitivity_dir=v3_cap_sensitivity_dir,
         benchmark_comparison_dir=benchmark_comparison_dir,
         output_dir=output_dir,
         selected_candidates=selected_candidates,
@@ -141,7 +163,7 @@ def build_selected_td3_rows(
         if selected is not None:
             rows.append(_normalize_td3_row(selected, "td3_best_constrained", best_cap))
         cap_060 = _row_for_cap(group, 0.60)
-        if cap_060 is not None:
+        if cap_060 is not None and not _same_cap(best_cap, 0.60):
             rows.append(_normalize_td3_row(cap_060, "td3_cap_0.60_reference", 0.60))
         uncapped = _row_for_cap(group, "uncapped")
         if uncapped is not None:
@@ -298,6 +320,8 @@ def build_selected_candidates_table(selected_td3: pd.DataFrame) -> pd.DataFrame:
     columns = [
         "strategy_name",
         "base_candidate",
+        "feature_family",
+        "source",
         "selected_cap",
         "robust_score",
         "mandate_aware_score",
@@ -391,6 +415,29 @@ def build_final_markdown_summary(
         "but weakens any claim that 0.60 is the universal cap. The optimal cap "
         "is candidate-sensitive."
     )
+    v3_note = ""
+    if "V3_real_macro_current" in set(selected_candidates["base_candidate"].astype(str)):
+        v3_note = (
+            "The V3 result uses current-vintage macro data with a conservative CPI "
+            "lag approximation. It should be interpreted as the current best "
+            "constrained TD3 result, pending future real-time vintage and "
+            "release-calendar macro validation."
+        )
+    macro_claim = (
+        "After adding real macro features and applying a max-weight constraint, "
+        "V3 becomes the strongest constrained TD3 candidate in the current "
+        "protocol. Unconstrained TD3 remains weak, but constrained TD3 with macro "
+        "features is competitive under mandate-aware evaluation. This result "
+        "remains subject to the macro vintage/release-timing caveat."
+        if str(best_td3.get("base_candidate")) == "V3_real_macro_current"
+        else (
+            "Unconstrained TD3 does not dominate the benchmark suite. However, "
+            "TD3 with an empirically selected max-weight constraint becomes "
+            "competitive under mandate-aware evaluation and can outperform the "
+            "best clean benchmark in this experimental setting. The optimal cap "
+            "is candidate-sensitive."
+        )
+    )
     return "\n".join(
         [
             "# Final Constrained TD3 Report",
@@ -403,6 +450,11 @@ def build_final_markdown_summary(
                 f"robust score {_fmt(best_td3['robust_score'])}, and max drawdown "
                 f"{_fmt(best_td3['max_drawdown'])}."
             ),
+            (
+                f"It is the best constrained TD3 candidate after including seeded V3: "
+                f"{str(best_td3.get('base_candidate')) == 'V3_real_macro_current'}."
+            ),
+            v3_note,
             "",
             "## Benchmark Comparisons",
             "",
@@ -442,11 +494,7 @@ def build_final_markdown_summary(
             "## Final Defensible Claim",
             "",
             (
-                "Unconstrained TD3 does not dominate the benchmark suite. However, "
-                "TD3 with an empirically selected max-weight constraint becomes "
-                "competitive under mandate-aware evaluation and can outperform the "
-                "best clean benchmark in this experimental setting. The optimal cap "
-                "is candidate-sensitive."
+                macro_claim
             ),
             "",
         ]
@@ -455,6 +503,7 @@ def build_final_markdown_summary(
 
 def build_metadata(
     cap_sensitivity_dir: str,
+    v3_cap_sensitivity_dir: str | None,
     benchmark_comparison_dir: str,
     output_dir: str,
     selected_candidates: pd.DataFrame,
@@ -463,12 +512,21 @@ def build_metadata(
     return {
         "runner": "src.analysis.build_final_constrained_td3_report",
         "cap_sensitivity_dir": cap_sensitivity_dir,
+        "v3_cap_sensitivity_dir": v3_cap_sensitivity_dir,
         "benchmark_comparison_dir": benchmark_comparison_dir,
         "output_dir": output_dir,
         "selection_rule": "best cap per base candidate by mandate_aware_score",
         "selected_caps": selected_candidates.set_index("base_candidate")[
             "selected_cap"
         ].to_dict(),
+        "v3_source": "seeded_cap_sensitivity" if v3_cap_sensitivity_dir else None,
+        "v3_macro_caveat": (
+            "V3_real_macro_current uses current-vintage macro data and a "
+            "conservative CPI lag approximation, not a full real-time vintage "
+            "or release-calendar macro database."
+            if v3_cap_sensitivity_dir
+            else None
+        ),
         "reporting_only_note": (
             "This report reads existing cap sensitivity and benchmark comparison "
             "outputs. It does not retrain models or alter scoring logic."
@@ -488,6 +546,8 @@ def _normalize_td3_row(row: pd.Series, group: str, selected_cap: Any) -> dict[st
             "strategy_name": strategy_name,
             "strategy_type": "td3",
             "strategy_group": group,
+            "feature_family": FEATURE_FAMILIES.get(base, "unknown"),
+            "source": row.get("source", "cap_sensitivity"),
             "selected_cap": selected_cap if selected_cap is not None else pd.NA,
             "constraint_status": cap_label,
             "mandate_bucket": bucket,
@@ -499,6 +559,17 @@ def _normalize_td3_row(row: pd.Series, group: str, selected_cap: Any) -> dict[st
         }
     )
     return normalized
+
+
+def _same_cap(left: Any, right: Any) -> bool:
+    if pd.isna(left) and pd.isna(right):
+        return True
+    if pd.isna(left) or pd.isna(right):
+        return False
+    try:
+        return round(float(left), 8) == round(float(right), 8)
+    except (TypeError, ValueError):
+        return str(left) == str(right)
 
 
 def _row_for_cap(group: pd.DataFrame, cap: Any) -> pd.Series | None:
@@ -574,6 +645,7 @@ def main() -> None:
         description="Build final best-constrained TD3 comparison report.",
     )
     parser.add_argument("--cap-sensitivity-dir", default=DEFAULT_CAP_SENSITIVITY_DIR)
+    parser.add_argument("--v3-cap-sensitivity-dir", default=None)
     parser.add_argument(
         "--benchmark-comparison-dir",
         default=DEFAULT_BENCHMARK_COMPARISON_DIR,
@@ -582,6 +654,7 @@ def main() -> None:
     args = parser.parse_args()
     report = build_final_constrained_td3_report(
         cap_sensitivity_dir=args.cap_sensitivity_dir,
+        v3_cap_sensitivity_dir=args.v3_cap_sensitivity_dir,
         benchmark_comparison_dir=args.benchmark_comparison_dir,
         output_dir=args.output_dir,
     )

@@ -109,7 +109,7 @@ def run_max_weight_cap_experiment(
         base_config,
         configs_dir / "_returns_config.yaml",
     )
-    feature_context = _build_feature_context(returns, base_config)
+    feature_context = _build_feature_context(returns, base_config, [base_candidate])
 
     fold_rows = []
     metric_rows = []

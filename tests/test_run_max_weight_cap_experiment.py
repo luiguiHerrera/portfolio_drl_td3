@@ -272,6 +272,80 @@ class MaxWeightCapExperimentTests(unittest.TestCase):
             self.assertTrue(report["metadata"]["smoke_mode"])
             self.assertIn("experiment-only", report["metadata"]["experiment_only_warning"])
 
+    def test_selected_candidate_is_passed_to_feature_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "cap_smoke"
+            with (
+                patch(
+                    "src.experiments.run_max_weight_cap_experiment._build_base_config",
+                    return_value=self._base_config(),
+                ),
+                patch(
+                    "src.experiments.run_max_weight_cap_experiment.build_returns_dataset_from_config",
+                    return_value=self._returns(),
+                ),
+                patch(
+                    "src.experiments.run_max_weight_cap_experiment._build_feature_context",
+                    return_value={},
+                ) as build_feature_context,
+                patch(
+                    "src.experiments.run_max_weight_cap_experiment._candidate_raw_features",
+                    return_value=self._returns(),
+                ),
+                patch(
+                    "src.experiments.run_max_weight_cap_experiment._candidate_auxiliary_features",
+                    return_value=pd.DataFrame(index=self._returns().index),
+                ),
+                patch(
+                    "src.experiments.run_max_weight_cap_experiment.build_ablation_fold_datasets",
+                    return_value={
+                        "train_returns": self._returns(),
+                        "validation_returns": self._returns(),
+                        "test_returns": self._returns(),
+                    },
+                ),
+                patch(
+                    "src.experiments.run_max_weight_cap_experiment.train_td3_ablation_on_datasets",
+                    return_value={},
+                ),
+                patch(
+                    "src.experiments.run_max_weight_cap_experiment._build_experiment_result",
+                    return_value=self._experiment_result(),
+                ),
+                patch(
+                    "src.experiments.run_max_weight_cap_experiment.save_basic_experiment_outputs",
+                    return_value={},
+                ),
+                patch(
+                    "src.experiments.run_max_weight_cap_experiment.build_robust_score_report",
+                    return_value={
+                        "ranking": pd.DataFrame(
+                            [
+                                {
+                                    "strategy": "V3_real_macro_current_cap_uncapped",
+                                    "robust_score": 0.4,
+                                    "median_run_dsr_n25": 0.1,
+                                    "date_averaged_dsr_n25": 0.1,
+                                    "dsr_method": "median_run",
+                                }
+                            ]
+                        )
+                    },
+                ),
+            ):
+                run_max_weight_cap_experiment(
+                    output_dir=str(output_dir),
+                    candidate="V3_real_macro_current",
+                    max_weight_grid=[None],
+                    episodes=5,
+                    seeds=[7],
+                    max_folds=1,
+                    smoke=True,
+                )
+
+            selected_candidates = build_feature_context.call_args.args[2]
+            self.assertEqual(selected_candidates[0]["name"], "V3_real_macro_current")
+
     def _base_config(self):
         return {
             "environment": {"transaction_cost": 0.001},

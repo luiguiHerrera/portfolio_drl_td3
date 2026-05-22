@@ -514,6 +514,7 @@ def train_td3_ablation_on_datasets(datasets: dict, config: dict) -> dict:
         state_dim=env.observation_dim,
         action_dim=env.n_assets,
         max_size=td3_config["replay_buffer_size"],
+        seed=training_config["seed"],
     )
 
     episode_logs = []

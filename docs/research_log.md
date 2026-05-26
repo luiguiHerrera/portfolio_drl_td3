@@ -5072,3 +5072,86 @@ against clean mandate-aware benchmarks.
 
 - `.venv/bin/python -m unittest tests/test_build_final_constrained_td3_report.py`: 20 OK
 - `.venv/bin/python -m unittest discover tests`: 1020 OK
+
+## Entry X — Statistical Validation of Final V3/V4 Constrained Results
+
+**Date:** 2026-05-26
+
+**Purpose:**  
+Evaluate whether the final constrained TD3 candidates show statistically clear
+outperformance against the strongest clean benchmarks.
+
+**Implementation:**  
+Added a reporting-only statistical validation layer.
+
+Files created:
+
+- `src/analysis/statistical_validation_report.py`
+- `tests/test_statistical_validation_report.py`
+
+Output directory:
+
+- `outputs/tables/statistical_validation_final_v3_v4/`
+
+Output files:
+
+- `statistical_validation_metric_ci.csv`
+- `statistical_validation_pairwise_bootstrap.csv`
+- `statistical_validation_summary.csv`
+- `statistical_validation_summary.md`
+
+**Histories used:**  
+
+The report found histories for the selected TD3 constrained candidates:
+
+- `V3_cap_0.60`
+- `V4_cap_0.50`
+- `V6_cap_0.50`
+- `V2_cap_0.50`
+- `V5_cap_0.70`
+
+Each TD3 candidate used 40 histories, date-averaged to 228 periods.
+
+Benchmark histories were found for the main benchmark strategies, including:
+
+- `BuyHold_GLD`
+- `trend_spy_cash_12p`
+
+**Key confidence interval results:**  
+
+- `V3_cap_0.60` Sharpe = `0.5622`, CI `[-0.1285, 1.7261]`
+- `V4_cap_0.50` Sharpe = `0.4475`, CI `[-0.4350, 1.6098]`
+- `BuyHold_GLD` Sharpe = `0.7944`, CI `[0.3409, 1.3526]`
+- `trend_spy_cash_12p` Sharpe = `0.7814`, CI `[0.2766, 1.3245]`
+
+**Pairwise bootstrap results:**  
+
+Against `BuyHold_GLD`:
+
+- `V3_cap_0.60` Sharpe delta = `-0.8034`, CI `[-1.7579, 0.1852]`, `P(beats)=0.086`
+- `V4_cap_0.50` Sharpe delta = `-1.0094`, CI `[-2.1772, 0.1088]`, `P(beats)=0.066`
+
+Against `trend_spy_cash_12p`:
+
+- `V3_cap_0.60` Sharpe delta = `-0.1437`, CI `[-0.9872, 0.7244]`, `P(beats)=0.398`
+- `V4_cap_0.50` Sharpe delta = `-0.3401`, CI `[-1.2733, 0.5696]`, `P(beats)=0.268`
+
+**Interpretation:**  
+The final constrained TD3 ranking remains useful as a mandate-aware comparison,
+but the bootstrap layer does not show statistically clear Sharpe superiority of
+V3/V4 over `BuyHold_GLD` or `trend_spy_cash_12p`.
+
+The evidence should therefore be described as:
+
+> economically and behaviorally promising, but statistically uncertain.
+
+**Research implication:**  
+The main claim should not be that constrained TD3 statistically dominates the
+best clean benchmarks. The stronger defensible claim is that max-weight
+constraints materially reduce degenerate concentration behavior and make TD3
+policies competitive under a mandate-aware evaluation layer.
+
+**Tests:**  
+
+- `.venv/bin/python -m unittest tests/test_statistical_validation_report.py`: 8 OK
+- `.venv/bin/python -m unittest discover tests`: 1028 OK

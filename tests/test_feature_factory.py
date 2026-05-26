@@ -175,6 +175,12 @@ class FeatureFactoryTests(unittest.TestCase):
             garch_alpha=0.04,
             garch_beta=0.91,
             garch_periods_per_year=52,
+            garch_mode="deterministic_filter",
+            garch_min_history=104,
+            garch_window=156,
+            garch_annualize=False,
+            garch_exclude_cash=False,
+            garch_fallback="rolling_realized_vol",
         )
         build_features_v5_mock.assert_not_called()
         load_macro_data_mock.assert_not_called()

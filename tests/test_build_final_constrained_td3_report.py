@@ -47,6 +47,27 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
         self.assertEqual(v3["source"], "seeded_cap_sensitivity")
         self.assertAlmostEqual(v3["selected_cap"], 0.60)
 
+    def test_v4_best_cap_is_selected(self):
+        cap_results = pd.concat(
+            [self._cap_results(), self._v4_cap_results()],
+            ignore_index=True,
+            sort=False,
+        )
+        best_caps = pd.concat(
+            [self._best_caps(), self._v4_best_caps()],
+            ignore_index=True,
+            sort=False,
+        )
+
+        selected = build_selected_td3_rows(cap_results, best_caps)
+        best = selected[selected["strategy_group"] == "td3_best_constrained"]
+        v4 = best.set_index("strategy_name").loc["V4_cap_0.50"]
+
+        self.assertEqual(v4["base_candidate"], "V4_real_garch_current")
+        self.assertEqual(v4["feature_family"], "real_garch_current")
+        self.assertEqual(v4["source"], "v4_cap_sensitivity")
+        self.assertAlmostEqual(v4["selected_cap"], 0.50)
+
     def test_v3_absent_when_no_v3_directory_is_provided(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cap_dir, benchmark_dir = self._write_inputs(temp_dir)
@@ -59,6 +80,21 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
 
         self.assertNotIn(
             "V3_real_macro_current",
+            set(report["selected_candidates"]["base_candidate"]),
+        )
+
+    def test_v4_absent_when_no_v4_directory_is_provided(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        self.assertNotIn(
+            "V4_real_garch_current",
             set(report["selected_candidates"]["base_candidate"]),
         )
 
@@ -77,6 +113,40 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
         selected = report["selected_candidates"].set_index("base_candidate")
         self.assertIn("V3_real_macro_current", selected.index)
         self.assertEqual(selected.loc["V3_real_macro_current", "strategy_name"], "V3_cap_0.60")
+
+    def test_v4_appears_when_v4_directory_is_provided(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v4_dir = self._write_v4_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v4_cap_sensitivity_dir=str(v4_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        selected = report["selected_candidates"].set_index("base_candidate")
+        self.assertIn("V4_real_garch_current", selected.index)
+        self.assertEqual(selected.loc["V4_real_garch_current", "strategy_name"], "V4_cap_0.50")
+
+    def test_v3_and_v4_can_both_be_included(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v3_dir = self._write_v3_inputs(temp_dir)
+            v4_dir = self._write_v4_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v3_cap_sensitivity_dir=str(v3_dir),
+                v4_cap_sensitivity_dir=str(v4_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        bases = set(report["selected_candidates"]["base_candidate"])
+        self.assertIn("V3_real_macro_current", bases)
+        self.assertIn("V4_real_garch_current", bases)
 
     def test_benchmarks_are_included_and_classified(self):
         selected = build_selected_td3_rows(self._cap_results(), self._best_caps())
@@ -136,6 +206,26 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
 
         self.assertEqual(top["strategy_name"], "V3_cap_0.60")
 
+    def test_mandate_ranking_orders_v3_and_v4_from_scores(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v3_dir = self._write_v3_inputs(temp_dir)
+            v4_dir = self._write_v4_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v3_cap_sensitivity_dir=str(v3_dir),
+                v4_cap_sensitivity_dir=str(v4_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        ranking = report["mandate_ranking"].set_index("strategy_name")
+        self.assertLess(
+            int(ranking.loc["V3_cap_0.60", "mandate_rank"]),
+            int(ranking.loc["V4_cap_0.50", "mandate_rank"]),
+        )
+
     def test_interpretation_flags_work(self):
         selected = build_selected_td3_rows(self._cap_results(), self._best_caps())
         combined = build_final_combined_table(selected, self._benchmark_rows())
@@ -191,6 +281,25 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
         self.assertEqual(metadata["v3_source"], "seeded_cap_sensitivity")
         self.assertIn("current-vintage macro", metadata["v3_macro_caveat"])
 
+    def test_metadata_records_v4_source_directory_and_caveat(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v4_dir = self._write_v4_inputs(temp_dir)
+            output_dir = Path(temp_dir) / "out"
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v4_cap_sensitivity_dir=str(v4_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(output_dir),
+            )
+            metadata = json.loads(Path(report["paths"]["metadata"]).read_text())
+
+        self.assertEqual(metadata["v4_cap_sensitivity_dir"], str(v4_dir))
+        self.assertEqual(metadata["v4_source"], "v4_cap_sensitivity")
+        self.assertEqual(metadata["v4_garch_backend"], "arch_model")
+        self.assertIn("zero-mean normal GARCH", metadata["v4_garch_caveat"])
+
     def test_benchmark_comparison_includes_key_benchmarks_with_v3(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cap_dir, benchmark_dir = self._write_inputs(temp_dir)
@@ -234,6 +343,19 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
             index=False,
         )
         return v3_dir
+
+    def _write_v4_inputs(self, temp_dir: str) -> Path:
+        v4_dir = Path(temp_dir) / "v4_cap"
+        v4_dir.mkdir()
+        self._v4_cap_results().to_csv(
+            v4_dir / "cap_sensitivity_all_results.csv",
+            index=False,
+        )
+        self._v4_best_caps().to_csv(
+            v4_dir / "cap_sensitivity_best_caps.csv",
+            index=False,
+        )
+        return v4_dir
 
     def _cap_results(self) -> pd.DataFrame:
         rows = []
@@ -356,6 +478,64 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
                     "best_by_robust_score": 0.60,
                     "best_robust_score": 0.80,
                     "source": "seeded_cap_sensitivity",
+                }
+            ]
+        )
+
+    def _v4_cap_results(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "candidate_name": "V4_real_garch_current_cap_uncapped",
+                    "base_candidate": "V4_real_garch_current",
+                    "max_weight_cap": pd.NA,
+                    "cap_label": "uncapped",
+                    "robust_score": 0.18,
+                    "mandate_aware_score": 0.11,
+                    "annualized_return": 0.04,
+                    "annualized_volatility": 0.19,
+                    "sharpe": 0.30,
+                    "sortino": 0.50,
+                    "calmar": 0.35,
+                    "max_drawdown": -0.24,
+                    "average_turnover": 0.60,
+                    "average_effective_number_of_assets": 1.09,
+                    "average_max_weight": 0.96,
+                    "decision_label": "uncapped_baseline",
+                    "source": "v4_cap_sensitivity",
+                },
+                {
+                    "candidate_name": "V4_real_garch_current_cap_0p50",
+                    "base_candidate": "V4_real_garch_current",
+                    "max_weight_cap": 0.50,
+                    "cap_label": "0.50",
+                    "robust_score": 0.82,
+                    "mandate_aware_score": 0.68,
+                    "annualized_return": 0.10,
+                    "annualized_volatility": 0.13,
+                    "sharpe": 0.95,
+                    "sortino": 1.50,
+                    "calmar": 1.60,
+                    "max_drawdown": -0.15,
+                    "average_turnover": 0.31,
+                    "average_effective_number_of_assets": 3.10,
+                    "average_max_weight": 0.50,
+                    "decision_label": "cap_dominates_uncapped",
+                    "source": "v4_cap_sensitivity",
+                },
+            ]
+        )
+
+    def _v4_best_caps(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "base_candidate": "V4_real_garch_current",
+                    "best_by_mandate_aware_score": 0.50,
+                    "best_mandate_aware_score": 0.68,
+                    "best_by_robust_score": 0.50,
+                    "best_robust_score": 0.82,
+                    "source": "v4_cap_sensitivity",
                 }
             ]
         )

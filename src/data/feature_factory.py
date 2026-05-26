@@ -60,6 +60,12 @@ def build_configured_features(
             garch_alpha=features_config.get("garch_alpha", 0.05),
             garch_beta=features_config.get("garch_beta", 0.90),
             garch_periods_per_year=features_config.get("garch_periods_per_year", 52),
+            garch_mode=features_config.get("garch_mode", "deterministic_filter"),
+            garch_min_history=features_config.get("garch_min_history", 104),
+            garch_window=features_config.get("garch_window", 156),
+            garch_annualize=features_config.get("garch_annualize", False),
+            garch_exclude_cash=features_config.get("garch_exclude_cash", False),
+            garch_fallback=features_config.get("garch_fallback", "rolling_realized_vol"),
         )
     if feature_version == "v5":
         return build_features_v5(

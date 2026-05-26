@@ -30,6 +30,7 @@ BENCHMARK_SUMMARY_FILE = "capped_td3_vs_benchmarks_summary.csv"
 BASE_LABELS = {
     "V2_reference_full": "V2",
     "V3_real_macro_current": "V3",
+    "V4_real_garch_current": "V4",
     "V5_no_volatility_block": "V5",
     "V6_financial_state": "V6",
 }
@@ -37,6 +38,7 @@ BASE_LABELS = {
 FEATURE_FAMILIES = {
     "V2_reference_full": "reference_full",
     "V3_real_macro_current": "real_macro_current",
+    "V4_real_garch_current": "real_garch_current",
     "V5_no_volatility_block": "no_volatility_block",
     "V6_financial_state": "financial_state",
 }
@@ -77,6 +79,7 @@ RANKING_COLUMNS = [
 def build_final_constrained_td3_report(
     cap_sensitivity_dir: str = DEFAULT_CAP_SENSITIVITY_DIR,
     v3_cap_sensitivity_dir: str | None = None,
+    v4_cap_sensitivity_dir: str | None = None,
     benchmark_comparison_dir: str = DEFAULT_BENCHMARK_COMPARISON_DIR,
     output_dir: str = DEFAULT_OUTPUT_DIR,
 ) -> dict[str, Any]:
@@ -98,6 +101,14 @@ def build_final_constrained_td3_report(
         v3_best_caps["source"] = "seeded_cap_sensitivity"
         cap_results = pd.concat([cap_results, v3_results], ignore_index=True, sort=False)
         best_caps = pd.concat([best_caps, v3_best_caps], ignore_index=True, sort=False)
+    if v4_cap_sensitivity_dir:
+        v4_cap_dir = Path(v4_cap_sensitivity_dir)
+        v4_results = pd.read_csv(v4_cap_dir / CAP_ALL_RESULTS_FILE)
+        v4_best_caps = pd.read_csv(v4_cap_dir / CAP_BEST_FILE)
+        v4_results["source"] = "v4_cap_sensitivity"
+        v4_best_caps["source"] = "v4_cap_sensitivity"
+        cap_results = pd.concat([cap_results, v4_results], ignore_index=True, sort=False)
+        best_caps = pd.concat([best_caps, v4_best_caps], ignore_index=True, sort=False)
     benchmark_summary = pd.read_csv(benchmark_dir / BENCHMARK_SUMMARY_FILE)
 
     selected_td3 = build_selected_td3_rows(cap_results, best_caps)
@@ -116,6 +127,7 @@ def build_final_constrained_td3_report(
     metadata = build_metadata(
         cap_sensitivity_dir=cap_sensitivity_dir,
         v3_cap_sensitivity_dir=v3_cap_sensitivity_dir,
+        v4_cap_sensitivity_dir=v4_cap_sensitivity_dir,
         benchmark_comparison_dir=benchmark_comparison_dir,
         output_dir=output_dir,
         selected_candidates=selected_candidates,
@@ -403,11 +415,18 @@ def build_final_markdown_summary(
     ].head(3)
     best_vs = vs_benchmarks[vs_benchmarks["td3_strategy"] == best_td3["strategy_name"]]
     by_benchmark = best_vs.set_index("benchmark_strategy")
+    selected_by_base = selected_candidates.set_index("base_candidate")
     gld_win = bool(
         by_benchmark.loc["BuyHold_GLD", "td3_beats_benchmark_by_mandate"]
     )
+    gld_robust_win = bool(
+        by_benchmark.loc["BuyHold_GLD", "td3_beats_benchmark_by_robust"]
+    )
     trend_win = bool(
         by_benchmark.loc["trend_spy_cash_12p", "td3_beats_benchmark_by_mandate"]
+    )
+    trend_robust_win = bool(
+        by_benchmark.loc["trend_spy_cash_12p", "td3_beats_benchmark_by_robust"]
     )
     aggressive_robust_win = bool(best_td3["beats_best_benchmark_by_robust"])
     cap_note = (
@@ -423,19 +442,81 @@ def build_final_markdown_summary(
             "constrained TD3 result, pending future real-time vintage and "
             "release-calendar macro validation."
         )
+    v4_note = ""
+    if "V4_real_garch_current" in set(selected_candidates["base_candidate"].astype(str)):
+        v4_note = (
+            "The V4 result uses rolling fitted real GARCH(1,1) features from "
+            "arch_model with zero mean, normal innovations, weekly one-step-ahead "
+            "forecasts, CASH excluded, and fallback only for insufficient history."
+        )
+    v4_question_lines = []
+    if "V4_real_garch_current" in selected_by_base.index:
+        v4 = selected_by_base.loc["V4_real_garch_current"]
+        v4_vs = vs_benchmarks[vs_benchmarks["td3_strategy"] == v4["strategy_name"]]
+        v4_by_benchmark = v4_vs.set_index("benchmark_strategy")
+        v4_beats_gld_mandate = bool(
+            v4_by_benchmark.loc["BuyHold_GLD", "td3_beats_benchmark_by_mandate"]
+        )
+        v4_beats_gld_robust = bool(
+            v4_by_benchmark.loc["BuyHold_GLD", "td3_beats_benchmark_by_robust"]
+        )
+        v4_beats_trend_mandate = bool(
+            v4_by_benchmark.loc[
+                "trend_spy_cash_12p",
+                "td3_beats_benchmark_by_mandate",
+            ]
+        )
+        v4_beats_trend_robust = bool(
+            v4_by_benchmark.loc[
+                "trend_spy_cash_12p",
+                "td3_beats_benchmark_by_robust",
+            ]
+        )
+        v4_beats_v3_mandate = False
+        v4_beats_v3_robust = False
+        if "V3_real_macro_current" in selected_by_base.index:
+            v3 = selected_by_base.loc["V3_real_macro_current"]
+            v4_beats_v3_mandate = _num(v4["mandate_aware_score"]) > _num(
+                v3["mandate_aware_score"]
+            )
+            v4_beats_v3_robust = _num(v4["robust_score"]) > _num(v3["robust_score"])
+        v4_question_lines = [
+            (
+                f"- V4 selected candidate: `{v4['strategy_name']}` with "
+                f"mandate-aware score {_fmt(v4['mandate_aware_score'])} and "
+                f"robust score {_fmt(v4['robust_score'])}."
+            ),
+            f"- V4 beats BuyHold_GLD by mandate-aware score: {v4_beats_gld_mandate}.",
+            f"- V4 beats BuyHold_GLD by robust score: {v4_beats_gld_robust}.",
+            f"- V4 beats trend_spy_cash_12p by mandate-aware score: {v4_beats_trend_mandate}.",
+            f"- V4 beats trend_spy_cash_12p by robust score: {v4_beats_trend_robust}.",
+            f"- V4 beats V3 by mandate-aware score: {v4_beats_v3_mandate}.",
+            f"- V4 beats V3 by robust score: {v4_beats_v3_robust}.",
+        ]
     macro_claim = (
-        "After adding real macro features and applying a max-weight constraint, "
-        "V3 becomes the strongest constrained TD3 candidate in the current "
-        "protocol. Unconstrained TD3 remains weak, but constrained TD3 with macro "
-        "features is competitive under mandate-aware evaluation. This result "
-        "remains subject to the macro vintage/release-timing caveat."
-        if str(best_td3.get("base_candidate")) == "V3_real_macro_current"
+        "After adding real macro and real GARCH feature candidates, the strongest "
+        "TD3 variants remain constrained versions. V3_cap_0.60 leads by "
+        "mandate-aware score, while V4_cap_0.50 leads by robust_score among TD3 "
+        "candidates. This reinforces that econometric features become useful only "
+        "when the allocation problem is constrained."
+        if {
+            "V3_real_macro_current",
+            "V4_real_garch_current",
+        }.issubset(set(selected_candidates["base_candidate"].astype(str)))
         else (
-            "Unconstrained TD3 does not dominate the benchmark suite. However, "
-            "TD3 with an empirically selected max-weight constraint becomes "
-            "competitive under mandate-aware evaluation and can outperform the "
-            "best clean benchmark in this experimental setting. The optimal cap "
-            "is candidate-sensitive."
+            "After adding real macro features and applying a max-weight constraint, "
+            "V3 becomes the strongest constrained TD3 candidate in the current "
+            "protocol. Unconstrained TD3 remains weak, but constrained TD3 with macro "
+            "features is competitive under mandate-aware evaluation. This result "
+            "remains subject to the macro vintage/release-timing caveat."
+            if str(best_td3.get("base_candidate")) == "V3_real_macro_current"
+            else (
+                "Unconstrained TD3 does not dominate the benchmark suite. However, "
+                "TD3 with an empirically selected max-weight constraint becomes "
+                "competitive under mandate-aware evaluation and can outperform the "
+                "best clean benchmark in this experimental setting. The optimal cap "
+                "is candidate-sensitive."
+            )
         )
     )
     return "\n".join(
@@ -455,6 +536,7 @@ def build_final_markdown_summary(
                 f"{str(best_td3.get('base_candidate')) == 'V3_real_macro_current'}."
             ),
             v3_note,
+            v4_note,
             "",
             "## Benchmark Comparisons",
             "",
@@ -462,7 +544,13 @@ def build_final_markdown_summary(
                 f"Best constrained TD3 beats BuyHold_GLD by mandate-aware score: {gld_win}."
             ),
             (
+                f"Best constrained TD3 beats BuyHold_GLD by robust score: {gld_robust_win}."
+            ),
+            (
                 f"Best constrained TD3 beats trend_spy_cash_12p by mandate-aware score: {trend_win}."
+            ),
+            (
+                f"Best constrained TD3 beats trend_spy_cash_12p by robust score: {trend_robust_win}."
             ),
             (
                 "Best constrained TD3 beats aggressive high-drawdown benchmarks by "
@@ -479,6 +567,10 @@ def build_final_markdown_summary(
                 f"max drawdown {_fmt(row['max_drawdown'])}."
                 for _, row in aggressive.iterrows()
             ],
+            "",
+            "## V4 Real GARCH Checks",
+            "",
+            *v4_question_lines,
             "",
             "## Cap Sensitivity",
             "",
@@ -504,6 +596,7 @@ def build_final_markdown_summary(
 def build_metadata(
     cap_sensitivity_dir: str,
     v3_cap_sensitivity_dir: str | None,
+    v4_cap_sensitivity_dir: str | None,
     benchmark_comparison_dir: str,
     output_dir: str,
     selected_candidates: pd.DataFrame,
@@ -513,6 +606,7 @@ def build_metadata(
         "runner": "src.analysis.build_final_constrained_td3_report",
         "cap_sensitivity_dir": cap_sensitivity_dir,
         "v3_cap_sensitivity_dir": v3_cap_sensitivity_dir,
+        "v4_cap_sensitivity_dir": v4_cap_sensitivity_dir,
         "benchmark_comparison_dir": benchmark_comparison_dir,
         "output_dir": output_dir,
         "selection_rule": "best cap per base candidate by mandate_aware_score",
@@ -520,11 +614,35 @@ def build_metadata(
             "selected_cap"
         ].to_dict(),
         "v3_source": "seeded_cap_sensitivity" if v3_cap_sensitivity_dir else None,
+        "v4_source": "v4_cap_sensitivity" if v4_cap_sensitivity_dir else None,
         "v3_macro_caveat": (
             "V3_real_macro_current uses current-vintage macro data and a "
             "conservative CPI lag approximation, not a full real-time vintage "
             "or release-calendar macro database."
             if v3_cap_sensitivity_dir
+            else None
+        ),
+        "v4_garch_caveat": (
+            "V4_real_garch_current uses rolling fitted real GARCH features with "
+            "arch_model, zero-mean normal GARCH(1,1), weekly one-step-ahead "
+            "forecasts, CASH excluded from fitted GARCH, and rolling realized "
+            "volatility fallback for insufficient history."
+            if v4_cap_sensitivity_dir
+            else None
+        ),
+        "v4_garch_backend": "arch_model" if v4_cap_sensitivity_dir else None,
+        "v4_garch_model": (
+            "zero-mean normal GARCH(1,1), forecast horizon 1"
+            if v4_cap_sensitivity_dir
+            else None
+        ),
+        "v4_garch_volatility_unit": "weekly" if v4_cap_sensitivity_dir else None,
+        "v4_garch_cash_handling": (
+            "CASH excluded from fitted GARCH" if v4_cap_sensitivity_dir else None
+        ),
+        "v4_garch_fallback": (
+            "rolling_realized_vol for insufficient history"
+            if v4_cap_sensitivity_dir
             else None
         ),
         "reporting_only_note": (
@@ -646,6 +764,7 @@ def main() -> None:
     )
     parser.add_argument("--cap-sensitivity-dir", default=DEFAULT_CAP_SENSITIVITY_DIR)
     parser.add_argument("--v3-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v4-cap-sensitivity-dir", default=None)
     parser.add_argument(
         "--benchmark-comparison-dir",
         default=DEFAULT_BENCHMARK_COMPARISON_DIR,
@@ -655,6 +774,7 @@ def main() -> None:
     report = build_final_constrained_td3_report(
         cap_sensitivity_dir=args.cap_sensitivity_dir,
         v3_cap_sensitivity_dir=args.v3_cap_sensitivity_dir,
+        v4_cap_sensitivity_dir=args.v4_cap_sensitivity_dir,
         benchmark_comparison_dir=args.benchmark_comparison_dir,
         output_dir=args.output_dir,
     )

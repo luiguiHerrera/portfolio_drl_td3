@@ -559,6 +559,12 @@ class ConfigTests(unittest.TestCase):
             "garch_alpha": 0.05,
             "garch_beta": 0.90,
             "garch_periods_per_year": 52,
+            "garch_mode": "rolling_fitted",
+            "garch_min_history": 104,
+            "garch_window": 156,
+            "garch_annualize": False,
+            "garch_exclude_cash": True,
+            "garch_fallback": "rolling_realized_vol",
         }
 
         with self._temporary_config(config) as config_path:
@@ -665,6 +671,12 @@ class ConfigTests(unittest.TestCase):
             {"version": "v4", "garch_beta": -0.1},
             {"version": "v4", "garch_alpha": 0.5, "garch_beta": 0.5},
             {"version": "v4", "garch_periods_per_year": 0},
+            {"version": "v4", "garch_mode": "full_sample_oracle"},
+            {"version": "v4", "garch_min_history": 0},
+            {"version": "v4", "garch_window": 0},
+            {"version": "v4", "garch_annualize": "no"},
+            {"version": "v4", "garch_exclude_cash": "yes"},
+            {"version": "v4", "garch_fallback": "deterministic_filter"},
         )
 
         for features in invalid_feature_sections:

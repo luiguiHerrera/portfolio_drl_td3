@@ -4830,3 +4830,245 @@ is not yet a full real-time vintage or release-calendar macro implementation.
 
 - `python3 -m unittest tests/test_build_final_constrained_td3_report.py`: 14 OK
 - `python3 -m unittest discover tests`: 999 OK
+
+## Entry X — V4 Real GARCH Full Revalidation and Cap Sensitivity
+
+**Date:** 2026-05-26
+
+**Purpose:**  
+Implement and evaluate `V4_real_garch_current`, a real rolling fitted
+GARCH-based TD3 feature candidate.
+
+The previous V4 implementation was only a deterministic fixed-parameter
+GARCH-style volatility filter. This entry upgrades V4 to use real rolling
+one-step-ahead fitted GARCH forecasts.
+
+**Implementation:**  
+V4 now supports `garch_mode = rolling_fitted`.
+
+Specification:
+
+- backend: `arch_model`
+- mean model: zero mean
+- volatility model: GARCH(1,1)
+- distribution: normal
+- forecast horizon: 1
+- forecast timing: date `t` uses returns through `t-1`
+- volatility unit: weekly
+- CASH: excluded from fitted GARCH when configured
+- fallback: rolling realized volatility
+- deterministic filter mode remains available as `deterministic_filter`
+
+Added:
+
+- `src/analysis/validate_v4_garch_current.py`
+- `tests/test_validate_v4_garch_current.py`
+
+Modified:
+
+- `requirements.txt`
+- `src/data/garch_features.py`
+- `src/data/features_v4.py`
+- `src/data/feature_factory.py`
+- `src/utils/config.py`
+- related tests
+
+**Validation smoke:**  
+
+The V4 GARCH validation confirmed:
+
+- `arch_available = True`
+- `backend = arch_model`
+- fitted assets: `BTC-USD`, `GLD`, `SPY`, `TLT`
+- CASH handling: excluded
+- fit success count = `1956`
+- fallback count = `416`
+- fit failure count = `0`
+- fallback reason = `insufficient_history`
+- leakage checks passed
+- real fitted GARCH differs from deterministic filter
+
+V4 was then wired as a guarded protocol candidate:
+
+- `V4_real_garch_current`
+- `default_enabled = False`
+- explicit use only through `--candidates V4_real_garch_current`
+
+**Uncapped full revalidation:**  
+
+Configuration:
+
+- episodes = 60
+- seeds = `[7, 21, 42, 84, 101, 123, 202, 303, 404, 505]`
+- folds = 4
+
+Test results:
+
+- mean Sharpe = `0.3583`
+- robust Sharpe 0.5 = `-0.0870`
+- annualized return = `0.0993`
+- annualized volatility = `0.2824`
+- mean max drawdown = `-0.2425`
+- worst max drawdown = `-0.6513`
+- average turnover = `0.6044`
+- effective assets = `1.0906`
+- average max weight = `0.9621`
+- robust score = `0.3804`
+
+Interpretation: V4 real GARCH is technically valid, but the unconstrained model
+still suffers from extreme concentration, high turnover, and poor worst
+drawdown.
+
+**Cap sensitivity:**  
+
+Configuration:
+
+- caps: `uncapped`, `0.50`, `0.60`, `0.70`, `0.80`
+- episodes = 60
+- seeds = `[7, 21, 42, 84, 101, 123, 202, 303, 404, 505]`
+
+Best cap:
+
+- by mandate-aware score: `0.50`
+- by robust score: `0.50`
+- by max drawdown: `0.50`
+- by turnover: `0.50`
+- by effective assets: `0.50`
+
+Best result:
+
+- candidate: `V4_real_garch_current_cap_0.50`
+- mandate-aware score = `0.5883`
+- robust score = `0.7250`
+- max drawdown = `-0.1586`
+- turnover = `0.3151`
+- effective assets = `3.1347`
+
+All tested caps improved over uncapped on:
+
+- mandate-aware score
+- robust score
+- turnover
+- effective assets
+
+Overall interpretation:
+
+- `stable_cap_benefit`
+
+**Interpretation:**  
+V4 real GARCH does not solve the TD3 concentration problem by itself. However,
+when combined with a max-weight constraint, it becomes one of the strongest
+constrained TD3 candidates.
+
+Compared with the current V3 seeded result:
+
+- `V3_cap_0.60` has slightly higher mandate-aware score and better drawdown.
+- `V4_cap_0.50` has higher robust score.
+
+This suggests that real macro features and real GARCH volatility features both
+become useful only after the allocation problem is constrained.
+
+**Tests:**  
+
+- `python3 -m unittest discover tests`: 1014 OK before full V4 runs.
+
+## Entry X — Final Constrained TD3 Report with V3 and V4
+
+**Date:** 2026-05-26
+
+**Purpose:**  
+Update the final constrained TD3 report to include both the seeded V3 macro
+candidate and the V4 real GARCH candidate.
+
+The goal was to determine whether the econometric feature candidates become
+competitive after applying the max-weight constraint framework.
+
+**Implementation:**  
+Updated:
+
+- `src/analysis/build_final_constrained_td3_report.py`
+- `tests/test_build_final_constrained_td3_report.py`
+
+The report builder now supports:
+
+- `--v3-cap-sensitivity-dir`
+- `--v4-cap-sensitivity-dir`
+
+It remains backward compatible:
+
+- works without V3/V4 directories
+- works with V3 only
+- works with V3 and V4
+
+V4 is marked as:
+
+- `strategy_group = td3_best_constrained`
+- `feature_family = real_garch_current`
+- `source = v4_cap_sensitivity`
+- `selected_cap = 0.50`
+
+Metadata records the V4 GARCH caveat:
+
+- backend: `arch_model`
+- model: zero-mean normal GARCH(1,1)
+- forecast: weekly one-step-ahead
+- CASH: excluded
+- fallback: insufficient-history rolling realized volatility
+
+**Output directory:**  
+
+- `outputs/tables/final_constrained_td3_report_with_v3_v4_60ep_10seeds`
+
+**Selected best constrained TD3 candidates:**  
+
+| strategy | cap | mandate-aware | robust |
+|---|---:|---:|---:|
+| `V3_cap_0.60` | `0.60` | `0.590717` | `0.701033` |
+| `V4_cap_0.50` | `0.50` | `0.588319` | `0.725000` |
+| `V6_cap_0.50` | `0.50` | `0.549246` | `0.675686` |
+| `V2_cap_0.50` | `0.50` | `0.548203` | `0.655322` |
+| `V5_cap_0.70` | `0.70` | `0.529414` | `0.664055` |
+
+**V3 versus V4:**  
+
+- `V3_cap_0.60` leads TD3 by mandate-aware score:
+  - `0.590717` vs `0.588319`
+- `V4_cap_0.50` leads TD3 by robust score:
+  - `0.725000` vs `0.701033`
+
+Both are clean-mandate constrained TD3 candidates.
+
+**V4 versus clean benchmarks:**  
+
+Against `BuyHold_GLD`:
+
+- mandate-aware delta = `+0.063912`
+- robust-score delta = `+0.028311`
+
+Against `trend_spy_cash_12p`:
+
+- mandate-aware delta = `+0.104213`
+- robust-score delta = `+0.088802`
+
+Thus, `V4_cap_0.50` beats both `BuyHold_GLD` and `trend_spy_cash_12p` by
+mandate-aware score and robust score in the current final report.
+
+**Final interpretation:**  
+
+After adding real macro and real GARCH feature candidates, the strongest TD3
+variants remain constrained versions. `V3_cap_0.60` leads by mandate-aware
+score, while `V4_cap_0.50` leads by robust score among TD3 candidates.
+
+This reinforces the main project result:
+
+> Econometric features become useful only when the allocation problem is
+> constrained.
+
+Unconstrained TD3 remains fragile and tends to learn extreme concentration.
+Constrained TD3 with macro/GARCH features becomes meaningfully competitive
+against clean mandate-aware benchmarks.
+
+**Tests:**  
+
+- `.venv/bin/python -m unittest tests/test_build_final_constrained_td3_report.py`: 20 OK
+- `.venv/bin/python -m unittest discover tests`: 1020 OK

@@ -12,7 +12,9 @@ from src.experiments.run_protocol_pure_td3_revalidation import (
     PROTOCOL_CANDIDATES,
     _build_candidate_run_config,
     _build_v3_features,
+    _build_v4_features,
     _candidate_raw_features,
+    _feature_config,
     _select_candidates,
     _validate_protocol_reward_semantics,
     run_protocol_pure_td3_revalidation,
@@ -138,6 +140,70 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
         self.assertIn("V5_no_volatility_block", default_names)
         self.assertIn("V6_financial_state", default_names)
         self.assertEqual(explicit_names, {"V3_real_macro_current"})
+
+    def test_v4_candidate_is_available_but_not_default_enabled(self):
+        default_names = {candidate["name"] for candidate in _select_candidates(None)}
+        explicit_names = {
+            candidate["name"]
+            for candidate in _select_candidates(["V4_real_garch_current"])
+        }
+
+        self.assertNotIn("V4_real_garch_current", default_names)
+        self.assertEqual(explicit_names, {"V4_real_garch_current"})
+
+    def test_v4_candidate_config_uses_rolling_fitted_garch(self):
+        base_config = self._base_config()
+        candidate = _candidate("V4_real_garch_current")
+
+        config = _build_candidate_run_config(
+            base_config=base_config,
+            candidate=candidate,
+            seed=7,
+            episodes=5,
+            batch_size=32,
+            actor_learning_rate=0.0005,
+            critic_learning_rate=0.0005,
+        )
+
+        self.assertEqual(config["features"]["version"], "v4")
+        self.assertEqual(config["features"]["garch_mode"], "rolling_fitted")
+        self.assertTrue(config["features"]["garch_exclude_cash"])
+        self.assertEqual(config["features"]["garch_fallback"], "rolling_realized_vol")
+        self.assertFalse(config["reward"]["use_cash_risk_off_penalty"])
+
+    def test_v4_feature_config_uses_expected_guarded_defaults(self):
+        config = _feature_config("v4", _candidate("V4_real_garch_current"))
+
+        self.assertEqual(config["version"], "v4")
+        self.assertEqual(config["garch_mode"], "rolling_fitted")
+        self.assertTrue(config["garch_exclude_cash"])
+        self.assertEqual(config["garch_min_history"], 104)
+        self.assertEqual(config["garch_window"], 156)
+
+    def test_v4_raw_feature_generation_includes_real_garch_and_excludes_cash(self):
+        candidate = {
+            **_candidate("V4_real_garch_current"),
+            "garch_min_history": 5,
+            "garch_window": 8,
+        }
+
+        features = _build_v4_features(
+            returns=self._long_returns(),
+            base_config=self._base_config(),
+            candidate=candidate,
+        )
+
+        self.assertTrue(any(column.startswith("garch_vol_") for column in features.columns))
+        self.assertIn("garch_vol_SPY", features.columns)
+        self.assertNotIn("garch_vol_CASH", features.columns)
+        self.assertFalse(
+            any(
+                column.endswith("_CASH") or "_CASH_" in column or column.endswith("CASH")
+                for column in features.columns
+                if isinstance(column, str) and column.startswith("garch_")
+            )
+        )
+        self.assertIs(_candidate_raw_features(candidate, {"v4_features": features}), features)
 
     def test_v3_candidate_config_uses_required_macro_path(self):
         base_config = self._base_config()

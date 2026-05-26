@@ -43,6 +43,36 @@ class FeatureSetV4Tests(unittest.TestCase):
 
         self.assertFalse(any(column.startswith("garch_") for column in features.columns))
 
+    def test_v4_rolling_fitted_mode_excludes_cash_garch_when_requested(self):
+        features = build_features_v4(
+            self.returns,
+            garch_mode="rolling_fitted",
+            garch_min_history=8,
+            garch_window=12,
+            garch_exclude_cash=True,
+        )
+
+        self.assertIn("garch_vol_SPY", features.columns)
+        self.assertNotIn("garch_vol_CASH", features.columns)
+        self.assertFalse(features.empty)
+
+    def test_v4_rolling_fitted_mode_differs_from_deterministic_filter(self):
+        deterministic = build_features_v4(self.returns, garch_mode="deterministic_filter")
+        fitted = build_features_v4(
+            self.returns,
+            garch_mode="rolling_fitted",
+            garch_min_history=8,
+            garch_window=12,
+            garch_exclude_cash=True,
+        )
+        common_index = fitted.index.intersection(deterministic.index)
+        max_diff = (
+            fitted.loc[common_index, "garch_vol_SPY"]
+            - deterministic.loc[common_index, "garch_vol_SPY"]
+        ).abs().max()
+
+        self.assertGreater(float(max_diff), 0.0)
+
     def test_v4_preserves_index_alignment_and_has_no_missing_values(self):
         features = build_features_v4(self.returns)
 

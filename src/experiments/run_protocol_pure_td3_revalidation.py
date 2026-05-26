@@ -31,6 +31,11 @@ from src.data.features_v5 import (
     build_features_v5,
     build_v5_regime_auxiliary_features,
 )
+from src.data.garch_features import (
+    GARCH_FALLBACK_ROLLING_REALIZED,
+    GARCH_MODE_ROLLING_FITTED,
+    build_garch_feature_set_by_mode,
+)
 from src.data.macro_loader import load_macro_data_from_csv
 from src.experiments.run_feature_block_ablation import (
     ACTOR_LR,
@@ -83,6 +88,24 @@ PROTOCOL_CANDIDATES = [
         "exclude_blocks": [],
         "use_dynamic_cash": False,
         "cash_risk_off_column": None,
+    },
+    {
+        "name": "V4_real_garch_current",
+        "feature_version": "v4",
+        "description": (
+            "V2 plus rolling fitted real GARCH(1,1) volatility features using "
+            "the arch package, with CASH excluded from fitted GARCH."
+        ),
+        "default_enabled": False,
+        "exclude_blocks": [],
+        "use_dynamic_cash": False,
+        "cash_risk_off_column": None,
+        "garch_mode": GARCH_MODE_ROLLING_FITTED,
+        "garch_exclude_cash": True,
+        "garch_fallback": GARCH_FALLBACK_ROLLING_REALIZED,
+        "garch_min_history": 104,
+        "garch_window": 156,
+        "garch_allow_scipy_fallback": False,
     },
     {
         "name": "V5_no_volatility_block",
@@ -283,6 +306,13 @@ def _build_feature_context(
             base_config=base_config,
             candidate=v3_candidate,
         )
+    if "v4" in requested_versions:
+        v4_candidate = _candidate_for_feature_version(candidates, "v4")
+        context["v4_features"] = _build_v4_features(
+            returns=returns,
+            base_config=base_config,
+            candidate=v4_candidate,
+        )
     if "v5" in requested_versions:
         context["v5_features"] = build_features_v5(returns)
         context["v5_auxiliary"] = (
@@ -379,12 +409,130 @@ def _validate_v3_feature_alignment(
         raise ValueError("V3 aligned features contain missing macro values.")
 
 
+def _build_v4_features(
+    returns: pd.DataFrame,
+    base_config: dict,
+    candidate: dict,
+) -> pd.DataFrame:
+    """Build guarded current-window V4 real GARCH features."""
+    features_config = _feature_config("v4", candidate)
+    garch_features, diagnostics = build_garch_feature_set_by_mode(
+        returns=returns,
+        assets=list(returns.columns),
+        market_asset=features_config.get("market_asset", "SPY"),
+        include_relative=features_config.get("garch_include_relative", True),
+        mode=features_config.get("garch_mode", GARCH_MODE_ROLLING_FITTED),
+        periods_per_year=features_config.get("garch_periods_per_year", 52),
+        min_history=features_config.get("garch_min_history", 104),
+        window=features_config.get("garch_window", 156),
+        annualize=features_config.get("garch_annualize", False),
+        exclude_cash=features_config.get("garch_exclude_cash", True),
+        fallback=features_config.get("garch_fallback", GARCH_FALLBACK_ROLLING_REALIZED),
+        return_diagnostics=True,
+    )
+    _validate_v4_garch_diagnostics(
+        diagnostics=diagnostics,
+        candidate=candidate,
+    )
+    v2_features = build_features_v2(
+        returns,
+        market_asset=features_config.get("market_asset", "SPY"),
+        short_window=features_config.get("short_window", 4),
+        long_window=features_config.get("long_window", 12),
+        ewma_span=features_config.get("ewma_span", 12),
+    )
+    features = pd.concat([v2_features, garch_features], axis=1, sort=False).dropna()
+    if features.empty:
+        raise ValueError(
+            "V4_real_garch_current output is empty after aligning V2 and GARCH features."
+        )
+    if not features_config.get("include_garch_features", True):
+        raise ValueError("V4_real_garch_current requires GARCH features to be enabled.")
+    _validate_v4_feature_alignment(
+        returns=returns,
+        features=features,
+        garch_features=garch_features,
+        exclude_cash=features_config.get("garch_exclude_cash", True),
+    )
+    return features
+
+
+def _validate_v4_garch_diagnostics(
+    diagnostics: pd.DataFrame,
+    candidate: dict,
+) -> None:
+    if diagnostics is None or diagnostics.empty:
+        raise ValueError("V4_real_garch_current requires fitted GARCH diagnostics.")
+    allow_scipy_fallback = bool(candidate.get("garch_allow_scipy_fallback", False))
+    fitted = diagnostics.loc[diagnostics["status"] == "fitted"]
+    if fitted.empty:
+        raise ValueError("V4_real_garch_current produced no fitted GARCH diagnostics.")
+    if not bool(diagnostics["arch_available"].any()) and not allow_scipy_fallback:
+        raise ValueError(
+            "V4_real_garch_current requires arch_model unless scipy fallback is allowed."
+        )
+    if bool(diagnostics["arch_available"].any()):
+        non_arch_backends = set(fitted["backend"].dropna()) - {"arch_model"}
+        if non_arch_backends and not allow_scipy_fallback:
+            raise ValueError(
+                "V4_real_garch_current expected arch_model backend for fitted rows; "
+                f"found {sorted(non_arch_backends)}."
+            )
+    fit_failures = diagnostics[
+        diagnostics["fallback_reason"].fillna("").astype(str).str.contains("fit_failed")
+    ]
+    if not fit_failures.empty and not allow_scipy_fallback:
+        raise ValueError("V4_real_garch_current encountered GARCH fit failures.")
+
+
+def _validate_v4_feature_alignment(
+    returns: pd.DataFrame,
+    features: pd.DataFrame,
+    garch_features: pd.DataFrame,
+    exclude_cash: bool,
+) -> None:
+    if features.index.max() > returns.index.max():
+        raise ValueError("V4 feature dates overrun returns dates.")
+    garch_columns = [
+        column
+        for column in features.columns
+        if isinstance(column, str) and column.startswith("garch_")
+    ]
+    if not garch_columns:
+        raise ValueError("V4_real_garch_current produced no fitted GARCH feature columns.")
+    if exclude_cash:
+        cash_columns = [
+            column
+            for column in garch_columns
+            if column.endswith("_CASH") or "_CASH_" in column or column.endswith("CASH")
+        ]
+        if cash_columns:
+            raise ValueError(
+                "V4_real_garch_current produced CASH fitted GARCH columns while "
+                f"CASH exclusion is enabled: {cash_columns}"
+            )
+        if any(column == "garch_vol_CASH" for column in garch_features.columns):
+            raise ValueError("V4 fitted GARCH features include garch_vol_CASH.")
+
+    shifted_features = features.shift(1).dropna()
+    aligned_index = returns.index[returns.index.isin(shifted_features.index)]
+    aligned_features = shifted_features.loc[aligned_index]
+    if aligned_features.empty:
+        raise ValueError("V4 aligned features are empty after one-period shift.")
+    if aligned_features.index.max() > returns.index.max():
+        raise ValueError("V4 aligned feature dates overrun returns dates.")
+    if aligned_features.isna().any().any():
+        raise ValueError("V4 aligned features contain missing values.")
+
+
 def _candidate_raw_features(candidate: dict, context: dict[str, Any]) -> pd.DataFrame:
     feature_version = candidate["feature_version"]
     if feature_version == "v2":
         return context["v2_features"]
     if feature_version == "v3":
         return context["v3_features"]
+    if feature_version == "v4":
+        return context["v4_features"]
     if feature_version == "v6":
         return context["v6_features"]
     if feature_version == "v5":
@@ -472,6 +620,27 @@ def _feature_config(version: str, candidate: dict | None = None) -> dict:
             "ewma_span": 12,
             "macro_path": candidate.get("macro_path", DEFAULT_V3_MACRO_PATH),
             "macro_date_column": candidate.get("macro_date_column", "date"),
+        }
+    if version == "v4":
+        candidate = {} if candidate is None else candidate
+        return {
+            "version": "v4",
+            "market_asset": "SPY",
+            "short_window": 4,
+            "long_window": 12,
+            "ewma_span": 12,
+            "include_garch_features": True,
+            "garch_include_relative": True,
+            "garch_mode": candidate.get("garch_mode", GARCH_MODE_ROLLING_FITTED),
+            "garch_min_history": candidate.get("garch_min_history", 104),
+            "garch_window": candidate.get("garch_window", 156),
+            "garch_periods_per_year": candidate.get("garch_periods_per_year", 52),
+            "garch_annualize": candidate.get("garch_annualize", False),
+            "garch_exclude_cash": candidate.get("garch_exclude_cash", True),
+            "garch_fallback": candidate.get(
+                "garch_fallback",
+                GARCH_FALLBACK_ROLLING_REALIZED,
+            ),
         }
     if version == "v5":
         return {

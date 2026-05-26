@@ -372,7 +372,12 @@ def _validate_reward_turnover_penalty_fields(reward: dict) -> None:
 
 
 def _validate_v4_garch_feature_config(features: dict) -> None:
-    for field_name in ("include_garch_features", "garch_include_relative"):
+    for field_name in (
+        "include_garch_features",
+        "garch_include_relative",
+        "garch_annualize",
+        "garch_exclude_cash",
+    ):
         value = features.get(field_name)
         if value is not None and not isinstance(value, bool):
             raise ValueError(f"Config field features.{field_name} must be a bool.")
@@ -394,6 +399,21 @@ def _validate_v4_garch_feature_config(features: dict) -> None:
     if alpha + beta >= 1.0:
         raise ValueError("Config field features.garch_alpha + garch_beta must be less than 1.")
     _validate_integer_at_least_one(periods_per_year, "features.garch_periods_per_year")
+    garch_mode = features.get("garch_mode", "deterministic_filter")
+    if garch_mode not in {"deterministic_filter", "rolling_fitted"}:
+        raise ValueError(
+            "Config field features.garch_mode must be deterministic_filter or rolling_fitted."
+        )
+    garch_min_history = features.get("garch_min_history", 104)
+    _validate_integer_at_least_one(garch_min_history, "features.garch_min_history")
+    garch_window = features.get("garch_window", 156)
+    if garch_window is not None:
+        _validate_integer_at_least_one(garch_window, "features.garch_window")
+    garch_fallback = features.get("garch_fallback", "rolling_realized_vol")
+    if garch_fallback != "rolling_realized_vol":
+        raise ValueError(
+            "Config field features.garch_fallback must be rolling_realized_vol."
+        )
 
 
 def _validate_v5_regime_feature_config(features: dict) -> None:

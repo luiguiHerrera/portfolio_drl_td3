@@ -2,14 +2,19 @@
 
 import math
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
 from src.data.garch_features import (
+    build_garch_feature_set_by_mode,
     build_garch_feature_set,
     build_garch_relative_features,
     build_garch_volatility_features,
+    build_rolling_fitted_garch_volatility_features,
     compute_garch_volatility_series,
+    GARCH_MODE_DETERMINISTIC,
+    GARCH_MODE_ROLLING_FITTED,
     validate_garch_parameters,
 )
 
@@ -173,6 +178,119 @@ class GarchFeaturesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-empty"):
             build_garch_volatility_features(empty)
 
+    def test_rolling_fitted_garch_excludes_cash_by_default(self):
+        features, diagnostics = build_rolling_fitted_garch_volatility_features(
+            self._long_returns(),
+            min_history=5,
+            window=8,
+            return_diagnostics=True,
+        )
+
+        self.assertNotIn("garch_vol_CASH", features.columns)
+        self.assertNotIn("CASH", set(diagnostics["asset"]))
+
+    def test_rolling_fitted_garch_no_same_period_shock_leakage(self):
+        returns = self._long_returns()
+        shocked = returns.copy()
+        shock_date = returns.index[10]
+        next_date = returns.index[11]
+        shocked.loc[shock_date, "SPY"] = 0.25
+
+        base = build_rolling_fitted_garch_volatility_features(
+            returns,
+            assets=["SPY"],
+            min_history=5,
+            window=8,
+        )
+        with_shock = build_rolling_fitted_garch_volatility_features(
+            shocked,
+            assets=["SPY"],
+            min_history=5,
+            window=8,
+        )
+
+        self.assertAlmostEqual(
+            base.loc[shock_date, "garch_vol_SPY"],
+            with_shock.loc[shock_date, "garch_vol_SPY"],
+        )
+        self.assertNotAlmostEqual(
+            base.loc[next_date, "garch_vol_SPY"],
+            with_shock.loc[next_date, "garch_vol_SPY"],
+        )
+
+    def test_rolling_fitted_garch_uses_realized_fallback_when_fitters_unavailable(self):
+        with (
+            patch("src.data.garch_features._arch_model", None),
+            patch("src.data.garch_features.minimize", None),
+        ):
+            features, diagnostics = build_rolling_fitted_garch_volatility_features(
+                self._long_returns(),
+                assets=["SPY"],
+                min_history=5,
+                window=8,
+                return_diagnostics=True,
+            )
+
+        self.assertIn("garch_vol_SPY", features.columns)
+        self.assertTrue(
+            diagnostics["fallback_reason"].astype(str).str.contains("scipy_unavailable").any()
+        )
+
+    def test_rolling_fitted_garch_uses_arch_backend_when_available(self):
+        features, diagnostics = build_rolling_fitted_garch_volatility_features(
+            self._long_returns(),
+            assets=["SPY"],
+            min_history=5,
+            window=8,
+            return_diagnostics=True,
+        )
+
+        fitted = diagnostics[diagnostics["status"] == "fitted"]
+        if bool(diagnostics["arch_available"].any()):
+            self.assertFalse(fitted.empty)
+            self.assertEqual({"arch_model"}, set(fitted["backend"]))
+        self.assertIn("garch_vol_SPY", features.columns)
+
+    def test_rolling_fitted_garch_is_deterministic_for_same_input(self):
+        first = build_rolling_fitted_garch_volatility_features(
+            self._long_returns(),
+            assets=["SPY", "TLT"],
+            min_history=5,
+            window=8,
+        )
+        second = build_rolling_fitted_garch_volatility_features(
+            self._long_returns(),
+            assets=["SPY", "TLT"],
+            min_history=5,
+            window=8,
+        )
+
+        pd.testing.assert_frame_equal(first, second)
+
+    def test_rolling_fitted_mode_differs_from_deterministic_filter(self):
+        returns = self._long_returns()
+        deterministic = build_garch_feature_set_by_mode(
+            returns,
+            mode=GARCH_MODE_DETERMINISTIC,
+            include_relative=False,
+            assets=["SPY"],
+        )
+        fitted = build_garch_feature_set_by_mode(
+            returns,
+            mode=GARCH_MODE_ROLLING_FITTED,
+            include_relative=False,
+            assets=["SPY"],
+            min_history=5,
+            window=8,
+        )
+        common_index = fitted.dropna().index.intersection(deterministic.index)
+        max_diff = (
+            fitted.loc[common_index, "garch_vol_SPY"]
+            - deterministic.loc[common_index, "garch_vol_SPY"]
+        ).abs().max()
+
+        self.assertGreater(float(max_diff), 0.0)
+
     @staticmethod
     def _returns() -> pd.DataFrame:
         index = pd.date_range("2024-01-05", periods=8, freq="W-FRI")
@@ -182,6 +300,19 @@ class GarchFeaturesTests(unittest.TestCase):
                 "SPY": [0.01, -0.02, 0.015, 0.005, -0.01, 0.02, 0.0, 0.01],
                 "TLT": [0.002, 0.003, -0.001, 0.004, 0.002, -0.002, 0.001, 0.0],
                 "GLD": [0.005, 0.004, 0.006, -0.003, 0.002, 0.001, 0.003, -0.001],
+                "CASH": [0.0] * len(index),
+            },
+            index=index,
+        )
+
+    @staticmethod
+    def _long_returns() -> pd.DataFrame:
+        index = pd.date_range("2024-01-05", periods=24, freq="W-FRI")
+        return pd.DataFrame(
+            {
+                "SPY": [0.01, -0.02, 0.015, -0.005, 0.012, -0.011] * 4,
+                "TLT": [0.002, 0.003, -0.001, 0.004, 0.002, -0.002] * 4,
+                "GLD": [0.005, 0.004, 0.006, -0.003, 0.002, 0.001] * 4,
                 "CASH": [0.0] * len(index),
             },
             index=index,

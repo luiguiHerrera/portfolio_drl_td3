@@ -67,6 +67,9 @@ TIMING_CONVENTION = "information through t-1, weights for t, realized return at 
 DSR_METHOD = "median_run -> date_averaged -> pooled -> fallback_from_sharpe"
 DEFAULT_V3_MACRO_PATH = "data/processed/macro_weekly_latest.csv"
 DEFAULT_V3_REALTIME_MACRO_PATH = "data/processed/macro_weekly_realtime_latest.csv"
+DEFAULT_V3_REALTIME_CLEAN_NO_DXY_MACRO_PATH = (
+    "data/processed/macro_weekly_realtime_clean_latest.csv"
+)
 
 PROTOCOL_CANDIDATES = [
     {
@@ -104,6 +107,26 @@ PROTOCOL_CANDIDATES = [
         "macro_path": DEFAULT_V3_REALTIME_MACRO_PATH,
         "macro_date_column": "date",
         "macro_source": "realtime_asof_with_dxy_fallback",
+        "exclude_blocks": [],
+        "use_dynamic_cash": False,
+        "cash_risk_off_column": None,
+    },
+    {
+        "name": "V3_real_macro_vintage_clean_no_dxy",
+        "feature_version": "v3",
+        "description": (
+            "V2 plus clean real-time/as-of macro features with DXY excluded. "
+            "Uses only full-window fresh true-vintage macro series with no fallback."
+        ),
+        "default_enabled": False,
+        "macro_path": DEFAULT_V3_REALTIME_CLEAN_NO_DXY_MACRO_PATH,
+        "macro_date_column": "date",
+        "macro_source": "realtime_asof_no_dxy_no_fallback",
+        "dollar_proxy": "excluded",
+        "reason": (
+            "no full-window fresh true-vintage dollar proxy exists for 2015-2026 "
+            "without fallback/discontinuation"
+        ),
         "exclude_blocks": [],
         "use_dynamic_cash": False,
         "cash_risk_off_column": None,
@@ -980,6 +1003,20 @@ def _build_metadata(
         },
         "candidate_descriptions": {
             candidate["name"]: candidate["description"] for candidate in candidates
+        },
+        "candidate_metadata": {
+            candidate["name"]: {
+                key: candidate[key]
+                for key in (
+                    "macro_path",
+                    "macro_date_column",
+                    "macro_source",
+                    "dollar_proxy",
+                    "reason",
+                )
+                if key in candidate
+            }
+            for candidate in candidates
         },
         "seeds": seeds,
         "episodes": episodes,

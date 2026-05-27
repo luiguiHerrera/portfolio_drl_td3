@@ -9,8 +9,10 @@ import pandas as pd
 
 from src.experiments.run_protocol_pure_td3_revalidation import (
     DEFAULT_V3_MACRO_PATH,
+    DEFAULT_V3_REALTIME_CLEAN_NO_DXY_MACRO_PATH,
     DEFAULT_V3_REALTIME_MACRO_PATH,
     PROTOCOL_CANDIDATES,
+    _build_metadata,
     _build_candidate_run_config,
     _build_v3_features,
     _build_v4_features,
@@ -153,6 +155,16 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
 
         self.assertNotIn("V3_real_macro_vintage", default_names)
         self.assertEqual(explicit_names, {"V3_real_macro_vintage"})
+
+    def test_v3_vintage_clean_no_dxy_candidate_is_available_but_not_default_enabled(self):
+        default_names = {candidate["name"] for candidate in _select_candidates(None)}
+        explicit_names = {
+            candidate["name"]
+            for candidate in _select_candidates(["V3_real_macro_vintage_clean_no_dxy"])
+        }
+
+        self.assertNotIn("V3_real_macro_vintage_clean_no_dxy", default_names)
+        self.assertEqual(explicit_names, {"V3_real_macro_vintage_clean_no_dxy"})
 
     def test_v4_candidate_is_available_but_not_default_enabled(self):
         default_names = {candidate["name"] for candidate in _select_candidates(None)}
@@ -394,6 +406,86 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
             "realtime_asof_with_dxy_fallback",
         )
 
+    def test_v3_vintage_clean_no_dxy_candidate_config_uses_clean_macro_path(self):
+        base_config = self._base_config()
+        candidate = _candidate("V3_real_macro_vintage_clean_no_dxy")
+
+        config = _build_candidate_run_config(
+            base_config=base_config,
+            candidate=candidate,
+            seed=7,
+            episodes=5,
+            batch_size=32,
+            actor_learning_rate=0.0005,
+            critic_learning_rate=0.0005,
+        )
+
+        self.assertEqual(config["features"]["version"], "v3")
+        self.assertEqual(
+            config["features"]["macro_path"],
+            DEFAULT_V3_REALTIME_CLEAN_NO_DXY_MACRO_PATH,
+        )
+        self.assertEqual(config["features"]["macro_date_column"], "date")
+        self.assertEqual(candidate["macro_source"], "realtime_asof_no_dxy_no_fallback")
+        self.assertEqual(candidate["dollar_proxy"], "excluded")
+        self.assertIn("no full-window fresh", candidate["reason"])
+
+    def test_v3_vintage_clean_no_dxy_features_build_without_missing_macro_values(self):
+        returns = self._long_returns()
+        macro_path = self._write_macro_csv_for_returns(returns, include_dxy=False)
+        candidate = {
+            **_candidate("V3_real_macro_vintage_clean_no_dxy"),
+            "macro_path": macro_path,
+        }
+
+        features = _build_v3_features(
+            returns=returns,
+            base_config=self._base_config(),
+            candidate=candidate,
+        )
+        shifted = features.shift(1).dropna()
+        aligned = shifted.loc[shifted.index.intersection(returns.index)]
+        macro_columns = [column for column in aligned.columns if column.startswith("macro_")]
+
+        self.assertTrue(macro_columns)
+        self.assertFalse(aligned.loc[:, macro_columns].isna().any().any())
+        self.assertIn("macro_CPI", features.columns)
+        self.assertNotIn("macro_DXY", features.columns)
+        self.assertNotIn("macro_dollar_momentum_12p", features.columns)
+
+    def test_metadata_records_v3_vintage_clean_no_dxy_macro_metadata(self):
+        candidate = _candidate("V3_real_macro_vintage_clean_no_dxy")
+        actual_folds = pd.DataFrame(
+            [{"fold": "F1", "train_start": "2021-01-01", "test_end": "2021-02-01"}]
+        )
+
+        metadata = _build_metadata(
+            base_config_path="configs/config.yaml",
+            returns_path="returns.csv",
+            output_dir="out",
+            candidates=[candidate],
+            folds=[self.fold],
+            actual_folds=actual_folds,
+            seeds=[7],
+            episodes=5,
+            batch_size=32,
+            actor_learning_rate=0.0005,
+            critic_learning_rate=0.0005,
+            base_config=self._base_config(),
+            run_configs={},
+            smoke=True,
+        )
+
+        candidate_metadata = metadata["candidate_metadata"][
+            "V3_real_macro_vintage_clean_no_dxy"
+        ]
+        self.assertEqual(
+            candidate_metadata["macro_source"],
+            "realtime_asof_no_dxy_no_fallback",
+        )
+        self.assertEqual(candidate_metadata["dollar_proxy"], "excluded")
+        self.assertIn("fallback/discontinuation", candidate_metadata["reason"])
+
     def test_v3_missing_macro_path_raises_error(self):
         candidate = {
             **_candidate("V3_real_macro_current"),
@@ -580,7 +672,11 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
             index=index,
         )
 
-    def _write_macro_csv_for_returns(self, returns: pd.DataFrame) -> str:
+    def _write_macro_csv_for_returns(
+        self,
+        returns: pd.DataFrame,
+        include_dxy: bool = True,
+    ) -> str:
         temp_dir = tempfile.mkdtemp()
         path = Path(temp_dir) / "macro.csv"
         index = pd.date_range(
@@ -588,16 +684,16 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
             returns.index.max(),
             freq="W-FRI",
         )
-        macro = pd.DataFrame(
-            {
-                "date": index,
-                "DGS10": [4.0 + i * 0.001 for i in range(len(index))],
-                "DGS2": [3.0 + i * 0.001 for i in range(len(index))],
-                "VIX": [20.0 + (i % 5) for i in range(len(index))],
-                "DXY": [100.0 + i * 0.01 for i in range(len(index))],
-                "CPI": [300.0 + i * 0.02 for i in range(len(index))],
-            }
-        )
+        data = {
+            "date": index,
+            "DGS10": [4.0 + i * 0.001 for i in range(len(index))],
+            "DGS2": [3.0 + i * 0.001 for i in range(len(index))],
+            "VIX": [20.0 + (i % 5) for i in range(len(index))],
+            "CPI": [300.0 + i * 0.02 for i in range(len(index))],
+        }
+        if include_dxy:
+            data["DXY"] = [100.0 + i * 0.01 for i in range(len(index))]
+        macro = pd.DataFrame(data)
         macro.to_csv(path, index=False)
         return str(path)
 

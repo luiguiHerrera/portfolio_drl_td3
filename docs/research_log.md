@@ -5155,3 +5155,342 @@ policies competitive under a mandate-aware evaluation layer.
 
 - `.venv/bin/python -m unittest tests/test_statistical_validation_report.py`: 8 OK
 - `.venv/bin/python -m unittest discover tests`: 1028 OK
+
+## Entry X — V7 Real Macro + Real GARCH Candidate
+
+**Date:** 2026-05-26
+
+**Purpose:**  
+Evaluate whether combining the V3 real macro feature block and the V4 real
+GARCH feature block improves TD3 portfolio allocation.
+
+**Implementation:**  
+Added `V7_real_macro_garch_current` as a guarded protocol candidate.
+
+Created:
+
+- `src/data/features_v7.py`
+- `src/analysis/validate_v7_macro_garch_current.py`
+- `tests/test_features_v7.py`
+- `tests/test_validate_v7_macro_garch_current.py`
+
+Modified:
+
+- `src/data/feature_factory.py`
+- `src/utils/config.py`
+- `src/experiments/run_protocol_pure_td3_revalidation.py`
+- related tests
+
+The candidate combines:
+
+- V2/V3 base features
+- V3 current-window local macro features
+- V4 rolling fitted real GARCH features via `arch_model`
+
+It is `default_enabled = False` and only runs explicitly with:
+
+`--candidates V7_real_macro_garch_current`
+
+**Validation smoke:**  
+
+Output:
+
+- `outputs/tables/v7_macro_garch_current_validation`
+
+Key checks:
+
+- returns coverage: `2015-01-09` to `2026-05-15`
+- macro coverage: `2015-01-02` to `2026-05-15`
+- feature coverage: `2015-06-19` to `2026-05-15`
+- feature count: `73`
+- macro features: `12`
+- GARCH features: `12`
+- GARCH backend: `arch_model`
+- fitted assets: `BTC-USD`, `GLD`, `SPY`, `TLT`
+- CASH GARCH columns: `0`
+- fit successes: `1956`
+- fallback usage: `416`, insufficient-history warmup only
+- fit failures: `0`
+- missing aligned features: `0`
+- alignment/leakage checks: pass
+
+**Uncapped full revalidation:**  
+
+Configuration:
+
+- episodes = 60
+- seeds = `[7, 21, 42, 84, 101, 123, 202, 303, 404, 505]`
+- folds = 4
+
+Test results:
+
+- mean Sharpe = `0.0907`
+- robust Sharpe 0.5 = `-0.4310`
+- annualized return = `-0.0219`
+- annualized volatility = `0.2521`
+- mean max drawdown = `-0.2476`
+- worst max drawdown = `-0.6477`
+- average turnover = `0.3954`
+- effective assets = `1.0634`
+- average max weight = `0.9730`
+- robust score = `0.3694`
+
+Interpretation: V7 unconstrained does not improve TD3 behavior and still
+collapses into learned extreme concentration.
+
+**Cap sensitivity:**  
+
+Configuration:
+
+- caps: `uncapped`, `0.50`, `0.60`, `0.70`, `0.80`
+- episodes = 60
+- seeds = `[7, 21, 42, 84, 101, 123, 202, 303, 404, 505]`
+
+Best cap:
+
+- by mandate-aware score: `0.50`
+- by robust score: `0.50`
+- by max drawdown: `0.50`
+- by turnover: `0.50`
+- by effective assets: `0.50`
+
+Best result:
+
+- candidate: `V7_real_macro_garch_current_cap_0.50`
+- mandate-aware score = `0.5609`
+- robust score = `0.6611`
+- annualized return = `0.0852`
+- Sharpe = `0.7546`
+- max drawdown = `-0.1316`
+- worst max drawdown = `-0.3419`
+- turnover = `0.2564`
+- effective assets = `3.1244`
+- average max weight = `0.4994`
+
+All tested caps improved over uncapped on:
+
+- mandate-aware score
+- robust score
+- turnover
+- effective assets
+
+Overall interpretation:
+
+- `stable_cap_benefit`
+
+**Comparison with V3 and V4:**  
+
+Current strongest constrained candidates:
+
+- `V3_cap_0.60`: mandate-aware `0.5907`, robust `0.7010`
+- `V4_cap_0.50`: mandate-aware `0.5883`, robust `0.7250`
+- `V7_cap_0.50`: mandate-aware `0.5609`, robust `0.6611`
+
+V7 improves materially with a max-weight cap, but it does not outperform V3 or
+V4 individually.
+
+**Interpretation:**  
+The combination of macro and GARCH features did not produce additional
+performance beyond the simpler constrained V3 and V4 candidates.
+
+This suggests that more econometric information does not automatically improve
+policy quality. In this setting, simpler constrained econometric feature sets
+performed better than the combined macro-GARCH state.
+
+**Decision:**  
+Do not promote V7 as the leading candidate. Keep V3 and V4 as the strongest
+constrained econometric TD3 candidates.
+
+This should close the current model-expansion phase before moving to regime
+analysis, statistical validation refinement, figures, and formal writing.
+
+**Tests:**  
+
+- `.venv/bin/python -m unittest discover tests`: 1042 OK
+
+## Entry X — V8 EWMA + GARCH Volatility Candidate
+
+**Date:** 2026-05-26
+
+**Purpose:**  
+Evaluate whether adding EWMA volatility forecasts to the V4 real GARCH volatility
+state improves TD3 portfolio allocation.
+
+**Implementation:**  
+Added `V8_ewma_garch_vol_current` as a guarded protocol candidate.
+
+Created:
+
+- `src/data/ewma_features.py`
+- `src/data/features_v8.py`
+- `src/analysis/validate_v8_ewma_garch_current.py`
+- `tests/test_ewma_features.py`
+- `tests/test_features_v8.py`
+- `tests/test_validate_v8_ewma_garch_current.py`
+
+V8 includes:
+
+- V2 base features
+- rolling fitted GARCH via `arch_model`
+- lagged EWMA volatility with `lambda = 0.94`
+- GARCH/EWMA difference features
+- GARCH/EWMA ratio features
+
+It excludes CASH from fitted GARCH/EWMA volatility columns and includes no macro
+features.
+
+**Validation:**  
+
+Validation smoke passed.
+
+Key checks:
+
+- feature count = `73`
+- GARCH feature count = `20`
+- EWMA feature count = `4`
+- comparison feature count = `8`
+- GARCH backend = `arch_model`
+- fit success count = `1956`
+- fallback count = `416`
+- fit failure count = `0`
+- missing aligned features = `0`
+- nonfinite ratio count = `0`
+- CASH volatility columns = `0`
+- leakage checks = passed
+- V8 differs from V4 = passed
+
+**Uncapped full revalidation:**  
+
+V8 unconstrained remained weak and concentrated:
+
+- mean Sharpe = `0.1562`
+- robust Sharpe 0.5 = `-0.3291`
+- annualized return = `0.0413`
+- max drawdown = `-0.2572`
+- worst max drawdown = `-0.6704`
+- turnover = `0.5158`
+- effective assets = `1.0676`
+- average max weight = `0.9713`
+- robust score = `0.3661`
+
+**Cap sensitivity:**  
+
+Best cap:
+
+- `0.50`
+
+Best V8 result:
+
+- candidate = `V8_ewma_garch_vol_current_cap_0.50`
+- mandate-aware score = `0.5374`
+- robust score = `0.6595`
+- annualized return = `0.0749`
+- Sharpe = `0.5778`
+- max drawdown = `-0.1562`
+- worst max drawdown = `-0.3994`
+- turnover = `0.3046`
+- effective assets = `3.1255`
+- average max weight = `0.4995`
+
+**Interpretation:**  
+V8 improves materially with a max-weight cap, but it does not outperform the
+strongest existing constrained candidates.
+
+Current comparison:
+
+- `V3_cap_0.60`: mandate-aware `0.5907`, robust `0.7010`
+- `V4_cap_0.50`: mandate-aware `0.5883`, robust `0.7250`
+- `V8_cap_0.50`: mandate-aware `0.5374`, robust `0.6595`
+
+Therefore, adding EWMA volatility forecasts to the GARCH volatility state did
+not improve policy quality relative to V4.
+
+**Decision:**  
+Do not promote V8 as a leading candidate. Keep V3 and V4 as the strongest
+constrained TD3 candidates. Close the current model-expansion phase.
+
+## Entry X — Final Model Expansion Report: V3, V4, V7 and V8
+
+**Date:** 2026-05-26
+
+**Purpose:**  
+Close the current model-expansion phase by updating the final constrained TD3
+report with the evaluated V7 and V8 candidates.
+
+The goal was to test whether additional econometric and volatility feature
+complexity improves over the already strong V3 and V4 constrained candidates.
+
+**Implementation:**  
+Updated:
+
+- `src/analysis/build_final_constrained_td3_report.py`
+- `tests/test_build_final_constrained_td3_report.py`
+
+The report builder now supports optional:
+
+- `--v7-cap-sensitivity-dir`
+- `--v8-cap-sensitivity-dir`
+
+V7 and V8 are included as evaluated constrained candidates, not as leading
+selected candidates.
+
+V7 is marked as:
+
+- `strategy_group = td3_evaluated_constrained`
+- `feature_family = real_macro_garch_current`
+- `source = v7_cap_sensitivity`
+- `selected_cap = 0.50`
+
+V8 is marked as:
+
+- `strategy_group = td3_evaluated_constrained`
+- `feature_family = ewma_garch_vol_current`
+- `source = v8_cap_sensitivity`
+- `selected_cap = 0.50`
+
+Output directory:
+
+- `outputs/tables/final_constrained_td3_report_with_v3_v4_v7_v8_60ep_10seeds`
+
+**Top mandate-aware ranking:**  
+
+| rank | strategy | mandate-aware | robust |
+|---:|---|---:|---:|
+| 1 | `V3_cap_0.60` | `0.5907` | `0.7010` |
+| 2 | `V4_cap_0.50` | `0.5883` | `0.7250` |
+| 3 | `V7_cap_0.50` | `0.5609` | `0.6611` |
+| 4 | `V6_cap_0.50` | `0.5492` | `0.6757` |
+| 5 | `V2_cap_0.50` | `0.5482` | `0.6553` |
+| 6 | `V8_cap_0.50` | `0.5374` | `0.6595` |
+| 7 | `V5_cap_0.70` | `0.5294` | `0.6641` |
+| 8 | `BuyHold_GLD` | `0.5244` | `0.6967` |
+
+**Interpretation:**  
+V7 and V8 both improve materially with max-weight caps, but neither outperforms
+the simpler V3/V4 constrained candidates.
+
+Final model interpretation:
+
+- `V3_cap_0.60` remains the best TD3 candidate by mandate-aware score.
+- `V4_cap_0.50` remains the best TD3 candidate by robust score.
+- `V7_cap_0.50` confirms that combining macro and GARCH does not automatically
+  improve policy quality.
+- `V8_cap_0.50` confirms that adding EWMA volatility to GARCH does not improve
+  over the simpler V4 real-GARCH candidate.
+- More feature complexity did not automatically improve TD3 performance.
+
+**Main research implication:**  
+
+The project should now stop expanding model variants and focus on statistical
+validation, regime analysis, figures, and formal writing.
+
+The central finding is:
+
+> Unconstrained TD3 tends to collapse into concentrated policies. Max-weight
+> constraints materially improve allocation behavior. Econometric features
+> become useful only when the action space is economically constrained.
+
+**Tests:**  
+
+- `.venv/bin/python -m unittest tests/test_build_final_constrained_td3_report.py`: 34 OK
+- `.venv/bin/python -m unittest discover tests`: 1076 OK

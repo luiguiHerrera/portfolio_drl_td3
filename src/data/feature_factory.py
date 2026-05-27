@@ -8,6 +8,8 @@ from src.data.features_v3 import build_features_v3
 from src.data.features_v4 import build_features_v4
 from src.data.features_v5 import build_features_v5
 from src.data.features_v6 import build_features_v6
+from src.data.features_v7 import build_features_v7
+from src.data.features_v8 import build_features_v8
 from src.data.macro_loader import load_macro_data_from_csv
 
 
@@ -89,6 +91,53 @@ def build_configured_features(
             ewma_long_span=features_config.get("ewma_long_span", 12),
             correlation_window=features_config.get("correlation_window", 12),
             zscore_window=features_config.get("zscore_window", 52),
+        )
+    if feature_version == "v7":
+        macro_data = None
+        if "macro_path" in features_config:
+            macro_data = load_macro_data_from_csv(
+                features_config["macro_path"],
+                date_column=features_config.get("macro_date_column", "date"),
+            )
+
+        return build_features_v7(
+            returns,
+            macro_data=macro_data,
+            market_asset=features_config.get("market_asset", "SPY"),
+            short_window=features_config.get("short_window", 4),
+            long_window=features_config.get("long_window", 12),
+            ewma_span=features_config.get("ewma_span", 12),
+            garch_include_relative=features_config.get(
+                "garch_include_relative",
+                True,
+            ),
+            garch_periods_per_year=features_config.get("garch_periods_per_year", 52),
+            garch_mode=features_config.get("garch_mode", "rolling_fitted"),
+            garch_min_history=features_config.get("garch_min_history", 104),
+            garch_window=features_config.get("garch_window", 156),
+            garch_annualize=features_config.get("garch_annualize", False),
+            garch_exclude_cash=features_config.get("garch_exclude_cash", True),
+            garch_fallback=features_config.get("garch_fallback", "rolling_realized_vol"),
+        )
+    if feature_version == "v8":
+        return build_features_v8(
+            returns,
+            market_asset=features_config.get("market_asset", "SPY"),
+            short_window=features_config.get("short_window", 4),
+            long_window=features_config.get("long_window", 12),
+            ewma_span=features_config.get("ewma_span", 12),
+            ewma_lambda=features_config.get("ewma_lambda", 0.94),
+            garch_include_relative=features_config.get(
+                "garch_include_relative",
+                True,
+            ),
+            garch_periods_per_year=features_config.get("garch_periods_per_year", 52),
+            garch_mode=features_config.get("garch_mode", "rolling_fitted"),
+            garch_min_history=features_config.get("garch_min_history", 104),
+            garch_window=features_config.get("garch_window", 156),
+            garch_annualize=features_config.get("garch_annualize", False),
+            garch_exclude_cash=features_config.get("garch_exclude_cash", True),
+            garch_fallback=features_config.get("garch_fallback", "rolling_realized_vol"),
         )
 
     raise ValueError(f"Unsupported feature version: {feature_version}.")

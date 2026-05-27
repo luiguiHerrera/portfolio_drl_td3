@@ -13,6 +13,8 @@ from src.experiments.run_protocol_pure_td3_revalidation import (
     _build_candidate_run_config,
     _build_v3_features,
     _build_v4_features,
+    _build_v7_features,
+    _build_v8_features,
     _candidate_raw_features,
     _feature_config,
     _select_candidates,
@@ -151,6 +153,26 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
         self.assertNotIn("V4_real_garch_current", default_names)
         self.assertEqual(explicit_names, {"V4_real_garch_current"})
 
+    def test_v7_candidate_is_available_but_not_default_enabled(self):
+        default_names = {candidate["name"] for candidate in _select_candidates(None)}
+        explicit_names = {
+            candidate["name"]
+            for candidate in _select_candidates(["V7_real_macro_garch_current"])
+        }
+
+        self.assertNotIn("V7_real_macro_garch_current", default_names)
+        self.assertEqual(explicit_names, {"V7_real_macro_garch_current"})
+
+    def test_v8_candidate_is_available_but_not_default_enabled(self):
+        default_names = {candidate["name"] for candidate in _select_candidates(None)}
+        explicit_names = {
+            candidate["name"]
+            for candidate in _select_candidates(["V8_ewma_garch_vol_current"])
+        }
+
+        self.assertNotIn("V8_ewma_garch_vol_current", default_names)
+        self.assertEqual(explicit_names, {"V8_ewma_garch_vol_current"})
+
     def test_v4_candidate_config_uses_rolling_fitted_garch(self):
         base_config = self._base_config()
         candidate = _candidate("V4_real_garch_current")
@@ -180,6 +202,46 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
         self.assertEqual(config["garch_min_history"], 104)
         self.assertEqual(config["garch_window"], 156)
 
+    def test_v7_candidate_config_uses_macro_and_rolling_fitted_garch(self):
+        base_config = self._base_config()
+        candidate = _candidate("V7_real_macro_garch_current")
+
+        config = _build_candidate_run_config(
+            base_config=base_config,
+            candidate=candidate,
+            seed=7,
+            episodes=5,
+            batch_size=32,
+            actor_learning_rate=0.0005,
+            critic_learning_rate=0.0005,
+        )
+
+        self.assertEqual(config["features"]["version"], "v7")
+        self.assertEqual(config["features"]["macro_path"], DEFAULT_V3_MACRO_PATH)
+        self.assertEqual(config["features"]["garch_mode"], "rolling_fitted")
+        self.assertTrue(config["features"]["garch_exclude_cash"])
+        self.assertFalse(config["reward"]["use_cash_risk_off_penalty"])
+
+    def test_v8_candidate_config_uses_ewma_and_rolling_fitted_garch(self):
+        base_config = self._base_config()
+        candidate = _candidate("V8_ewma_garch_vol_current")
+
+        config = _build_candidate_run_config(
+            base_config=base_config,
+            candidate=candidate,
+            seed=7,
+            episodes=5,
+            batch_size=32,
+            actor_learning_rate=0.0005,
+            critic_learning_rate=0.0005,
+        )
+
+        self.assertEqual(config["features"]["version"], "v8")
+        self.assertEqual(config["features"]["ewma_lambda"], 0.94)
+        self.assertEqual(config["features"]["garch_mode"], "rolling_fitted")
+        self.assertTrue(config["features"]["garch_exclude_cash"])
+        self.assertFalse(config["reward"]["use_cash_risk_off_penalty"])
+
     def test_v4_raw_feature_generation_includes_real_garch_and_excludes_cash(self):
         candidate = {
             **_candidate("V4_real_garch_current"),
@@ -204,6 +266,65 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
             )
         )
         self.assertIs(_candidate_raw_features(candidate, {"v4_features": features}), features)
+
+    def test_v7_raw_feature_generation_includes_macro_and_real_garch(self):
+        returns = self._long_returns()
+        macro_path = self._write_macro_csv_for_returns(returns)
+        candidate = {
+            **_candidate("V7_real_macro_garch_current"),
+            "macro_path": macro_path,
+            "garch_min_history": 5,
+            "garch_window": 8,
+        }
+
+        features = _build_v7_features(
+            returns=returns,
+            base_config=self._base_config(),
+            candidate=candidate,
+        )
+
+        self.assertTrue(any(column.startswith("macro_") for column in features.columns))
+        self.assertIn("garch_vol_SPY", features.columns)
+        self.assertNotIn("garch_vol_CASH", features.columns)
+        self.assertIs(_candidate_raw_features(candidate, {"v7_features": features}), features)
+
+    def test_v8_raw_feature_generation_includes_ewma_garch_and_comparison(self):
+        candidate = {
+            **_candidate("V8_ewma_garch_vol_current"),
+            "garch_min_history": 5,
+            "garch_window": 8,
+        }
+
+        features = _build_v8_features(
+            returns=self._long_returns(),
+            base_config=self._base_config(),
+            candidate=candidate,
+        )
+
+        self.assertIn("garch_vol_SPY", features.columns)
+        self.assertIn("ewma_vol_SPY", features.columns)
+        self.assertIn("garch_minus_ewma_vol_SPY", features.columns)
+        self.assertIn("garch_to_ewma_vol_ratio_SPY", features.columns)
+        self.assertNotIn("ewma_vol_CASH", features.columns)
+        self.assertNotIn("garch_vol_CASH", features.columns)
+        self.assertIs(_candidate_raw_features(candidate, {"v8_features": features}), features)
+
+    def test_v7_stale_macro_coverage_raises_error(self):
+        returns = self._long_returns()
+        macro_path = self._write_macro_csv_for_returns(returns.iloc[:-10])
+        candidate = {
+            **_candidate("V7_real_macro_garch_current"),
+            "macro_path": macro_path,
+            "garch_min_history": 5,
+            "garch_window": 8,
+        }
+
+        with self.assertRaisesRegex(ValueError, "stale"):
+            _build_v7_features(
+                returns=returns,
+                base_config=self._base_config(),
+                candidate=candidate,
+            )
 
     def test_v3_candidate_config_uses_required_macro_path(self):
         base_config = self._base_config()

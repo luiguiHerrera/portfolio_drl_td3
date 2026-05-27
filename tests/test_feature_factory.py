@@ -20,6 +20,8 @@ class FeatureFactoryTests(unittest.TestCase):
         self.v3_features = pd.DataFrame({"v3_feature": [5.0, 6.0]}, index=self.returns.index)
         self.v4_features = pd.DataFrame({"v4_feature": [7.0, 8.0]}, index=self.returns.index)
         self.v5_features = pd.DataFrame({"v5_feature": [9.0, 10.0]}, index=self.returns.index)
+        self.v7_features = pd.DataFrame({"v7_feature": [11.0, 12.0]}, index=self.returns.index)
+        self.v8_features = pd.DataFrame({"v8_feature": [13.0, 14.0]}, index=self.returns.index)
         self.macro_data = pd.DataFrame({"VIX": [20.0]}, index=[self.returns.index[0]])
 
     def test_default_config_without_features_section_uses_v1(self):
@@ -307,10 +309,87 @@ class FeatureFactoryTests(unittest.TestCase):
         self.assertIsInstance(macro_data, pd.DataFrame)
         self.assertFalse(macro_data.empty)
 
-    def test_unsupported_version_raises_value_error(self):
-        config = {"features": {"version": "v7"}}
+    def test_v7_config_loads_macro_and_passes_garch_parameters(self):
+        config = {
+            "features": {
+                "version": "v7",
+                "macro_path": "local_macro.csv",
+                "macro_date_column": "date",
+                "garch_mode": "rolling_fitted",
+                "garch_min_history": 104,
+                "garch_window": 156,
+                "garch_exclude_cash": True,
+            }
+        }
 
-        with self.assertRaisesRegex(ValueError, "Unsupported feature version: v7."):
+        with patch(
+            "src.data.feature_factory.build_features_v7",
+            return_value=self.v7_features,
+        ) as build_features_v7_mock, patch(
+            "src.data.feature_factory.load_macro_data_from_csv",
+            return_value=self.macro_data,
+        ) as load_macro_data_mock:
+            result = build_configured_features(self.returns, config=config)
+
+        load_macro_data_mock.assert_called_once_with("local_macro.csv", date_column="date")
+        build_features_v7_mock.assert_called_once_with(
+            self.returns,
+            macro_data=self.macro_data,
+            market_asset="SPY",
+            short_window=4,
+            long_window=12,
+            ewma_span=12,
+            garch_include_relative=True,
+            garch_periods_per_year=52,
+            garch_mode="rolling_fitted",
+            garch_min_history=104,
+            garch_window=156,
+            garch_annualize=False,
+            garch_exclude_cash=True,
+            garch_fallback="rolling_realized_vol",
+        )
+        pd.testing.assert_frame_equal(result, self.v7_features)
+
+    def test_v8_config_passes_ewma_and_garch_parameters(self):
+        config = {
+            "features": {
+                "version": "v8",
+                "ewma_lambda": 0.94,
+                "garch_mode": "rolling_fitted",
+                "garch_min_history": 104,
+                "garch_window": 156,
+                "garch_exclude_cash": True,
+            }
+        }
+
+        with patch(
+            "src.data.feature_factory.build_features_v8",
+            return_value=self.v8_features,
+        ) as build_features_v8_mock:
+            result = build_configured_features(self.returns, config=config)
+
+        build_features_v8_mock.assert_called_once_with(
+            self.returns,
+            market_asset="SPY",
+            short_window=4,
+            long_window=12,
+            ewma_span=12,
+            ewma_lambda=0.94,
+            garch_include_relative=True,
+            garch_periods_per_year=52,
+            garch_mode="rolling_fitted",
+            garch_min_history=104,
+            garch_window=156,
+            garch_annualize=False,
+            garch_exclude_cash=True,
+            garch_fallback="rolling_realized_vol",
+        )
+        pd.testing.assert_frame_equal(result, self.v8_features)
+
+    def test_unsupported_version_raises_value_error(self):
+        config = {"features": {"version": "v9"}}
+
+        with self.assertRaisesRegex(ValueError, "Unsupported feature version: v9."):
             build_configured_features(self.returns, config=config)
 
     def _patched_builders(self):

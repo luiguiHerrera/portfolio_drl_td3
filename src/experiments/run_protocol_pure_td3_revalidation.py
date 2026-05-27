@@ -27,6 +27,8 @@ from src.analysis.validate_v3_macro_current import (
 from src.data.feature_factory import build_configured_features
 from src.data.features_v2 import build_features_v2
 from src.data.features_v3 import build_features_v3
+from src.data.features_v7 import build_features_v7
+from src.data.features_v8 import build_features_v8
 from src.data.features_v5 import (
     build_features_v5,
     build_v5_regime_auxiliary_features,
@@ -100,6 +102,45 @@ PROTOCOL_CANDIDATES = [
         "exclude_blocks": [],
         "use_dynamic_cash": False,
         "cash_risk_off_column": None,
+        "garch_mode": GARCH_MODE_ROLLING_FITTED,
+        "garch_exclude_cash": True,
+        "garch_fallback": GARCH_FALLBACK_ROLLING_REALIZED,
+        "garch_min_history": 104,
+        "garch_window": 156,
+        "garch_allow_scipy_fallback": False,
+    },
+    {
+        "name": "V7_real_macro_garch_current",
+        "feature_version": "v7",
+        "description": (
+            "V3 current-window real macro features plus V4 rolling fitted "
+            "real GARCH(1,1) features using arch_model."
+        ),
+        "default_enabled": False,
+        "macro_path": DEFAULT_V3_MACRO_PATH,
+        "macro_date_column": "date",
+        "exclude_blocks": [],
+        "use_dynamic_cash": False,
+        "cash_risk_off_column": None,
+        "garch_mode": GARCH_MODE_ROLLING_FITTED,
+        "garch_exclude_cash": True,
+        "garch_fallback": GARCH_FALLBACK_ROLLING_REALIZED,
+        "garch_min_history": 104,
+        "garch_window": 156,
+        "garch_allow_scipy_fallback": False,
+    },
+    {
+        "name": "V8_ewma_garch_vol_current",
+        "feature_version": "v8",
+        "description": (
+            "V2 plus rolling fitted real GARCH volatility, lagged EWMA volatility, "
+            "and GARCH/EWMA comparison features."
+        ),
+        "default_enabled": False,
+        "exclude_blocks": [],
+        "use_dynamic_cash": False,
+        "cash_risk_off_column": None,
+        "ewma_lambda": 0.94,
         "garch_mode": GARCH_MODE_ROLLING_FITTED,
         "garch_exclude_cash": True,
         "garch_fallback": GARCH_FALLBACK_ROLLING_REALIZED,
@@ -313,6 +354,20 @@ def _build_feature_context(
             base_config=base_config,
             candidate=v4_candidate,
         )
+    if "v7" in requested_versions:
+        v7_candidate = _candidate_for_feature_version(candidates, "v7")
+        context["v7_features"] = _build_v7_features(
+            returns=returns,
+            base_config=base_config,
+            candidate=v7_candidate,
+        )
+    if "v8" in requested_versions:
+        v8_candidate = _candidate_for_feature_version(candidates, "v8")
+        context["v8_features"] = _build_v8_features(
+            returns=returns,
+            base_config=base_config,
+            candidate=v8_candidate,
+        )
     if "v5" in requested_versions:
         context["v5_features"] = build_features_v5(returns)
         context["v5_auxiliary"] = (
@@ -457,6 +512,98 @@ def _build_v4_features(
     return features
 
 
+def _build_v7_features(
+    returns: pd.DataFrame,
+    base_config: dict,
+    candidate: dict,
+) -> pd.DataFrame:
+    """Build guarded current-window V7 real macro plus real GARCH features."""
+    features_config = _feature_config("v7", candidate)
+    macro_path = features_config.get("macro_path")
+    if not macro_path:
+        raise ValueError("V7_real_macro_garch_current requires features.macro_path.")
+    if not Path(macro_path).exists():
+        raise FileNotFoundError(f"V7 macro path does not exist: {macro_path}")
+    macro_data = load_macro_data_from_csv(
+        macro_path,
+        date_column=features_config.get("macro_date_column", "date"),
+    )
+    coverage = build_macro_coverage_table(
+        returns,
+        macro_data,
+        returns_path=base_config.get("data", {}).get("returns_path", "<in-memory>"),
+        macro_path=macro_path,
+    )
+    validate_macro_coverage(coverage)
+    features, diagnostics = build_features_v7(
+        returns=returns,
+        macro_data=macro_data,
+        market_asset=features_config.get("market_asset", "SPY"),
+        short_window=features_config.get("short_window", 4),
+        long_window=features_config.get("long_window", 12),
+        ewma_span=features_config.get("ewma_span", 12),
+        garch_include_relative=features_config.get("garch_include_relative", True),
+        garch_periods_per_year=features_config.get("garch_periods_per_year", 52),
+        garch_mode=features_config.get("garch_mode", GARCH_MODE_ROLLING_FITTED),
+        garch_min_history=features_config.get("garch_min_history", 104),
+        garch_window=features_config.get("garch_window", 156),
+        garch_annualize=features_config.get("garch_annualize", False),
+        garch_exclude_cash=features_config.get("garch_exclude_cash", True),
+        garch_fallback=features_config.get("garch_fallback", GARCH_FALLBACK_ROLLING_REALIZED),
+        return_garch_diagnostics=True,
+    )
+    _validate_v3_feature_alignment(returns, features)
+    _validate_v4_garch_diagnostics(diagnostics=diagnostics, candidate=candidate)
+    garch_columns = [
+        column
+        for column in features.columns
+        if isinstance(column, str) and column.startswith("garch_")
+    ]
+    _validate_v4_feature_alignment(
+        returns=returns,
+        features=features,
+        garch_features=features.loc[:, garch_columns],
+        exclude_cash=features_config.get("garch_exclude_cash", True),
+    )
+    return features
+
+
+def _build_v8_features(
+    returns: pd.DataFrame,
+    base_config: dict,
+    candidate: dict,
+) -> pd.DataFrame:
+    """Build guarded current-window V8 EWMA plus real GARCH features."""
+    features_config = _feature_config("v8", candidate)
+    features, diagnostics = build_features_v8(
+        returns=returns,
+        market_asset=features_config.get("market_asset", "SPY"),
+        short_window=features_config.get("short_window", 4),
+        long_window=features_config.get("long_window", 12),
+        ewma_span=features_config.get("ewma_span", 12),
+        ewma_lambda=features_config.get("ewma_lambda", 0.94),
+        garch_include_relative=features_config.get("garch_include_relative", True),
+        garch_periods_per_year=features_config.get("garch_periods_per_year", 52),
+        garch_mode=features_config.get("garch_mode", GARCH_MODE_ROLLING_FITTED),
+        garch_min_history=features_config.get("garch_min_history", 104),
+        garch_window=features_config.get("garch_window", 156),
+        garch_annualize=features_config.get("garch_annualize", False),
+        garch_exclude_cash=features_config.get("garch_exclude_cash", True),
+        garch_fallback=features_config.get("garch_fallback", GARCH_FALLBACK_ROLLING_REALIZED),
+        return_diagnostics=True,
+    )
+    _validate_v4_garch_diagnostics(
+        diagnostics=diagnostics["garch"],
+        candidate=candidate,
+    )
+    _validate_v8_feature_alignment(
+        returns=returns,
+        features=features,
+        exclude_cash=features_config.get("garch_exclude_cash", True),
+    )
+    return features
+
+
 def _validate_v4_garch_diagnostics(
     diagnostics: pd.DataFrame,
     candidate: dict,
@@ -525,6 +672,61 @@ def _validate_v4_feature_alignment(
         raise ValueError("V4 aligned features contain missing values.")
 
 
+def _validate_v8_feature_alignment(
+    returns: pd.DataFrame,
+    features: pd.DataFrame,
+    exclude_cash: bool,
+) -> None:
+    if features.index.max() > returns.index.max():
+        raise ValueError("V8 feature dates overrun returns dates.")
+    ewma_columns = [
+        column
+        for column in features.columns
+        if isinstance(column, str) and column.startswith("ewma_vol_")
+    ]
+    garch_columns = [
+        column
+        for column in features.columns
+        if isinstance(column, str) and column.startswith("garch_vol_")
+    ]
+    comparison_columns = [
+        column
+        for column in features.columns
+        if isinstance(column, str)
+        and (
+            column.startswith("garch_minus_ewma_vol_")
+            or column.startswith("garch_to_ewma_vol_ratio_")
+        )
+    ]
+    if not ewma_columns:
+        raise ValueError("V8_ewma_garch_vol_current produced no EWMA volatility columns.")
+    if not garch_columns:
+        raise ValueError("V8_ewma_garch_vol_current produced no GARCH volatility columns.")
+    if not comparison_columns:
+        raise ValueError("V8_ewma_garch_vol_current produced no comparison columns.")
+    if exclude_cash:
+        cash_columns = [
+            column
+            for column in ewma_columns + garch_columns + comparison_columns
+            if column.endswith("_CASH") or "_CASH_" in column or column.endswith("CASH")
+        ]
+        if cash_columns:
+            raise ValueError(
+                "V8_ewma_garch_vol_current produced CASH volatility columns while "
+                f"CASH exclusion is enabled: {cash_columns}"
+            )
+
+    shifted_features = features.shift(1).dropna()
+    aligned_index = returns.index[returns.index.isin(shifted_features.index)]
+    aligned_features = shifted_features.loc[aligned_index]
+    if aligned_features.empty:
+        raise ValueError("V8 aligned features are empty after one-period shift.")
+    if aligned_features.index.max() > returns.index.max():
+        raise ValueError("V8 aligned feature dates overrun returns dates.")
+    if aligned_features.isna().any().any():
+        raise ValueError("V8 aligned features contain missing values.")
+
+
 def _candidate_raw_features(candidate: dict, context: dict[str, Any]) -> pd.DataFrame:
     feature_version = candidate["feature_version"]
     if feature_version == "v2":
@@ -533,6 +735,10 @@ def _candidate_raw_features(candidate: dict, context: dict[str, Any]) -> pd.Data
         return context["v3_features"]
     if feature_version == "v4":
         return context["v4_features"]
+    if feature_version == "v7":
+        return context["v7_features"]
+    if feature_version == "v8":
+        return context["v8_features"]
     if feature_version == "v6":
         return context["v6_features"]
     if feature_version == "v5":
@@ -630,6 +836,49 @@ def _feature_config(version: str, candidate: dict | None = None) -> dict:
             "long_window": 12,
             "ewma_span": 12,
             "include_garch_features": True,
+            "garch_include_relative": True,
+            "garch_mode": candidate.get("garch_mode", GARCH_MODE_ROLLING_FITTED),
+            "garch_min_history": candidate.get("garch_min_history", 104),
+            "garch_window": candidate.get("garch_window", 156),
+            "garch_periods_per_year": candidate.get("garch_periods_per_year", 52),
+            "garch_annualize": candidate.get("garch_annualize", False),
+            "garch_exclude_cash": candidate.get("garch_exclude_cash", True),
+            "garch_fallback": candidate.get(
+                "garch_fallback",
+                GARCH_FALLBACK_ROLLING_REALIZED,
+            ),
+        }
+    if version == "v7":
+        candidate = {} if candidate is None else candidate
+        return {
+            "version": "v7",
+            "market_asset": "SPY",
+            "short_window": 4,
+            "long_window": 12,
+            "ewma_span": 12,
+            "macro_path": candidate.get("macro_path", DEFAULT_V3_MACRO_PATH),
+            "macro_date_column": candidate.get("macro_date_column", "date"),
+            "garch_include_relative": True,
+            "garch_mode": candidate.get("garch_mode", GARCH_MODE_ROLLING_FITTED),
+            "garch_min_history": candidate.get("garch_min_history", 104),
+            "garch_window": candidate.get("garch_window", 156),
+            "garch_periods_per_year": candidate.get("garch_periods_per_year", 52),
+            "garch_annualize": candidate.get("garch_annualize", False),
+            "garch_exclude_cash": candidate.get("garch_exclude_cash", True),
+            "garch_fallback": candidate.get(
+                "garch_fallback",
+                GARCH_FALLBACK_ROLLING_REALIZED,
+            ),
+        }
+    if version == "v8":
+        candidate = {} if candidate is None else candidate
+        return {
+            "version": "v8",
+            "market_asset": "SPY",
+            "short_window": 4,
+            "long_window": 12,
+            "ewma_span": 12,
+            "ewma_lambda": candidate.get("ewma_lambda", 0.94),
             "garch_include_relative": True,
             "garch_mode": candidate.get("garch_mode", GARCH_MODE_ROLLING_FITTED),
             "garch_min_history": candidate.get("garch_min_history", 104),

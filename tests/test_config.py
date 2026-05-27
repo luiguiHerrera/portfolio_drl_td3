@@ -609,6 +609,54 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded_config["features"]["version"], "v6")
 
+    def test_load_config_accepts_valid_v7_features_section(self):
+        config = _valid_config()
+        config["features"] = {
+            "version": "v7",
+            "market_asset": "SPY",
+            "short_window": 4,
+            "long_window": 12,
+            "ewma_span": 12,
+            "macro_path": "data/processed/macro_weekly_latest.csv",
+            "macro_date_column": "date",
+            "garch_include_relative": True,
+            "garch_mode": "rolling_fitted",
+            "garch_min_history": 104,
+            "garch_window": 156,
+            "garch_annualize": False,
+            "garch_exclude_cash": True,
+            "garch_fallback": "rolling_realized_vol",
+        }
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["features"]["version"], "v7")
+
+    def test_load_config_accepts_valid_v8_features_section(self):
+        config = _valid_config()
+        config["features"] = {
+            "version": "v8",
+            "market_asset": "SPY",
+            "short_window": 4,
+            "long_window": 12,
+            "ewma_span": 12,
+            "ewma_lambda": 0.94,
+            "garch_include_relative": True,
+            "garch_mode": "rolling_fitted",
+            "garch_min_history": 104,
+            "garch_window": 156,
+            "garch_annualize": False,
+            "garch_exclude_cash": True,
+            "garch_fallback": "rolling_realized_vol",
+        }
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["features"]["version"], "v8")
+        self.assertEqual(loaded_config["features"]["ewma_lambda"], 0.94)
+
     def test_load_config_accepts_v3_macro_path_and_macro_date_column(self):
         config = _valid_config()
         config["features"] = {
@@ -656,7 +704,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_load_config_rejects_unsupported_feature_version(self):
         config = _valid_config()
-        config["features"] = {"version": "v7"}
+        config["features"] = {"version": "v9"}
 
         with self._temporary_config(config) as config_path:
             with self.assertRaisesRegex(ValueError, "features.version"):
@@ -714,6 +762,22 @@ class ConfigTests(unittest.TestCase):
             {"version": "v6", "zscore_window": 1},
             {"version": "v6", "short_window": 12, "medium_window": 4},
             {"version": "v6", "medium_window": 26, "long_window": 12},
+        )
+
+        for features in invalid_feature_sections:
+            config = _valid_config()
+            config["features"] = features
+            with self.subTest(features=features):
+                with self._temporary_config(config) as config_path:
+                    with self.assertRaises(ValueError):
+                        load_config(str(config_path))
+
+    def test_load_config_rejects_invalid_v8_ewma_lambda(self):
+        invalid_feature_sections = (
+            {"version": "v8", "ewma_lambda": 0.0},
+            {"version": "v8", "ewma_lambda": 1.0},
+            {"version": "v8", "ewma_lambda": True},
+            {"version": "v8", "ewma_lambda": "0.94"},
         )
 
         for features in invalid_feature_sections:

@@ -207,9 +207,9 @@ def _validate_features(config: dict) -> None:
         raise ValueError("Config field features must be a mapping.")
 
     version = features.get("version", "v1")
-    if version not in {"v1", "v2", "v3", "v4", "v5", "v6"}:
+    if version not in {"v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8"}:
         raise ValueError(
-            "Config field features.version must be one of: v1, v2, v3, v4, v5, v6."
+            "Config field features.version must be one of: v1, v2, v3, v4, v5, v6, v7, v8."
         )
     if version == "v1":
         return
@@ -234,7 +234,7 @@ def _validate_features(config: dict) -> None:
             "Config field features.long_window must be greater than or equal to "
             "features.short_window."
         )
-    if version == "v3":
+    if version in {"v3", "v7"}:
         macro_path = features.get("macro_path")
         macro_date_column = features.get("macro_date_column")
         if macro_path is not None and (
@@ -247,8 +247,14 @@ def _validate_features(config: dict) -> None:
             raise ValueError(
                 "Config field features.macro_date_column must be a non-empty string."
             )
-    if version == "v4":
+    if version in {"v4", "v7", "v8"}:
         _validate_v4_garch_feature_config(features)
+    if version == "v8":
+        ewma_lambda = features.get("ewma_lambda", 0.94)
+        if not _is_number(ewma_lambda) or ewma_lambda <= 0.0 or ewma_lambda >= 1.0:
+            raise ValueError(
+                "Config field features.ewma_lambda must be numeric and in the range (0, 1)."
+            )
     if version == "v5":
         _validate_v5_regime_feature_config(features)
 

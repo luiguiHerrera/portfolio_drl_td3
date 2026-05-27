@@ -66,6 +66,7 @@ OUTPUT_DIR = "outputs/tables/protocol_pure_td3_revalidation_30ep_5seeds"
 TIMING_CONVENTION = "information through t-1, weights for t, realized return at t"
 DSR_METHOD = "median_run -> date_averaged -> pooled -> fallback_from_sharpe"
 DEFAULT_V3_MACRO_PATH = "data/processed/macro_weekly_latest.csv"
+DEFAULT_V3_REALTIME_MACRO_PATH = "data/processed/macro_weekly_realtime_latest.csv"
 
 PROTOCOL_CANDIDATES = [
     {
@@ -87,6 +88,22 @@ PROTOCOL_CANDIDATES = [
         "default_enabled": False,
         "macro_path": DEFAULT_V3_MACRO_PATH,
         "macro_date_column": "date",
+        "exclude_blocks": [],
+        "use_dynamic_cash": False,
+        "cash_risk_off_column": None,
+    },
+    {
+        "name": "V3_real_macro_vintage",
+        "feature_version": "v3",
+        "description": (
+            "V2 plus real-time/as-of macro features. Uses FRED as-of vintage "
+            "data where available, with an explicit DXY fallback documented "
+            "in the macro validation report."
+        ),
+        "default_enabled": False,
+        "macro_path": DEFAULT_V3_REALTIME_MACRO_PATH,
+        "macro_date_column": "date",
+        "macro_source": "realtime_asof_with_dxy_fallback",
         "exclude_blocks": [],
         "use_dynamic_cash": False,
         "cash_risk_off_column": None,
@@ -411,7 +428,7 @@ def _build_v3_features(
     features_config = _feature_config("v3", candidate)
     macro_path = features_config.get("macro_path")
     if not macro_path:
-        raise ValueError("V3_real_macro_current requires features.macro_path.")
+        raise ValueError(f"{candidate.get('name', 'V3 candidate')} requires features.macro_path.")
     if not Path(macro_path).exists():
         raise FileNotFoundError(f"V3 macro path does not exist: {macro_path}")
 
@@ -449,7 +466,7 @@ def _validate_v3_feature_alignment(
         if isinstance(column, str) and column.startswith("macro_")
     ]
     if not macro_columns:
-        raise ValueError("V3_real_macro_current produced no macro feature columns.")
+        raise ValueError("V3 candidate produced no macro feature columns.")
     if features.index.max() > returns.index.max():
         raise ValueError("V3 feature dates overrun returns dates.")
 

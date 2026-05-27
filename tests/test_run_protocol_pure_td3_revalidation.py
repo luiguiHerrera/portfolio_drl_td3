@@ -9,6 +9,7 @@ import pandas as pd
 
 from src.experiments.run_protocol_pure_td3_revalidation import (
     DEFAULT_V3_MACRO_PATH,
+    DEFAULT_V3_REALTIME_MACRO_PATH,
     PROTOCOL_CANDIDATES,
     _build_candidate_run_config,
     _build_v3_features,
@@ -142,6 +143,16 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
         self.assertIn("V5_no_volatility_block", default_names)
         self.assertIn("V6_financial_state", default_names)
         self.assertEqual(explicit_names, {"V3_real_macro_current"})
+
+    def test_v3_vintage_candidate_is_available_but_not_default_enabled(self):
+        default_names = {candidate["name"] for candidate in _select_candidates(None)}
+        explicit_names = {
+            candidate["name"]
+            for candidate in _select_candidates(["V3_real_macro_vintage"])
+        }
+
+        self.assertNotIn("V3_real_macro_vintage", default_names)
+        self.assertEqual(explicit_names, {"V3_real_macro_vintage"})
 
     def test_v4_candidate_is_available_but_not_default_enabled(self):
         default_names = {candidate["name"] for candidate in _select_candidates(None)}
@@ -360,6 +371,28 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
 
         self.assertTrue(any(column.startswith("macro_") for column in features.columns))
         self.assertIs(_candidate_raw_features(candidate, {"v3_features": features}), features)
+
+    def test_v3_vintage_candidate_config_uses_realtime_macro_path(self):
+        base_config = self._base_config()
+        candidate = _candidate("V3_real_macro_vintage")
+
+        config = _build_candidate_run_config(
+            base_config=base_config,
+            candidate=candidate,
+            seed=7,
+            episodes=5,
+            batch_size=32,
+            actor_learning_rate=0.0005,
+            critic_learning_rate=0.0005,
+        )
+
+        self.assertEqual(config["features"]["version"], "v3")
+        self.assertEqual(config["features"]["macro_path"], DEFAULT_V3_REALTIME_MACRO_PATH)
+        self.assertEqual(config["features"]["macro_date_column"], "date")
+        self.assertEqual(
+            candidate["macro_source"],
+            "realtime_asof_with_dxy_fallback",
+        )
 
     def test_v3_missing_macro_path_raises_error(self):
         candidate = {

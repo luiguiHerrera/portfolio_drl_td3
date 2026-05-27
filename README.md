@@ -1,10 +1,36 @@
 # Portfolio DRL TD3
 
-Research code for dynamic portfolio allocation with **Twin Delayed Deep Deterministic Policy Gradient (TD3)**.
+Dynamic portfolio allocation with **Twin Delayed Deep Deterministic Policy Gradient (TD3)**.
 
-This project is part of my Master's thesis work in quantitative finance. The goal is not to sell a trading bot or overfit a pretty backtest. The goal is to test, under a reproducible protocol, whether a continuous-action reinforcement learning agent can produce useful portfolio allocation decisions once realistic constraints, transaction costs, drawdown behavior, and benchmark comparisons are taken seriously.
+This repository is part of my Master's thesis work in quantitative finance. The goal is not to build a “magic trading bot”. The real goal is more serious:
 
-## Core idea
+> Test whether a continuous-action reinforcement learning agent can learn useful portfolio allocation policies once realistic constraints, transaction costs, drawdown behavior, benchmark comparison, statistical uncertainty, and regime sensitivity are taken seriously.
+
+The main finding so far is not “TD3 beats everything”.
+
+It is this:
+
+> Unconstrained TD3 tends to collapse into concentrated, fragile allocation policies. When the action space is economically constrained, especially through max-weight caps, TD3 becomes much more stable and competitive under mandate-aware evaluation.
+
+That is the research story.
+
+## Why this project exists
+
+A lot of DRL portfolio allocation work looks good until you ask uncomfortable questions:
+
+- What happens after transaction costs?
+- What happens under drawdown constraints?
+- Is the agent just concentrating into one asset?
+- Does it beat simple benchmarks?
+- Does it survive different regimes?
+- Is the result statistically clear, or just a lucky backtest?
+- Would anyone with real money accept the risk profile?
+
+This project is built around those questions.
+
+The uncomfortable answers are part of the work.
+
+## Asset universe
 
 The agent allocates weekly across:
 
@@ -16,27 +42,32 @@ The agent allocates weekly across:
 
 The portfolio is long-only and fully invested. The actor outputs portfolio weights through a softmax layer.
 
-At each decision date, the model observes state variables available up to the previous period and chooses weights for the next return period. Features are shifted to reduce look-ahead risk, and feature normalization is fitted only on the training window.
+At each decision date, the model observes features available up to the previous period and chooses the allocation for the next return period. Features are shifted to reduce look-ahead risk, and normalization is fitted only on the training window.
 
-## What this repository contains
+## What is inside
 
 ### TD3 portfolio engine
 
 - PyTorch actor and twin-critic networks
-- Replay buffer
-- TD3 target networks, delayed policy updates, and target policy smoothing
-- Portfolio environment with transaction costs, turnover, drawdown, concentration, and cash diagnostics
-- Weekly train / validation / test workflow
-- Walk-forward style protocol revalidation
+- Replay buffer with explicit seed control
+- TD3 target networks
+- delayed policy updates
+- target policy smoothing
+- portfolio environment with transaction costs, turnover, drawdown, cash and concentration diagnostics
+- weekly train / validation / test workflow
+- multi-fold, multi-seed protocol revalidation
 
-### Feature sets
+### Feature candidates
 
-The project is versioned by feature candidates:
+The project is structured around candidate feature sets:
 
-- `V2_reference_full`: return, momentum, volatility, and regime-style features
+- `V2_reference_full`: base return, momentum, volatility, and regime-style features
 - `V3_real_macro_current`: V2 plus local macro features
+- `V4_real_garch_current`: V2 plus real rolling fitted GARCH volatility forecasts
 - `V5_no_volatility_block`: ablation candidate without the volatility block
 - `V6_financial_state`: financial-state candidate with cash/risk-off structure
+- `V7_real_macro_garch_current`: macro + real GARCH combined
+- `V8_ewma_garch_vol_current`: GARCH + EWMA volatility state
 
 V3 uses local macro data only. Macro data is prepared outside training and loaded from a processed CSV. No macro download happens during training or evaluation.
 
@@ -50,29 +81,36 @@ Current V3 macro variables:
 
 Important caveat: the macro dataset uses current-vintage data and a conservative CPI lag approximation. It is not yet a full real-time vintage or release-calendar macro database.
 
-### Benchmarks
+V4 uses real rolling fitted GARCH forecasts:
 
-The agent is compared against both simple and dynamic baselines, including:
+- backend: `arch_model`
+- model: zero-mean normal GARCH(1,1)
+- forecast horizon: 1 week
+- timing: forecast at date `t` uses returns through `t-1`
+- CASH is excluded from fitted GARCH volatility features
+- fallback is used only for insufficient-history warmup periods
 
-- Buy-and-hold assets
-- Equal weight
+## Benchmarks
+
+The agent is compared against simple and dynamic baselines, including:
+
+- buy-and-hold assets
+- equal weight
 - 60/40 SPY/TLT
-- Momentum winner
-- Risk-adjusted momentum winner
+- momentum winner
+- risk-adjusted momentum winner
 - SPY/CASH trend following
-- Defensive risk-off rule
-- Rolling inverse-volatility risk parity
-- Rolling constrained Markowitz variants
+- defensive risk-off rule
+- rolling inverse-volatility risk parity
+- rolling constrained Markowitz variants
 
-This is intentional. TD3 should not be compared only against decorative benchmarks. If a simple rule beats the agent, the simple rule wins. No drama.
+This is intentional. TD3 should not be compared against decorative benchmarks. If a simple rule beats the agent, the simple rule wins. No drama.
 
-## Evaluation philosophy
+## Evaluation layers
 
-The project separates two evaluation layers.
+### 1. Standard performance metrics
 
-### 1. Performance-oriented evaluation
-
-Metrics include:
+The project reports:
 
 - cumulative return
 - annualized return
@@ -87,55 +125,135 @@ Metrics include:
 - average max weight
 - cash exposure
 
-The project also reports a robust score using risk-adjusted and stability-oriented components.
+### 2. Robust score
 
-### 2. Mandate-aware evaluation
+The robust score combines risk-adjusted performance, drawdown behavior, stability and discipline-oriented metrics.
 
-Pure performance is not enough. A portfolio can look good while being unusable for a real mandate.
+It is useful for ranking, but it is not treated as divine truth. It is a scoring layer, not a law of physics.
 
-The mandate-aware layer penalizes strategies that require excessive drawdown recovery or fail drawdown eligibility. This helps distinguish between:
+### 3. Mandate-aware score
 
-- aggressive strategies that win raw performance rankings but suffer very large drawdowns;
-- constrained strategies that may be more realistic for an investment mandate.
+Pure performance is not enough. A strategy can look great and still be unusable.
+
+The mandate-aware layer penalizes strategies that require excessive drawdown recovery or fail drawdown eligibility. It helps separate:
+
+- aggressive strategies with high raw performance but unacceptable drawdowns
+- constrained strategies with more realistic risk behavior
+
+The key idea:
+
+> The max-weight cap acts as an economic regularizer on the action space.
+
+That turned out to be one of the most important insights of the project.
+
+### 4. Statistical validation
+
+The project includes a reporting-only statistical validation layer based on available return histories.
+
+This layer estimates confidence intervals and paired bootstrap comparisons against clean benchmarks such as:
+
+- `BuyHold_GLD`
+- `trend_spy_cash_12p`
+
+Current statistical validation does not support a strong claim that V3/V4 are statistically superior in Sharpe to the strongest clean benchmarks.
+
+That matters.
+
+The correct conclusion is:
+
+> Constrained TD3 is economically and behaviorally promising, but Sharpe superiority is statistically uncertain.
+
+That is not a failure. That is honest research.
+
+### 5. Regime analysis
+
+The project also includes regime analysis.
+
+The goal is to understand when constrained TD3 works, when it does not, and whether the behavior makes economic sense.
+
+Current regime analysis shows:
+
+- constrained TD3 is regime-sensitive
+- V3 and V4 are competitive in several out-of-sample slices
+- clean benchmarks still lead important regimes
+- no strategy dominates everywhere
+
+Again: good. Suspiciously perfect results should not be a flex.
 
 ## Current research status
 
-The most important result so far:
+The strongest current constrained TD3 candidates are:
 
-> Unconstrained TD3 does not dominate the benchmark suite.
+- `V3_cap_0.60`: best TD3 candidate by mandate-aware score
+- `V4_cap_0.50`: best TD3 candidate by robust score
+- `V7_cap_0.50`: improves materially with a cap, but does not beat V3/V4
+- `V8_cap_0.50`: improves materially with a cap, but does not beat V3/V4
 
-That was uncomfortable, but useful.
+Current top mandate-aware ranking from the final constrained report:
 
-The unconstrained TD3 policies often learned extreme concentration, behaving almost like single-asset selectors. Because of that, the project added controlled max-weight constraint experiments.
+1. `V3_cap_0.60`
+2. `V4_cap_0.50`
+3. `V7_cap_0.50`
+4. `V6_cap_0.50`
+5. `V2_cap_0.50`
+6. `V8_cap_0.50`
+7. `V5_cap_0.70`
+8. `BuyHold_GLD`
 
-The stronger current finding is:
+The important result is not that TD3 wins everything.
 
-> TD3 with a max-weight allocation constraint becomes materially more competitive under mandate-aware evaluation.
+It does not.
 
-Recent cap sensitivity experiments suggest that the benefit does not come from one magical cap value. The best cap is candidate-sensitive.
+The stronger result is:
 
-Examples from the current experimental path:
+> Unconstrained TD3 is fragile and tends to concentrate. Constrained TD3, especially with macro or GARCH-based state variables, becomes competitive under a mandate-aware evaluation framework.
 
-- `V2` improved most with a stricter cap around `0.50`
-- `V5` improved most around `0.70`
-- `V6` improved most around `0.50`
-- `V3_real_macro_current` became much more interesting once tested with a cap, especially around `0.50`
+## What the experiments taught me
 
-The latest V3 capped result is promising, but still under audit because the uncapped V3 baseline differs between runner paths. Until that consistency check is closed, I treat the result as promising, not final.
+### 1. Concentration was the structural problem
 
-That is the tone of the whole project: useful evidence, but no victory lap before the checks pass.
+Unconstrained TD3 often learned near single-asset behavior.
 
-## Main lesson so far
+That looked like intelligence at first glance, but it was mostly fragility: high concentration, unstable drawdowns, and questionable policy behavior.
 
-The contribution is not:
+### 2. Max-weight caps changed the game
 
-> "TD3 magically beats everything."
+The cap experiments were not cosmetic. They materially improved:
 
-The more honest claim is:
+- drawdown behavior
+- turnover
+- effective number of assets
+- mandate-aware score
+- robustness of the allocation behavior
 
-> Unconstrained TD3 is fragile and tends to concentrate. However, when realistic portfolio constraints are added, TD3 becomes a much more credible allocation framework and can become competitive against clean mandate-aware benchmarks.
+### 3. Econometric features help only after the action space is controlled
 
-This is closer to how an actual investment process should be tested.
+Macro and GARCH features became much more interesting once the allocation problem was constrained.
+
+Without the cap, the agent often remained fragile.
+
+### 4. More features do not automatically mean better policy
+
+V7 and V8 are useful negative results.
+
+- V7 combined macro + GARCH
+- V8 combined GARCH + EWMA volatility
+
+Both improved with caps, but neither beat the simpler V3/V4 constrained candidates.
+
+That is valuable. It prevents the project from becoming feature soup.
+
+### 5. Benchmarks are still hard to beat
+
+Simple and dynamic benchmarks remain strong. That is finance.
+
+The thesis is not:
+
+> “TD3 destroys benchmarks.”
+
+The thesis is closer to:
+
+> “Realistic constraints can turn fragile DRL portfolio policies into economically competitive allocation rules, but superiority depends on regime, benchmark, and statistical uncertainty.”
 
 ## Repository structure
 
@@ -145,7 +263,7 @@ This is closer to how an actual investment process should be tested.
     ├── notebooks/        # exploratory notebooks
     ├── scripts/          # standalone data acquisition / preparation scripts
     ├── src/
-    │   ├── analysis/     # reports, audits, sensitivity analysis
+    │   ├── analysis/     # reports, audits, validation, figures
     │   ├── backtest/     # benchmark and allocation logic
     │   ├── data/         # data loading and feature engineering
     │   ├── env/          # portfolio environment
@@ -158,7 +276,7 @@ This is closer to how an actual investment process should be tested.
     ├── requirements.txt
     └── README.md
 
-Generated data, outputs, logs, and model artifacts are excluded from version control by default.
+Generated data, outputs, logs and model artifacts are excluded from version control by default.
 
 ## Running the project
 
@@ -170,11 +288,11 @@ Create and activate a virtual environment:
 
 Run the test suite:
 
-    python3 -m unittest discover tests
+    .venv/bin/python -m unittest discover tests
 
 Run a protocol TD3 revalidation example:
 
-    python3 -m src.experiments.run_protocol_pure_td3_revalidation \
+    .venv/bin/python -m src.experiments.run_protocol_pure_td3_revalidation \
       --returns-path data/processed/returns_weekly_latest.csv \
       --episodes 60 \
       --seeds 7,21,42,84,101,123,202,303,404,505 \
@@ -182,39 +300,71 @@ Run a protocol TD3 revalidation example:
 
 Run a selected candidate only:
 
-    python3 -m src.experiments.run_protocol_pure_td3_revalidation \
+    .venv/bin/python -m src.experiments.run_protocol_pure_td3_revalidation \
       --returns-path data/processed/returns_weekly_latest.csv \
       --episodes 60 \
       --seeds 7,21,42,84,101,123,202,303,404,505 \
-      --candidates V3_real_macro_current \
-      --output-dir outputs/tables/protocol_v3_real_macro_current
+      --candidates V4_real_garch_current \
+      --output-dir outputs/tables/protocol_v4_real_garch_current
 
 Run cap sensitivity:
 
-    python3 -m src.experiments.run_cap_sensitivity_experiment \
+    .venv/bin/python -m src.experiments.run_cap_sensitivity_experiment \
       --returns-path data/processed/returns_weekly_latest.csv \
       --output-dir outputs/tables/cap_sensitivity_experiment \
-      --candidates V2_reference_full,V5_no_volatility_block,V6_financial_state \
+      --candidates V3_real_macro_current,V4_real_garch_current \
       --episodes 60 \
       --seeds 7,21,42,84,101,123,202,303,404,505 \
       --max-weight-grid uncapped,0.50,0.60,0.70,0.80
 
+Build the final constrained report:
+
+    .venv/bin/python -m src.analysis.build_final_constrained_td3_report \
+      --cap-sensitivity-dir outputs/tables/cap_sensitivity_experiment_60ep_10seeds \
+      --v3-cap-sensitivity-dir outputs/tables/cap_sensitivity_experiment_v3_60ep_10seeds_seeded \
+      --v4-cap-sensitivity-dir outputs/tables/cap_sensitivity_experiment_v4_60ep_10seeds \
+      --v7-cap-sensitivity-dir outputs/tables/cap_sensitivity_experiment_v7_60ep_10seeds \
+      --v8-cap-sensitivity-dir outputs/tables/cap_sensitivity_experiment_v8_60ep_10seeds \
+      --benchmark-comparison-dir outputs/tables/capped_td3_protocol_comparison_60ep_10seeds_cap060 \
+      --output-dir outputs/tables/final_constrained_td3_report_with_v3_v4_v7_v8_60ep_10seeds
+
+Build statistical validation:
+
+    .venv/bin/python -m src.analysis.statistical_validation_report \
+      --final-report-dir outputs/tables/final_constrained_td3_report_with_v3_v4_v7_v8_60ep_10seeds \
+      --output-dir outputs/tables/statistical_validation_final_v3_v4
+
+Build regime analysis:
+
+    .venv/bin/python -m src.analysis.regime_analysis_report \
+      --final-report-dir outputs/tables/final_constrained_td3_report_with_v3_v4_v7_v8_60ep_10seeds \
+      --output-dir outputs/tables/regime_analysis_final_v3_v4
+
+Build final figures:
+
+    .venv/bin/python -m src.analysis.build_final_figures \
+      --final-report-dir outputs/tables/final_constrained_td3_report_with_v3_v4_v7_v8_60ep_10seeds \
+      --regime-analysis-dir outputs/tables/regime_analysis_final_v3_v4 \
+      --output-dir outputs/figures/final_v3_v4_v7_v8
+
 ## What I am testing
 
-The research question behind the code is simple:
+The research question behind the code is:
 
-> Can a TD3 agent learn a dynamic allocation policy that remains competitive once transaction costs, drawdowns, concentration, benchmark rules, and realistic mandate constraints are included?
+> Can a TD3 agent learn a dynamic allocation policy that remains competitive once transaction costs, drawdowns, concentration, benchmark rules, statistical uncertainty, regime sensitivity and realistic mandate constraints are included?
 
 The current answer is nuanced:
 
-- unconstrained TD3 is not enough;
-- simple benchmarks are very hard to beat;
-- max-weight constraints improve TD3 behavior substantially;
-- macro features may help, but only after the allocation problem is constrained;
-- final claims must be based on out-of-sample protocol comparisons, not isolated backtests.
+- unconstrained TD3 is not enough
+- simple benchmarks are very hard to beat
+- max-weight constraints improve TD3 behavior substantially
+- macro and GARCH features become useful mainly when the allocation problem is constrained
+- adding more features does not automatically improve policy quality
+- final claims must be based on out-of-sample protocol comparisons, not isolated backtests
+- statistical validation currently supports caution rather than strong superiority claims
 
 ## Academic disclaimer
 
 This repository is research code. It is not production trading software, financial advice, or an investment recommendation.
 
-Any empirical claim in this project must be supported by reproducible experiments, chronological out-of-sample testing, benchmark comparison, sensitivity analysis, and audit checks.
+Any empirical claim in this project must be supported by reproducible experiments, chronological out-of-sample testing, benchmark comparison, sensitivity analysis, statistical validation, regime analysis and audit checks.

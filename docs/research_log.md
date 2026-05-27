@@ -5494,3 +5494,103 @@ The central finding is:
 
 - `.venv/bin/python -m unittest tests/test_build_final_constrained_td3_report.py`: 34 OK
 - `.venv/bin/python -m unittest discover tests`: 1076 OK
+
+## Entry X — Regime Analysis for Final V3/V4 Constrained Candidates
+
+**Date:** 2026-05-26
+
+**Purpose:**  
+Evaluate whether the final constrained TD3 candidates behave differently across
+market regimes and calendar slices.
+
+The goal was not to prove universal dominance, but to understand where
+constrained TD3 is competitive, where it fails, and whether the behavior is
+economically interpretable.
+
+**Implementation:**  
+Added a reporting-only regime analysis layer.
+
+Created:
+
+- `src/analysis/regime_analysis_report.py`
+- `tests/test_regime_analysis_report.py`
+
+Output directory:
+
+- `outputs/tables/regime_analysis_final_v3_v4/`
+
+Output files:
+
+- `regime_strategy_metrics.csv`
+- `regime_strategy_rankings.csv`
+- `regime_pairwise_comparisons.csv`
+- `regime_winners_summary.csv`
+- `regime_analysis_metadata.json`
+- `regime_analysis_summary.md`
+
+**Histories:**  
+
+- 13 strategies loaded.
+- TD3 histories were date-averaged across available test fold/seed
+  `test_policy_history.csv` files.
+- Benchmark histories use single deterministic protocol histories.
+- No missing-history warnings.
+
+Loaded strategies include:
+
+- `V3_cap_0.60`
+- `V4_cap_0.50`
+- `V7_cap_0.50`
+- `V8_cap_0.50`
+- `V6_cap_0.50`
+- `V2_cap_0.50`
+- `V5_cap_0.70`
+- clean benchmarks
+
+**Main regime winners by mandate-style score:**  
+
+| Regime | Winner |
+|---|---|
+| COVID shock / recovery | `rolling_risk_parity_inverse_vol_12p` |
+| Post-COVID liquidity | `60_40_SPY_TLT` |
+| Inflation / hiking shock | `BuyHold_GLD` |
+| AI / risk-on recovery | `V4_cap_0.50` |
+| Recent / late test window | `rolling_markowitz_min_variance_52p` |
+| 2022 | `BuyHold_GLD` |
+| 2023 | `V4_cap_0.50` |
+| 2024 | `V2_cap_0.50` |
+| 2025 | `rolling_markowitz_min_variance_52p` |
+| 2026 YTD | `60_40_SPY_TLT` |
+
+**V3 versus V4:**  
+
+- `V4_cap_0.50` leads in the AI/risk-on recovery and 2023 slices.
+- `V3_cap_0.60` beats V4 in 2022, 2024, 2025, 2026 YTD, and the
+  recent/late test window by mandate-style delta.
+
+**Against clean benchmarks:**  
+
+- `V3_cap_0.60` beats `BuyHold_GLD` in 4 of 8 available slices.
+- `V4_cap_0.50` beats `BuyHold_GLD` in 3 of 8 available slices.
+- `V3_cap_0.60` beats `trend_spy_cash_12p` in 4 of 8 available slices.
+- `V4_cap_0.50` beats `trend_spy_cash_12p` in 5 of 8 available slices.
+
+**Important caveat:**  
+Early 2020/2021 comparisons are unavailable for TD3 because the current TD3
+histories are test-window outputs. Therefore, the COVID and post-COVID regime
+analysis is more informative for benchmarks than for the final TD3 candidates.
+
+**Interpretation:**  
+Constrained TD3 is regime-sensitive, not universally dominant. V3 and V4 are
+competitive in several out-of-sample slices, but clean benchmarks still lead
+important regimes, especially 2022, 2025, and 2026 YTD.
+
+This supports the cautious thesis claim:
+
+> constrained TD3 can become competitive under realistic allocation constraints,
+> but it does not uniformly dominate clean benchmarks across all regimes.
+
+**Tests:**  
+
+- `.venv/bin/python -m unittest tests/test_regime_analysis_report.py`: 7 OK
+- `.venv/bin/python -m unittest discover tests`: 1083 OK

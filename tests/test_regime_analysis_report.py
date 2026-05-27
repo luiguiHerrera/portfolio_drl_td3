@@ -1,0 +1,160 @@
+"""Tests for regime analysis reporting."""
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+import pandas as pd
+
+from src.analysis.regime_analysis_report import (
+    REGIME_DEFINITIONS,
+    build_regime_analysis_report,
+    build_regime_pairwise_comparisons,
+    build_regime_strategy_metrics,
+    calculate_max_drawdown,
+    calculate_return_metrics,
+    slice_returns,
+)
+
+
+class RegimeAnalysisReportTests(unittest.TestCase):
+    def test_regime_slicing_works_on_synthetic_dated_returns(self):
+        returns = self._series("2022-01-07", [0.01, 0.02, -0.01, 0.03])
+
+        sliced = slice_returns(returns, "2022-01-10", "2022-01-28")
+
+        self.assertEqual(len(sliced), 3)
+        self.assertEqual(sliced.index.min(), pd.Timestamp("2022-01-14"))
+        self.assertEqual(sliced.index.max(), pd.Timestamp("2022-01-28"))
+
+    def test_metrics_calculate_correctly(self):
+        returns = self._series("2022-01-07", [0.01, 0.02, -0.01])
+
+        metrics = calculate_return_metrics(returns)
+
+        self.assertEqual(metrics["n_observations"], 3)
+        self.assertAlmostEqual(metrics["cumulative_return"], (1.01 * 1.02 * 0.99) - 1.0)
+        self.assertAlmostEqual(metrics["hit_rate"], 2 / 3)
+        self.assertEqual(metrics["worst_period_return"], -0.01)
+
+    def test_max_drawdown_calculation_works(self):
+        returns = self._series("2022-01-07", [0.10, -0.20, 0.05])
+
+        max_drawdown = calculate_max_drawdown(returns)
+
+        self.assertAlmostEqual(max_drawdown, -0.20)
+
+    def test_pairwise_comparisons_work(self):
+        histories = {
+            "left": self._series("2022-01-07", ([0.02, -0.002] * 26)),
+            "right": self._series("2022-01-07", ([0.01, -0.004] * 26)),
+        }
+        metrics = build_regime_strategy_metrics(histories)
+
+        pairwise = build_regime_pairwise_comparisons(metrics, [("left", "right")])
+        available = pairwise[pairwise["comparison_available"] == True]
+
+        self.assertFalse(available.empty)
+        self.assertTrue(bool(available.iloc[0]["left_beats_right_by_sharpe"]))
+
+    def test_missing_histories_are_reported_as_warnings(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            final_dir = self._write_synthetic_report(temp_dir, include_v3_history=False)
+            output_dir = Path(temp_dir) / "out"
+
+            result = build_regime_analysis_report(
+                final_report_dir=str(final_dir),
+                output_dir=str(output_dir),
+            )
+
+        self.assertTrue(any("history" in warning.lower() for warning in result["warnings"]))
+
+    def test_summary_markdown_is_created(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            final_dir = self._write_synthetic_report(temp_dir)
+            output_dir = Path(temp_dir) / "out"
+
+            result = build_regime_analysis_report(
+                final_report_dir=str(final_dir),
+                output_dir=str(output_dir),
+            )
+
+            self.assertTrue(Path(result["paths"]["summary"]).exists())
+            self.assertIn("Regime Analysis Report", result["summary"])
+
+    def test_metadata_records_regime_definitions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            final_dir = self._write_synthetic_report(temp_dir)
+            output_dir = Path(temp_dir) / "out"
+
+            result = build_regime_analysis_report(
+                final_report_dir=str(final_dir),
+                output_dir=str(output_dir),
+            )
+            metadata = json.loads(Path(result["paths"]["metadata"]).read_text())
+
+        self.assertEqual(len(metadata["regimes"]), len(REGIME_DEFINITIONS))
+        self.assertEqual(metadata["history_policy"].split()[0], "TD3")
+
+    def _write_synthetic_report(
+        self,
+        temp_dir: str,
+        include_v3_history: bool = True,
+    ) -> Path:
+        root = Path(temp_dir)
+        final_dir = root / "final"
+        cap_dir = root / "cap"
+        bench_dir = root / "bench"
+        final_dir.mkdir()
+        (bench_dir / "benchmarks" / "histories").mkdir(parents=True)
+        selected = pd.DataFrame(
+            [
+                {
+                    "strategy_name": "V3_cap_0.60",
+                    "base_candidate": "V3_real_macro_current",
+                    "selected_cap": 0.60,
+                    "strategy_group": "td3_best_constrained",
+                }
+            ]
+        )
+        selected.to_csv(final_dir / "final_constrained_td3_selected_candidates.csv", index=False)
+        metadata = {
+            "v3_cap_sensitivity_dir": str(cap_dir),
+            "benchmark_comparison_dir": str(bench_dir),
+        }
+        (final_dir / "final_constrained_td3_metadata.json").write_text(
+            json.dumps(metadata),
+            encoding="utf-8",
+        )
+        if include_v3_history:
+            history_dir = (
+                cap_dir
+                / "per_candidate"
+                / "V3_real_macro_current"
+                / "F1_V3_real_macro_current_cap_0p60_seed_7"
+            )
+            history_dir.mkdir(parents=True)
+            self._history_frame("2022-01-07", [0.01] * 52).to_csv(
+                history_dir / "test_policy_history.csv",
+                index=False,
+            )
+        self._history_frame("2022-01-07", [0.005] * 52).to_csv(
+            bench_dir / "benchmarks" / "histories" / "BuyHold_GLD_history.csv",
+            index=False,
+        )
+        return final_dir
+
+    @staticmethod
+    def _series(start: str, values: list[float]) -> pd.Series:
+        index = pd.date_range(start, periods=len(values), freq="W-FRI")
+        return pd.Series(values, index=index, name="return")
+
+    @staticmethod
+    def _history_frame(start: str, values: list[float]) -> pd.DataFrame:
+        index = pd.date_range(start, periods=len(values), freq="W-FRI")
+        return pd.DataFrame({"date": index, "financial_net_return": values})
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -37,6 +37,13 @@ KEY_STRATEGIES = [
     "momentum_winner_12p",
 ]
 
+EFFECTIVE_ASSETS_KEY_STRATEGIES = [
+    "V3_cap_0.60",
+    "V4_cap_0.50",
+    "BuyHold_GLD",
+    "trend_spy_cash_12p",
+]
+
 HEATMAP_STRATEGIES = [
     "V3_cap_0.60",
     "V4_cap_0.50",
@@ -48,6 +55,13 @@ HEATMAP_STRATEGIES = [
     "rolling_markowitz_min_variance_52p",
     "60_40_SPY_TLT",
 ]
+
+SHORT_STRATEGY_LABELS = {
+    "rolling_risk_parity_inverse_vol_12p": "risk_parity",
+    "rolling_markowitz_min_variance_52p": "min_var",
+    "trend_spy_cash_12p": "trend_cash",
+    "60_40_SPY_TLT": "60/40",
+}
 
 FIGURE_FILENAMES = {
     "mandate_score_vs_max_drawdown": "mandate_score_vs_max_drawdown.png",
@@ -145,23 +159,32 @@ def plot_mandate_score_vs_max_drawdown(
         "mandate_score_vs_max_drawdown",
     )
     fig, ax = plt.subplots(figsize=(9, 6))
+    colors = _group_colors(plot_df["strategy_group"])
     for group, frame in plot_df.groupby("strategy_group", dropna=False):
         ax.scatter(
             frame["max_drawdown"],
             frame["mandate_aware_score"],
             label=str(group),
+            color=colors.get(str(group)),
             s=_point_sizes(frame),
             alpha=0.78,
             edgecolor="white",
             linewidth=0.6,
         )
-    _annotate_key_strategies(ax, plot_df, "max_drawdown", "mandate_aware_score")
+    _annotate_key_strategies(
+        ax,
+        plot_df,
+        "max_drawdown",
+        "mandate_aware_score",
+        labels=KEY_STRATEGIES,
+    )
     ax.axvline(-0.30, color="0.35", linestyle="--", linewidth=1.0, label="-30% threshold")
     ax.set_xlabel("Max drawdown")
     ax.set_ylabel("Mandate-aware score")
     ax.set_title("Mandate-Aware Score vs. Max Drawdown")
     ax.grid(True, alpha=0.25)
-    ax.legend(fontsize=8, loc="best")
+    _add_plot_margins(ax, plot_df["max_drawdown"], plot_df["mandate_aware_score"])
+    _legend_outside(ax)
     _save(fig, output_path)
 
 
@@ -192,13 +215,20 @@ def plot_robust_score_vs_max_drawdown(
             edgecolor="white",
             linewidth=0.6,
         )
-    _annotate_key_strategies(ax, plot_df, "max_drawdown", "robust_score")
+    _annotate_key_strategies(
+        ax,
+        plot_df,
+        "max_drawdown",
+        "robust_score",
+        labels=KEY_STRATEGIES,
+    )
     ax.axvline(-0.30, color="0.35", linestyle="--", linewidth=1.0, label="-30% threshold")
     ax.set_xlabel("Max drawdown")
     ax.set_ylabel("Robust score")
     ax.set_title("Robust Score vs. Max Drawdown")
     ax.grid(True, alpha=0.25)
-    ax.legend(fontsize=8, loc="best")
+    _add_plot_margins(ax, plot_df["max_drawdown"], plot_df["robust_score"])
+    _legend_outside(ax)
     _save(fig, output_path)
 
 
@@ -224,11 +254,13 @@ def plot_effective_assets_vs_mandate_score(
         "effective_assets_vs_mandate_score",
     )
     fig, ax = plt.subplots(figsize=(9, 6))
+    colors = _group_colors(plot_df["strategy_group"])
     for group, frame in plot_df.groupby("strategy_group", dropna=False):
         ax.scatter(
             frame["average_effective_number_of_assets"],
             frame["mandate_aware_score"],
             label=str(group),
+            color=colors.get(str(group)),
             s=_point_sizes(frame),
             alpha=0.78,
             edgecolor="white",
@@ -239,13 +271,18 @@ def plot_effective_assets_vs_mandate_score(
         plot_df,
         "average_effective_number_of_assets",
         "mandate_aware_score",
-        extra=("V2_cap_0.50", "V5_cap_0.70", "V6_cap_0.50", "V7_cap_0.50", "V8_cap_0.50"),
+        labels=EFFECTIVE_ASSETS_KEY_STRATEGIES,
     )
     ax.set_xlabel("Average effective number of assets")
     ax.set_ylabel("Mandate-aware score")
-    ax.set_title("Diversification vs. Mandate-Aware Score")
+    ax.set_title("Diversification and Mandate-Aware Quality")
     ax.grid(True, alpha=0.25)
-    ax.legend(fontsize=8, loc="best")
+    _add_plot_margins(
+        ax,
+        plot_df["average_effective_number_of_assets"],
+        plot_df["mandate_aware_score"],
+    )
+    _legend_outside(ax)
     _save(fig, output_path)
 
 
@@ -279,14 +316,30 @@ def plot_regime_mandate_heatmap(
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
     cmap = plt.cm.viridis.copy()
     cmap.set_bad(color="#eeeeee")
-    image = ax.imshow(pivot.to_numpy(dtype=float), aspect="auto", cmap=cmap)
+    matrix = np.ma.masked_invalid(pivot.to_numpy(dtype=float))
+    image = ax.imshow(matrix, aspect="auto", cmap=cmap)
     ax.set_xticks(np.arange(len(pivot.columns)))
-    ax.set_xticklabels(pivot.columns, rotation=35, ha="right", fontsize=8)
+    ax.set_xticklabels(
+        [_short_strategy_label(column) for column in pivot.columns],
+        rotation=35,
+        ha="right",
+        fontsize=8,
+    )
     ax.set_yticks(np.arange(len(pivot.index)))
     ax.set_yticklabels(pivot.index, fontsize=8)
     ax.set_title("Regime Mandate-Style Score Heatmap")
     cbar = fig.colorbar(image, ax=ax, fraction=0.035, pad=0.02)
     cbar.set_label(value_column)
+    ax.text(
+        0.0,
+        -0.18,
+        "Gray cells indicate unavailable histories.",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=8,
+        color="0.35",
+    )
     _save(fig, output_path)
 
 
@@ -308,7 +361,7 @@ def plot_regime_winners_bar(
     fig, ax = plt.subplots(figsize=(9, max(4, len(counts) * 0.45)))
     ax.barh(counts.index, counts.values, color="#4c78a8")
     ax.set_xlabel("Number of regime/calendar wins")
-    ax.set_title("Regime Wins by Mandate-Style Score")
+    ax.set_title("Regime Wins: No Universal Dominance")
     ax.grid(axis="x", alpha=0.25)
     for y_pos, value in enumerate(counts.values):
         ax.text(value + 0.03, y_pos, str(int(value)), va="center", fontsize=9)
@@ -339,6 +392,7 @@ def build_summary_markdown(metadata: dict[str, Any]) -> str:
                 "- The regime heatmap and winners bar emphasize that performance is "
                 "regime-dependent; no strategy dominates every regime."
             ),
+            "- Gray cells in the heatmap indicate unavailable histories, not zero scores.",
             "",
             "Warnings:",
             *([f"- {warning}" for warning in warnings] if warnings else ["- None."]),
@@ -404,20 +458,52 @@ def _annotate_key_strategies(
     df: pd.DataFrame,
     x_col: str,
     y_col: str,
-    extra: tuple[str, ...] = (),
+    labels: list[str],
 ) -> None:
-    labels = set(KEY_STRATEGIES).union(extra)
-    offsets = [(5, 5), (5, -12), (-45, 6), (-55, -12), (8, 12)]
-    label_df = df[df["strategy_name"].astype(str).isin(labels)].copy()
+    offsets = {
+        "V3_cap_0.60": (9, 10),
+        "V4_cap_0.50": (10, -16),
+        "BuyHold_GLD": (-86, 12),
+        "trend_spy_cash_12p": (8, -18),
+        "momentum_winner_12p": (-108, 10),
+    }
+    label_df = df[df["strategy_name"].astype(str).isin(set(labels))].copy()
     for index, (_, row) in enumerate(label_df.iterrows()):
+        name = str(row["strategy_name"])
         ax.annotate(
-            str(row["strategy_name"]),
+            name,
             (row[x_col], row[y_col]),
-            xytext=offsets[index % len(offsets)],
+            xytext=offsets.get(name, (8, 10 + (index % 3) * 6)),
             textcoords="offset points",
             fontsize=8,
+            ha="left" if offsets.get(name, (1, 0))[0] >= 0 else "right",
             arrowprops={"arrowstyle": "-", "linewidth": 0.4, "color": "0.35"},
         )
+
+
+def _add_plot_margins(ax: plt.Axes, x_values: pd.Series, y_values: pd.Series) -> None:
+    x_values = pd.to_numeric(x_values, errors="coerce").dropna()
+    y_values = pd.to_numeric(y_values, errors="coerce").dropna()
+    if not x_values.empty:
+        x_range = max(float(x_values.max() - x_values.min()), 0.01)
+        ax.set_xlim(float(x_values.min() - x_range * 0.10), float(x_values.max() + x_range * 0.18))
+    if not y_values.empty:
+        y_range = max(float(y_values.max() - y_values.min()), 0.01)
+        ax.set_ylim(float(y_values.min() - y_range * 0.12), float(y_values.max() + y_range * 0.18))
+
+
+def _legend_outside(ax: plt.Axes) -> None:
+    ax.legend(
+        fontsize=8,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+        frameon=True,
+    )
+
+
+def _short_strategy_label(strategy_name: str) -> str:
+    return SHORT_STRATEGY_LABELS.get(str(strategy_name), str(strategy_name))
 
 
 def _write_placeholder(output_path: Path, message: str) -> None:

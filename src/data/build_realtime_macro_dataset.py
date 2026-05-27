@@ -37,15 +37,55 @@ FRED_OPEN_END_DATE = "9999-12-31"
 class MacroSeriesConfig:
     output_name: str
     series_id: str
-    allow_current_vintage_fallback: bool = False
+    title: str
+    data_source: str
+    conceptual_role: str
+    frequency: str
+    note: str = ""
 
 
 SERIES_CONFIGS = (
-    MacroSeriesConfig("DGS10", "DGS10"),
-    MacroSeriesConfig("DGS2", "DGS2"),
-    MacroSeriesConfig("VIX", "VIXCLS"),
-    MacroSeriesConfig("DXY", "DTWEXBGS", allow_current_vintage_fallback=True),
-    MacroSeriesConfig("CPI", "CPIAUCSL"),
+    MacroSeriesConfig(
+        "DGS10",
+        "DGS10",
+        "10-Year Treasury Constant Maturity Rate",
+        "FRED/Federal Reserve H.15",
+        "long_rate",
+        "daily",
+    ),
+    MacroSeriesConfig(
+        "DGS2",
+        "DGS2",
+        "2-Year Treasury Constant Maturity Rate",
+        "FRED/Federal Reserve H.15",
+        "short_rate",
+        "daily",
+    ),
+    MacroSeriesConfig(
+        "VIX",
+        "VIXCLS",
+        "CBOE Volatility Index: VIX",
+        "FRED/CBOE",
+        "equity_volatility_proxy",
+        "daily",
+    ),
+    MacroSeriesConfig(
+        "DXY",
+        "DTWEXBGS",
+        "Nominal Broad U.S. Dollar Index",
+        "FRED/Federal Reserve H.10",
+        "dollar_strength_proxy",
+        "daily",
+        "This is not ICE DXY/USDX; it is the Fed nominal broad trade-weighted U.S. dollar index.",
+    ),
+    MacroSeriesConfig(
+        "CPI",
+        "CPIAUCSL",
+        "Consumer Price Index for All Urban Consumers: All Items in U.S. City Average",
+        "FRED/Bureau of Labor Statistics",
+        "inflation_proxy",
+        "monthly",
+    ),
 )
 
 
@@ -55,20 +95,42 @@ def build_realtime_macro_dataset(
     metadata_output: str = DEFAULT_METADATA_OUTPUT,
     raw_vintage_dir: str = DEFAULT_RAW_VINTAGE_DIR,
     api_key: str | None = None,
+    dollar_series_id: str | None = None,
+    dollar_column_name: str | None = None,
+    exclude_series: tuple[str, ...] | list[str] | None = None,
+    require_no_fallback: bool = False,
+    vintage_chunk_size: int = 50,
     verbose: bool = False,
 ) -> dict[str, Any]:
     """Build weekly macro values known as of each weekly return date."""
+    if vintage_chunk_size < 1:
+        raise ValueError("vintage_chunk_size must be >= 1.")
     returns = load_returns_csv(returns_path)
     weekly_dates = returns.index
     raw_dir = Path(raw_vintage_dir)
     api_key = api_key or os.environ.get("FRED_API_KEY")
+    series_configs = resolve_series_configs(
+        dollar_series_id=dollar_series_id,
+        dollar_column_name=dollar_column_name,
+        exclude_series=exclude_series,
+    )
 
     macro_columns: dict[str, pd.Series] = {}
     provenance_frames: list[pd.DataFrame] = []
     observation_start = str((weekly_dates.min() - pd.DateOffset(years=2)).date())
     observation_end = str(weekly_dates.max().date())
 
-    for config in SERIES_CONFIGS:
+    preflight_fred_vintage_coverage(
+        series_configs=series_configs,
+        api_key=api_key,
+        weekly_dates=weekly_dates,
+        observation_start=observation_start,
+        observation_end=observation_end,
+        raw_vintage_dir=raw_dir,
+        verbose=verbose,
+    )
+
+    for config in series_configs:
         if verbose:
             print(f"Building real-time macro series: {config.output_name} ({config.series_id})")
         local_path = raw_dir / f"{config.series_id}.csv"
@@ -90,23 +152,20 @@ def build_realtime_macro_dataset(
                     "observation_date/date, value, realtime_start, and "
                     "realtime_end columns in the raw vintage directory."
                 )
-            try:
-                selected = fetch_fred_weekly_asof_values(
-                    config=config,
-                    api_key=api_key,
-                    weekly_dates=weekly_dates,
-                    observation_start=observation_start,
-                )
-            except RuntimeError as exc:
-                if not config.allow_current_vintage_fallback:
-                    raise
-                selected = fetch_current_vintage_observation_asof_fallback(
-                    config=config,
-                    api_key=api_key,
-                    weekly_dates=weekly_dates,
-                    observation_start=observation_start,
-                    fallback_reason=str(exc),
-                )
+            selected = fetch_fred_weekly_asof_values(
+                config=config,
+                api_key=api_key,
+                weekly_dates=weekly_dates,
+                observation_start=observation_start,
+                vintage_chunk_size=vintage_chunk_size,
+                verbose=verbose,
+            )
+        validate_asof_endpoint_usability(
+            selected=selected,
+            config=config,
+            required_start=weekly_dates.min(),
+            required_end=weekly_dates.max(),
+        )
         macro_columns[config.output_name] = selected.set_index("date")["value"]
         provenance_frames.append(selected)
 
@@ -119,6 +178,17 @@ def build_realtime_macro_dataset(
         )
 
     provenance = pd.concat(provenance_frames, ignore_index=True)
+    if require_no_fallback:
+        fallback_count = int(provenance["fallback_used"].astype(bool).sum())
+        true_vintage_all = bool(
+            provenance["true_vintage_data_available"].astype(bool).all()
+        )
+        if fallback_count > 0 or not true_vintage_all:
+            raise ValueError(
+                "Real-time macro build requires true vintage data with no fallback, "
+                f"but found fallback rows={fallback_count}, "
+                f"true_vintage_all={true_vintage_all}."
+            )
 
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -135,6 +205,92 @@ def build_realtime_macro_dataset(
         "metadata_output": str(metadata_destination),
         "fred_api_key_found": bool(api_key),
     }
+
+
+def preflight_fred_vintage_coverage(
+    series_configs: tuple[MacroSeriesConfig, ...],
+    api_key: str | None,
+    weekly_dates: pd.DatetimeIndex,
+    observation_start: str,
+    observation_end: str,
+    raw_vintage_dir: Path,
+    verbose: bool = False,
+) -> None:
+    """Check online vintage coverage before downloading observations."""
+    if not api_key:
+        return
+    client = requests.Session()
+    for config in series_configs:
+        local_path = raw_vintage_dir / f"{config.series_id}.csv"
+        if local_path.exists():
+            continue
+        if verbose:
+            print(
+                f"Preflight vintage coverage: {config.output_name} ({config.series_id})",
+                flush=True,
+            )
+        vintage_dates = fetch_fred_vintage_dates(
+            series_id=config.series_id,
+            api_key=api_key,
+            observation_start=observation_start,
+            observation_end=observation_end,
+            session=client,
+        )
+        validate_vintage_coverage(
+            series_id=config.series_id,
+            vintage_dates=vintage_dates,
+            required_start=weekly_dates.min(),
+            required_end=weekly_dates.max(),
+        )
+
+
+def resolve_series_configs(
+    dollar_series_id: str | None = None,
+    dollar_column_name: str | None = None,
+    exclude_series: tuple[str, ...] | list[str] | None = None,
+) -> tuple[MacroSeriesConfig, ...]:
+    """Return macro series configs with an optional explicit dollar proxy."""
+    excluded = {str(value).strip() for value in (exclude_series or []) if str(value).strip()}
+    if dollar_series_id is None and dollar_column_name is None:
+        return tuple(
+            config
+            for config in SERIES_CONFIGS
+            if config.output_name not in excluded and config.series_id not in excluded
+        )
+    dollar_series_id = dollar_series_id or "DTWEXBGS"
+    dollar_column_name = dollar_column_name or "DXY"
+    if dollar_series_id != "DTWEXBGS":
+        raise ValueError(
+            "Only DTWEXBGS is currently supported as the real-time vintage "
+            "dollar-strength proxy."
+        )
+    if dollar_column_name != "DXY":
+        raise ValueError("The dollar-strength output column must remain DXY.")
+
+    configs = []
+    for config in SERIES_CONFIGS:
+        if config.output_name == "DXY":
+            configs.append(
+                MacroSeriesConfig(
+                    output_name=dollar_column_name,
+                    series_id=dollar_series_id,
+                    title="Nominal Broad U.S. Dollar Index",
+                    data_source="FRED/Federal Reserve H.10",
+                    conceptual_role="dollar_strength_proxy",
+                    frequency="daily",
+                    note=(
+                        "This is not ICE DXY/USDX; it is the Fed nominal broad "
+                        "trade-weighted U.S. dollar index."
+                    ),
+                )
+            )
+        else:
+            configs.append(config)
+    return tuple(
+        config
+        for config in configs
+        if config.output_name not in excluded and config.series_id not in excluded
+    )
 
 
 def load_or_fetch_vintage_records(
@@ -188,9 +344,9 @@ def fetch_fred_vintage_observations(
     if not vintage_dates:
         raise ValueError(f"FRED returned no vintage dates for {series_id}.")
 
-    frames: list[pd.DataFrame] = []
+    record_frames: list[pd.DataFrame] = []
     for vintage_chunk in _chunks(vintage_dates, 100):
-        frames.extend(
+        raw_frames = (
             _fetch_observation_chunk(
                 client=client,
                 series_id=series_id,
@@ -201,17 +357,20 @@ def fetch_fred_vintage_observations(
                 page_limit=page_limit,
             )
         )
+        if not raw_frames:
+            continue
+        raw_chunk = pd.concat(raw_frames, ignore_index=True)
+        if "realtime_start" not in raw_chunk.columns:
+            raw_chunk = normalize_fred_output_type2_wide(
+                raw_chunk,
+                series_id=series_id,
+                vintage_dates=vintage_chunk,
+            )
+        record_frames.append(normalize_vintage_records(raw_chunk, series_id))
 
-    if not frames:
+    if not record_frames:
         raise ValueError(f"FRED returned no vintage observations for {series_id}.")
-    raw_observations = pd.concat(frames, ignore_index=True)
-    if "realtime_start" not in raw_observations.columns:
-        raw_observations = normalize_fred_output_type2_wide(
-            raw_observations,
-            series_id=series_id,
-            vintage_dates=vintage_dates,
-        )
-    return normalize_vintage_records(raw_observations, series_id)
+    return pd.concat(record_frames, ignore_index=True)
 
 
 def fetch_fred_weekly_asof_values(
@@ -220,13 +379,38 @@ def fetch_fred_weekly_asof_values(
     weekly_dates: pd.DatetimeIndex,
     observation_start: str,
     session: requests.Session | None = None,
+    vintage_chunk_size: int = 50,
+    verbose: bool = False,
 ) -> pd.DataFrame:
     """Fetch latest observation known as of each weekly date using FRED realtime."""
+    if vintage_chunk_size < 1:
+        raise ValueError("vintage_chunk_size must be >= 1.")
     client = session or requests.Session()
     vintage_dates = [str(date.date()) for date in weekly_dates]
-    frames: list[pd.DataFrame] = []
-    for vintage_chunk in _chunks(vintage_dates, 50):
-        frames.extend(
+    available_vintage_dates = fetch_fred_vintage_dates(
+        series_id=config.series_id,
+        api_key=api_key,
+        observation_start=observation_start,
+        observation_end=str(weekly_dates.max().date()),
+        session=client,
+    )
+    validate_vintage_coverage(
+        series_id=config.series_id,
+        vintage_dates=available_vintage_dates,
+        required_start=weekly_dates.min(),
+        required_end=weekly_dates.max(),
+    )
+    record_frames: list[pd.DataFrame] = []
+    raw_row_count = 0
+    vintage_chunks = _chunks(vintage_dates, vintage_chunk_size)
+    for index, vintage_chunk in enumerate(vintage_chunks, start=1):
+        if verbose:
+            print(
+                f"  {config.output_name} ({config.series_id}) as-of chunk "
+                f"{index}/{len(vintage_chunks)}: {vintage_chunk[0]} to {vintage_chunk[-1]}",
+                flush=True,
+            )
+        raw_frames = (
             _fetch_observation_chunk(
                 client=client,
                 series_id=config.series_id,
@@ -237,124 +421,125 @@ def fetch_fred_weekly_asof_values(
                 page_limit=100000,
             )
         )
-    if not frames:
+        if not raw_frames:
+            continue
+        raw_chunk = pd.concat(raw_frames, ignore_index=True)
+        raw_row_count += len(raw_chunk)
+        chunk_records = normalize_fred_output_type2_wide(
+            raw_chunk,
+            series_id=config.series_id,
+            vintage_dates=vintage_chunk,
+        )
+        record_frames.append(normalize_vintage_records(chunk_records, config.series_id))
+    if not record_frames:
         raise ValueError(f"FRED returned no weekly as-of observations for {config.series_id}.")
-    raw = pd.concat(frames, ignore_index=True)
-    records = normalize_fred_output_type2_wide(
-        raw,
-        series_id=config.series_id,
-        vintage_dates=vintage_dates,
-    )
-    records = normalize_vintage_records(records, config.series_id)
-    return select_asof_weekly_values(records, weekly_dates, config, "fred_api_asof")
-
-
-def fetch_current_vintage_observation_asof_fallback(
-    config: MacroSeriesConfig,
-    api_key: str,
-    weekly_dates: pd.DatetimeIndex,
-    observation_start: str,
-    fallback_reason: str,
-    session: requests.Session | None = None,
-) -> pd.DataFrame:
-    """Fetch current-vintage observations and use observation dates only.
-
-    This is not true vintage data. It is used only for explicitly allowed
-    series that are unavailable in ALFRED. Metadata flags every row.
-    """
-    client = session or requests.Session()
-    raw = fetch_current_fred_observations(
-        config=config,
-        api_key=api_key,
-        observation_start=observation_start,
-        observation_end=str(weekly_dates.max().date()),
-        session=client,
-    )
-    series = raw.set_index("observation_date")["value"].sort_index()
-    rows: list[dict[str, Any]] = []
-    for date in weekly_dates:
-        available = series.loc[series.index <= date]
-        if available.empty:
-            value = pd.NA
-            observation_date = pd.NaT
-        else:
-            value = float(available.iloc[-1])
-            observation_date = available.index[-1]
-        rows.append(
-            {
-                "date": date,
-                "series_id": config.series_id,
-                "output_name": config.output_name,
-                "value": value,
-                "observation_date_used": observation_date,
-                "as_of_date": date,
-                "realtime_start_used": date,
-                "realtime_end_used": str(date.date()),
-                "vintage_method": "current_vintage_observation_asof",
-                "true_vintage_data_available": False,
-                "fallback_method": "current_vintage_observation_asof",
-                "fallback_used": True,
-                "fallback_reason": fallback_reason,
-                "source": "fred_current_vintage_fallback",
-            }
+    if verbose:
+        print(
+            f"  {config.output_name} ({config.series_id}) fetched raw rows: {raw_row_count}",
+            flush=True,
         )
-    return pd.DataFrame(rows)
+    records = pd.concat(record_frames, ignore_index=True)
+    if verbose:
+        print(
+            f"  {config.output_name} ({config.series_id}) normalized vintage rows: {len(records)}",
+            flush=True,
+        )
+    selected = select_asof_weekly_values(records, weekly_dates, config, "fred_api_asof")
+    if verbose:
+        print(
+            f"  {config.output_name} ({config.series_id}) selected weekly rows: {len(selected)}",
+            flush=True,
+        )
+    return selected
 
 
-def fetch_current_fred_observations(
-    config: MacroSeriesConfig,
-    api_key: str,
-    observation_start: str,
-    observation_end: str,
-    session: requests.Session | None = None,
-) -> pd.DataFrame:
-    """Fetch current-vintage FRED observations for an explicit fallback series."""
-    client = session or requests.Session()
-    params = {
-        "series_id": config.series_id,
-        "api_key": api_key,
-        "file_type": "json",
-        "observation_start": observation_start,
-        "observation_end": observation_end,
-        "sort_order": "asc",
-        "limit": 100000,
-    }
-    try:
-        response = client.get(FRED_OBSERVATIONS_URL, params=params, timeout=60)
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        detail = _sanitize_request_error(exc, api_key)
-        raise RuntimeError(
-            "FRED current-vintage fallback request failed for "
-            f"{config.series_id}: {exc.__class__.__name__}. "
-            "The request URL and API key are intentionally omitted."
-            f"{detail}"
-        ) from None
-    observations = response.json().get("observations", [])
-    frame = pd.DataFrame(observations)
-    if frame.empty:
-        raise ValueError(f"FRED returned no current observations for {config.series_id}.")
-    frame = frame.rename(columns={"date": "observation_date"})
-    frame["observation_date"] = pd.to_datetime(frame["observation_date"], errors="coerce")
-    frame["value"] = pd.to_numeric(frame["value"].replace(".", pd.NA), errors="coerce")
-    frame = frame.dropna(subset=["observation_date", "value"])
-    if frame.empty:
+def validate_vintage_coverage(
+    series_id: str,
+    vintage_dates: list[str],
+    required_start: pd.Timestamp,
+    required_end: pd.Timestamp,
+) -> None:
+    """Fail clearly if FRED true-vintage coverage cannot span the protocol window."""
+    if not vintage_dates:
+        raise ValueError(f"FRED returned no vintage dates for {series_id}.")
+    parsed = pd.to_datetime(pd.Series(vintage_dates), errors="coerce").dropna()
+    if parsed.empty:
+        raise ValueError(f"FRED returned no parseable vintage dates for {series_id}.")
+    first_vintage = parsed.min()
+    last_vintage = parsed.max()
+    if first_vintage > pd.Timestamp(required_start):
         raise ValueError(
-            f"FRED current observations for {config.series_id} have no usable rows."
+            f"FRED true-vintage coverage for {series_id} starts on "
+            f"{first_vintage.date()}, after required start "
+            f"{pd.Timestamp(required_start).date()}. No fallback is allowed."
         )
-    return frame.loc[:, ["observation_date", "value"]]
 
 
-def _select_latest_numeric_observation(
-    observations: list[dict[str, Any]],
-) -> dict[str, Any] | None:
-    for observation in observations:
-        value = pd.to_numeric(observation.get("value"), errors="coerce")
-        if pd.notna(value):
-            selected = observation.copy()
-            selected["value"] = value
-            return selected
-    return None
+def validate_asof_endpoint_usability(
+    selected: pd.DataFrame,
+    config: MacroSeriesConfig,
+    required_start: pd.Timestamp,
+    required_end: pd.Timestamp,
+) -> None:
+    """Require true as-of rows at both endpoints and fresh endpoint observations."""
+    if selected.empty:
+        raise ValueError(f"No selected as-of rows for {config.series_id}.")
+    frame = selected.copy()
+    frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+    frame["observation_date_used"] = pd.to_datetime(
+        frame["observation_date_used"], errors="coerce"
+    )
+    required_start = pd.Timestamp(required_start).normalize()
+    required_end = pd.Timestamp(required_end).normalize()
+    indexed = frame.set_index(frame["date"].dt.normalize())
+    for label, date in (("required_start", required_start), ("required_end", required_end)):
+        if date not in indexed.index:
+            raise ValueError(
+                f"{config.series_id} has no as-of row at {label} {date.date()}."
+            )
+        row = indexed.loc[date]
+        if isinstance(row, pd.DataFrame):
+            row = row.iloc[-1]
+        if pd.isna(row["value"]) or pd.isna(row["observation_date_used"]):
+            raise ValueError(
+                f"{config.series_id} has no usable true as-of value at "
+                f"{label} {date.date()}."
+            )
+        if not bool(row.get("true_vintage_data_available", False)):
+            raise ValueError(
+                f"{config.series_id} is not marked as true vintage at "
+                f"{label} {date.date()}."
+            )
+
+    end_row = indexed.loc[required_end]
+    if isinstance(end_row, pd.DataFrame):
+        end_row = end_row.iloc[-1]
+    latest_observation_date = pd.Timestamp(end_row["observation_date_used"]).normalize()
+    tolerance_days = freshness_tolerance_days(config.frequency)
+    age_days = int((required_end - latest_observation_date).days)
+    if age_days > tolerance_days:
+        raise ValueError(
+            f"{config.series_id} latest observation as of {required_end.date()} is "
+            f"{latest_observation_date.date()}, age {age_days} days, exceeding "
+            f"{tolerance_days}-day freshness tolerance for {config.frequency} data. "
+            "Discontinued/stale series cannot be used as full-window proxies."
+        )
+
+
+def freshness_tolerance_days(frequency: str) -> int:
+    """Return endpoint freshness tolerance in calendar days."""
+    normalized = str(frequency).lower().strip()
+    if normalized in {"daily", "weekly"}:
+        return 30
+    if normalized == "monthly":
+        return 90
+    raise ValueError(f"Unsupported macro series frequency: {frequency}")
+    if last_vintage < pd.Timestamp(required_end):
+        raise ValueError(
+            f"FRED true-vintage coverage for {series_id} ends on "
+            f"{last_vintage.date()}, before required end "
+            f"{pd.Timestamp(required_end).date()}. No fallback is allowed."
+        )
 
 
 def fetch_fred_vintage_dates(
@@ -541,7 +726,11 @@ def select_asof_weekly_values(
     source: str,
 ) -> pd.DataFrame:
     """Select the latest observation available for each weekly as-of date."""
+    if source == "fred_api_asof":
+        return _select_exact_vintage_weekly_values(records, weekly_dates, config, source)
+
     rows: list[dict[str, Any]] = []
+    common_metadata = _common_series_metadata(config)
     for date in weekly_dates:
         available = records[
             (records["observation_date"] <= date)
@@ -551,9 +740,8 @@ def select_asof_weekly_values(
         if available.empty:
             rows.append(
                 {
+                    **common_metadata,
                     "date": date,
-                    "series_id": config.series_id,
-                    "output_name": config.output_name,
                     "value": pd.NA,
                     "observation_date_used": pd.NaT,
                     "as_of_date": date,
@@ -563,16 +751,14 @@ def select_asof_weekly_values(
                     "true_vintage_data_available": _is_true_vintage_source(source),
                     "fallback_method": "",
                     "fallback_used": False,
-                    "source": source,
                 }
             )
             continue
         selected = available.sort_values(["observation_date", "realtime_start"]).iloc[-1]
         rows.append(
             {
+                **common_metadata,
                 "date": date,
-                "series_id": config.series_id,
-                "output_name": config.output_name,
                 "value": float(selected["value"]),
                 "observation_date_used": selected["observation_date"],
                 "as_of_date": date,
@@ -582,10 +768,76 @@ def select_asof_weekly_values(
                 "true_vintage_data_available": _is_true_vintage_source(source),
                 "fallback_method": "",
                 "fallback_used": False,
-                "source": source,
             }
         )
     return pd.DataFrame(rows)
+
+
+def _select_exact_vintage_weekly_values(
+    records: pd.DataFrame,
+    weekly_dates: pd.DatetimeIndex,
+    config: MacroSeriesConfig,
+    source: str,
+) -> pd.DataFrame:
+    """Fast path for FRED output_type=2 calls made exactly at weekly as-of dates."""
+    rows: list[dict[str, Any]] = []
+    common_metadata = _common_series_metadata(config)
+    grouped = {
+        pd.Timestamp(key).normalize(): frame
+        for key, frame in records.groupby(records["realtime_start"].dt.normalize())
+    }
+    for date in weekly_dates:
+        date = pd.Timestamp(date).normalize()
+        available = grouped.get(date)
+        if available is not None:
+            available = available[available["observation_date"] <= date]
+        if available is None or available.empty:
+            rows.append(
+                {
+                    **common_metadata,
+                    "date": date,
+                    "value": pd.NA,
+                    "observation_date_used": pd.NaT,
+                    "as_of_date": date,
+                    "realtime_start_used": pd.NaT,
+                    "realtime_end_used": pd.NaT,
+                    "vintage_method": source,
+                    "true_vintage_data_available": _is_true_vintage_source(source),
+                    "fallback_method": "",
+                    "fallback_used": False,
+                }
+            )
+            continue
+        selected = available.sort_values(["observation_date", "realtime_start"]).iloc[-1]
+        rows.append(
+            {
+                **common_metadata,
+                "date": date,
+                "value": float(selected["value"]),
+                "observation_date_used": selected["observation_date"],
+                "as_of_date": date,
+                "realtime_start_used": selected["realtime_start"],
+                "realtime_end_used": selected["realtime_end_raw"],
+                "vintage_method": source,
+                "true_vintage_data_available": _is_true_vintage_source(source),
+                "fallback_method": "",
+                "fallback_used": False,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _common_series_metadata(config: MacroSeriesConfig) -> dict[str, str]:
+    return {
+        "series_id": config.series_id,
+        "feature_name": config.output_name,
+        "output_name": config.output_name,
+        "title": config.title,
+        "source": config.data_source,
+        "conceptual_role": config.conceptual_role,
+        "frequency": config.frequency,
+        "note": config.note,
+    }
 
 
 def _parse_realtime_end(value: object) -> pd.Timestamp:
@@ -621,6 +873,15 @@ def main() -> None:
     parser.add_argument("--output-path", default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--metadata-output", default=DEFAULT_METADATA_OUTPUT)
     parser.add_argument("--raw-vintage-dir", default=DEFAULT_RAW_VINTAGE_DIR)
+    parser.add_argument("--dollar-series-id", default=None)
+    parser.add_argument("--dollar-column-name", default=None)
+    parser.add_argument(
+        "--exclude-series",
+        default="",
+        help="Comma-separated output names or FRED series IDs to exclude, e.g. DXY.",
+    )
+    parser.add_argument("--require-no-fallback", action="store_true")
+    parser.add_argument("--vintage-chunk-size", type=int, default=50)
     args = parser.parse_args()
 
     try:
@@ -629,6 +890,15 @@ def main() -> None:
             output_path=args.output_path,
             metadata_output=args.metadata_output,
             raw_vintage_dir=args.raw_vintage_dir,
+            dollar_series_id=args.dollar_series_id,
+            dollar_column_name=args.dollar_column_name,
+            exclude_series=tuple(
+                value.strip()
+                for value in args.exclude_series.split(",")
+                if value.strip()
+            ),
+            require_no_fallback=args.require_no_fallback,
+            vintage_chunk_size=args.vintage_chunk_size,
             verbose=True,
         )
     except (FileNotFoundError, KeyError, RuntimeError, ValueError) as exc:

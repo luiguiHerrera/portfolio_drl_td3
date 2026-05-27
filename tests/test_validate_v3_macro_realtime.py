@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.analysis.validate_v3_macro_realtime import (
+    build_freshness_checks,
     build_leakage_checks,
     compare_current_vs_realtime,
     validate_v3_macro_realtime,
@@ -47,7 +48,15 @@ class ValidateV3MacroRealtimeTests(unittest.TestCase):
             {
                 "date": pd.to_datetime(["2020-01-10"]),
                 "series_id": ["CPIAUCSL"],
+                "feature_name": ["CPI"],
                 "output_name": ["CPI"],
+                "title": [
+                    "Consumer Price Index for All Urban Consumers: All Items in U.S. City Average"
+                ],
+                "source": ["FRED/Bureau of Labor Statistics"],
+                "conceptual_role": ["inflation_proxy"],
+                "frequency": ["monthly"],
+                "note": [""],
                 "observation_date_used": pd.to_datetime(["2020-01-17"]),
                 "as_of_date": pd.to_datetime(["2020-01-10"]),
                 "realtime_start_used": pd.to_datetime(["2020-01-10"]),
@@ -77,6 +86,35 @@ class ValidateV3MacroRealtimeTests(unittest.TestCase):
         self.assertEqual(comparison.loc[0, "series"], "DGS10")
         self.assertAlmostEqual(comparison.loc[0, "mean_absolute_difference"], 0.25)
         self.assertAlmostEqual(comparison.loc[0, "max_absolute_difference"], 0.5)
+
+    def test_freshness_checks_detect_discontinued_daily_series(self):
+        metadata = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2015-01-09", "2026-05-15"]),
+                "series_id": ["DTWEXB", "DTWEXB"],
+                "feature_name": ["DXY", "DXY"],
+                "output_name": ["DXY", "DXY"],
+                "title": ["Discontinued dollar series", "Discontinued dollar series"],
+                "source": ["FRED/Federal Reserve H.10", "FRED/Federal Reserve H.10"],
+                "conceptual_role": ["dollar_strength_proxy", "dollar_strength_proxy"],
+                "frequency": ["daily", "daily"],
+                "note": ["", ""],
+                "value": [100.0, 105.0],
+                "observation_date_used": pd.to_datetime(["2015-01-09", "2024-01-01"]),
+                "as_of_date": pd.to_datetime(["2015-01-09", "2026-05-15"]),
+                "realtime_start_used": pd.to_datetime(["2015-01-09", "2026-05-15"]),
+                "realtime_end_used": ["9999-12-31", "9999-12-31"],
+                "vintage_method": ["fred_api_asof", "fred_api_asof"],
+                "true_vintage_data_available": [True, True],
+                "fallback_method": ["", ""],
+                "fallback_used": [False, False],
+            }
+        )
+
+        checks = build_freshness_checks(metadata)
+
+        self.assertEqual(checks.loc[0, "status"], "fail")
+        self.assertGreater(checks.loc[0, "latest_observation_age_days"], 30)
 
 
 def _protocol_dates() -> pd.DatetimeIndex:
@@ -113,19 +151,61 @@ def _write_macro(path: Path, dates: pd.DatetimeIndex, offset: float) -> None:
 
 def _write_metadata(path: Path, dates: pd.DatetimeIndex) -> None:
     rows = []
+    series = [
+        (
+            "DGS10",
+            "DGS10",
+            "10-Year Treasury Constant Maturity Rate",
+            "FRED/Federal Reserve H.15",
+            "long_rate",
+            "",
+        ),
+        (
+            "DGS2",
+            "DGS2",
+            "2-Year Treasury Constant Maturity Rate",
+            "FRED/Federal Reserve H.15",
+            "short_rate",
+            "",
+        ),
+        (
+            "VIX",
+            "VIXCLS",
+            "CBOE Volatility Index: VIX",
+            "FRED/CBOE",
+            "equity_volatility_proxy",
+            "",
+        ),
+        (
+            "DXY",
+            "DTWEXBGS",
+            "Nominal Broad U.S. Dollar Index",
+            "FRED/Federal Reserve H.10",
+            "dollar_strength_proxy",
+            "This is not ICE DXY/USDX; it is the Fed nominal broad trade-weighted U.S. dollar index.",
+        ),
+        (
+            "CPI",
+            "CPIAUCSL",
+            "Consumer Price Index for All Urban Consumers: All Items in U.S. City Average",
+            "FRED/Bureau of Labor Statistics",
+            "inflation_proxy",
+            "",
+        ),
+    ]
     for date in dates:
-        for output_name, series_id in [
-            ("DGS10", "DGS10"),
-            ("DGS2", "DGS2"),
-            ("VIX", "VIXCLS"),
-            ("DXY", "DTWEXBGS"),
-            ("CPI", "CPIAUCSL"),
-        ]:
+        for output_name, series_id, title, source, role, note in series:
             rows.append(
                 {
                     "date": date,
                     "series_id": series_id,
+                    "feature_name": output_name,
                     "output_name": output_name,
+                    "title": title,
+                    "source": source,
+                    "conceptual_role": role,
+                    "frequency": "monthly" if output_name == "CPI" else "daily",
+                    "note": note,
                     "value": 1.0,
                     "observation_date_used": date,
                     "as_of_date": date,
@@ -135,7 +215,6 @@ def _write_metadata(path: Path, dates: pd.DatetimeIndex) -> None:
                     "true_vintage_data_available": True,
                     "fallback_method": "",
                     "fallback_used": False,
-                    "source": "local_raw_vintage",
                 }
             )
     pd.DataFrame(rows).to_csv(path, index=False)

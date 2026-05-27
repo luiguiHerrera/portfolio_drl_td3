@@ -30,8 +30,10 @@ DEFAULT_MACRO_REALTIME_PATH = "data/processed/macro_weekly_realtime_latest.csv"
 DEFAULT_MACRO_CURRENT_PATH = "data/processed/macro_weekly_latest.csv"
 DEFAULT_OUTPUT_DIR = "outputs/tables/v3_macro_realtime_validation"
 REALTIME_MACRO_NOTE = (
-    "Real-time macro values use FRED as-of observations where available. "
-    "Series unavailable in ALFRED are included only with explicit fallback flags."
+    "Real-time macro values use FRED as-of observations with endpoint freshness "
+    "checks. DXY is included only when a true-vintage dollar proxy covers the "
+    "full protocol window and remains fresh at the endpoint; otherwise the "
+    "clean vintage dataset excludes DXY rather than using fallback data."
 )
 
 
@@ -82,11 +84,13 @@ def validate_v3_macro_realtime(
         aligned_features=aligned_features,
     )
     leakage_checks = build_leakage_checks(metadata)
+    freshness_checks = build_freshness_checks(metadata)
     comparison = compare_current_vs_realtime(current_macro, realtime_macro)
     series_summary = build_series_metadata_summary(metadata)
 
     validate_alignment_checks(alignment_checks)
     validate_leakage_checks(leakage_checks)
+    validate_freshness_checks(freshness_checks)
 
     paths = {
         "coverage": output_path / "v3_macro_realtime_coverage.csv",
@@ -94,6 +98,7 @@ def validate_v3_macro_realtime(
         "series_summary": output_path / "v3_macro_realtime_series_summary.csv",
         "alignment_checks": output_path / "v3_macro_realtime_alignment_checks.csv",
         "leakage_checks": output_path / "v3_macro_realtime_leakage_checks.csv",
+        "freshness_checks": output_path / "v3_macro_realtime_freshness_checks.csv",
         "current_vs_realtime": output_path / "v3_macro_realtime_current_vs_realtime.csv",
         "summary": output_path / "v3_macro_realtime_summary.md",
     }
@@ -102,12 +107,14 @@ def validate_v3_macro_realtime(
     series_summary.to_csv(paths["series_summary"], index=False)
     alignment_checks.to_csv(paths["alignment_checks"], index=False)
     leakage_checks.to_csv(paths["leakage_checks"], index=False)
+    freshness_checks.to_csv(paths["freshness_checks"], index=False)
     comparison.to_csv(paths["current_vs_realtime"], index=False)
     summary = build_summary_markdown(
         coverage=coverage,
         feature_summary=feature_summary,
         alignment_checks=alignment_checks,
         leakage_checks=leakage_checks,
+        freshness_checks=freshness_checks,
         series_summary=series_summary,
         comparison=comparison,
     )
@@ -118,6 +125,7 @@ def validate_v3_macro_realtime(
         "feature_summary": feature_summary,
         "alignment_checks": alignment_checks,
         "leakage_checks": leakage_checks,
+        "freshness_checks": freshness_checks,
         "series_summary": series_summary,
         "current_vs_realtime": comparison,
         "summary": summary,
@@ -131,7 +139,12 @@ def load_realtime_metadata(path: str) -> pd.DataFrame:
     required = {
         "date",
         "series_id",
+        "feature_name",
         "output_name",
+        "title",
+        "source",
+        "conceptual_role",
+        "frequency",
         "observation_date_used",
         "as_of_date",
         "realtime_start_used",
@@ -200,6 +213,67 @@ def validate_leakage_checks(leakage_checks: pd.DataFrame) -> None:
         raise ValueError(f"V3 real-time macro leakage checks failed: {names}")
 
 
+def build_freshness_checks(metadata: pd.DataFrame) -> pd.DataFrame:
+    """Check endpoint true-vintage availability and endpoint observation freshness."""
+    rows = []
+    required_start = metadata["date"].min()
+    required_end = metadata["date"].max()
+    for output_name, frame in metadata.groupby("output_name", sort=True):
+        frame = frame.sort_values("date")
+        frequency = str(frame["frequency"].iloc[0])
+        tolerance = _freshness_tolerance_days(frequency)
+        start_frame = frame[frame["date"] == required_start]
+        end_frame = frame[frame["date"] == required_end]
+        endpoint_rows_present = not start_frame.empty and not end_frame.empty
+        true_vintage_endpoints = False
+        endpoint_values_present = False
+        latest_observation_date = pd.NaT
+        age_days = pd.NA
+        if endpoint_rows_present:
+            start_row = start_frame.iloc[-1]
+            end_row = end_frame.iloc[-1]
+            true_vintage_endpoints = bool(start_row["true_vintage_data_available"]) and bool(
+                end_row["true_vintage_data_available"]
+            )
+            endpoint_values_present = pd.notna(start_row["value"]) and pd.notna(end_row["value"])
+            latest_observation_date = end_row["observation_date_used"]
+            if pd.notna(latest_observation_date):
+                age_days = int((required_end - latest_observation_date).days)
+        status = "pass"
+        if (
+            not endpoint_rows_present
+            or not true_vintage_endpoints
+            or not endpoint_values_present
+            or pd.isna(age_days)
+            or int(age_days) > tolerance
+        ):
+            status = "fail"
+        rows.append(
+            {
+                "output_name": output_name,
+                "series_id": frame["series_id"].iloc[0],
+                "frequency": frequency,
+                "required_start": required_start,
+                "required_end": required_end,
+                "endpoint_rows_present": endpoint_rows_present,
+                "true_vintage_endpoints": true_vintage_endpoints,
+                "endpoint_values_present": endpoint_values_present,
+                "latest_observation_date_as_of_required_end": latest_observation_date,
+                "freshness_tolerance_days": tolerance,
+                "latest_observation_age_days": age_days,
+                "status": status,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def validate_freshness_checks(freshness_checks: pd.DataFrame) -> None:
+    failing = freshness_checks[freshness_checks["status"] == "fail"]
+    if not failing.empty:
+        names = ", ".join(failing["output_name"].astype(str))
+        raise ValueError(f"V3 real-time macro freshness checks failed: {names}")
+
+
 def compare_current_vs_realtime(
     current_macro: pd.DataFrame,
     realtime_macro: pd.DataFrame,
@@ -240,7 +314,13 @@ def build_series_metadata_summary(metadata: pd.DataFrame) -> pd.DataFrame:
         grouped.append(
             {
                 "output_name": output_name,
+                "feature_name": frame["feature_name"].iloc[0],
                 "series_id": frame["series_id"].iloc[0],
+                "title": frame["title"].iloc[0],
+                "source": frame["source"].iloc[0],
+                "conceptual_role": frame["conceptual_role"].iloc[0],
+                "frequency": frame["frequency"].iloc[0],
+                "note": frame["note"].fillna("").astype(str).iloc[0],
                 "vintage_method": ",".join(sorted(frame["vintage_method"].astype(str).unique())),
                 "true_vintage_data_available": bool(
                     frame["true_vintage_data_available"].astype(bool).all()
@@ -262,6 +342,7 @@ def build_summary_markdown(
     feature_summary: pd.DataFrame,
     alignment_checks: pd.DataFrame,
     leakage_checks: pd.DataFrame,
+    freshness_checks: pd.DataFrame,
     series_summary: pd.DataFrame,
     comparison: pd.DataFrame,
 ) -> str:
@@ -269,12 +350,17 @@ def build_summary_markdown(
     feature_row = feature_summary.iloc[0]
     alignment_status = alignment_checks["status"].value_counts().to_dict()
     leakage_status = leakage_checks["status"].value_counts().to_dict()
+    freshness_status = freshness_checks["status"].value_counts().to_dict()
     fallback_count = int(series_summary["fallback_used_count"].sum())
+    true_vintage_all = bool(series_summary["true_vintage_data_available"].astype(bool).all())
     eligible = (
         bool(coverage_row["is_current_window_covered"])
         and int(feature_row["missing_aligned_macro_features"]) == 0
         and "fail" not in alignment_status
         and "fail" not in leakage_status
+        and "fail" not in freshness_status
+        and true_vintage_all
+        and fallback_count == 0
     )
     revision_lines = [
         (
@@ -287,9 +373,11 @@ def build_summary_markdown(
     series_lines = [
         (
             f"- {row['output_name']} ({row['series_id']}): "
+            f"source={row['source']}, "
             f"method={row['vintage_method']}, "
             f"true_vintage={row['true_vintage_data_available']}, "
-            f"fallback_used_count={row['fallback_used_count']}"
+            f"fallback_used_count={row['fallback_used_count']}, "
+            f"role={row['conceptual_role']}"
         )
         for _, row in series_summary.iterrows()
     ]
@@ -304,6 +392,7 @@ def build_summary_markdown(
             f"Aligned rows: {feature_row['aligned_rows']}.",
             f"Alignment status counts: {alignment_status}.",
             f"Leakage status counts: {leakage_status}.",
+            f"Freshness status counts: {freshness_status}.",
             f"Fallback rows: {fallback_count}.",
             "",
             "Series vintage status:",
@@ -314,8 +403,7 @@ def build_summary_markdown(
             "",
             (
                 (
-                    "Eligibility for V3_real_macro_vintage protocol smoke: yes, "
-                    "with documented fallback caveats."
+                    "Eligibility for V3_real_macro_vintage protocol smoke: yes."
                 )
                 if eligible
                 else "Eligibility for V3_real_macro_vintage protocol smoke: no."
@@ -332,6 +420,15 @@ def _parse_realtime_end(value: object) -> pd.Timestamp:
     if text == "9999-12-31":
         return pd.Timestamp.max.normalize()
     return pd.Timestamp(value)
+
+
+def _freshness_tolerance_days(frequency: str) -> int:
+    normalized = str(frequency).lower().strip()
+    if normalized in {"daily", "weekly"}:
+        return 30
+    if normalized == "monthly":
+        return 90
+    raise ValueError(f"Unsupported macro frequency: {frequency}")
 
 
 def main() -> None:
@@ -361,6 +458,8 @@ def main() -> None:
     print(result["series_summary"].to_string(index=False))
     print("\nLeakage checks:")
     print(result["leakage_checks"].to_string(index=False))
+    print("\nFreshness checks:")
+    print(result["freshness_checks"].to_string(index=False))
     print("\nCurrent-vintage comparison:")
     print(result["current_vs_realtime"].to_string(index=False))
     print(f"\nOutputs written to {args.output_dir}")

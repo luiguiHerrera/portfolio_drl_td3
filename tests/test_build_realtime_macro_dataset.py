@@ -10,10 +10,12 @@ import requests
 from src.data.build_realtime_macro_dataset import (
     SERIES_CONFIGS,
     build_realtime_macro_dataset,
-    fetch_current_vintage_observation_asof_fallback,
     fetch_fred_vintage_observations,
     fetch_fred_weekly_asof_values,
+    resolve_series_configs,
     select_asof_weekly_values,
+    validate_asof_endpoint_usability,
+    validate_vintage_coverage,
 )
 
 
@@ -48,6 +50,9 @@ class BuildRealtimeMacroDatasetTests(unittest.TestCase):
         self.assertEqual(selected.loc[2, "value"], 3.0)
         self.assertTrue((selected["observation_date_used"] <= selected["date"]).all())
         self.assertTrue((selected["realtime_start_used"] <= selected["date"]).all())
+        self.assertEqual(selected.loc[0, "feature_name"], "DGS10")
+        self.assertEqual(selected.loc[0, "source"], "FRED/Federal Reserve H.15")
+        self.assertFalse(bool(selected.loc[0, "fallback_used"]))
 
     def test_build_from_local_raw_vintage_writes_macro_and_metadata(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -73,7 +78,33 @@ class BuildRealtimeMacroDatasetTests(unittest.TestCase):
             self.assertTrue(metadata_path.exists())
             self.assertEqual(list(result["macro"].columns), ["DGS10", "DGS2", "VIX", "DXY", "CPI"])
             self.assertEqual(int(result["macro"].isna().sum().sum()), 0)
-            self.assertEqual(set(result["metadata"]["source"]), {"local_raw_vintage"})
+            self.assertEqual(set(result["metadata"]["vintage_method"]), {"local_raw_vintage"})
+            self.assertTrue(result["metadata"]["true_vintage_data_available"].astype(bool).all())
+            self.assertFalse(result["metadata"]["fallback_used"].astype(bool).any())
+
+    def test_build_can_exclude_dollar_series_for_clean_no_dxy_dataset(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            returns_path = root / "returns.csv"
+            raw_dir = root / "raw"
+            raw_dir.mkdir()
+            _write_returns(returns_path)
+            for config in SERIES_CONFIGS:
+                if config.output_name != "DXY":
+                    _write_vintage_file(raw_dir / f"{config.series_id}.csv")
+
+            result = build_realtime_macro_dataset(
+                returns_path=str(returns_path),
+                output_path=str(root / "macro.csv"),
+                metadata_output=str(root / "metadata.csv"),
+                raw_vintage_dir=str(raw_dir),
+                api_key=None,
+                exclude_series=("DXY",),
+                require_no_fallback=True,
+            )
+
+            self.assertEqual(list(result["macro"].columns), ["DGS10", "DGS2", "VIX", "CPI"])
+            self.assertNotIn("DXY", set(result["metadata"]["output_name"]))
 
     def test_missing_api_key_without_raw_vintage_fails_clearly(self):
         with patch.dict(os.environ, {"FRED_API_KEY": ""}, clear=False):
@@ -148,6 +179,12 @@ class BuildRealtimeMacroDatasetTests(unittest.TestCase):
         self.assertIn("[redacted]", str(context.exception))
 
     def test_fetch_weekly_asof_values_uses_realtime_date_and_latest_numeric(self):
+        vintage_response = Mock()
+        vintage_response.json.return_value = {
+            "count": 2,
+            "vintage_dates": ["2015-01-16", "2015-01-23"],
+        }
+        vintage_response.raise_for_status.return_value = None
         response = Mock()
         response.json.return_value = {
             "count": 2,
@@ -166,7 +203,7 @@ class BuildRealtimeMacroDatasetTests(unittest.TestCase):
         }
         response.raise_for_status.return_value = None
         session = Mock()
-        session.get.return_value = response
+        session.get.side_effect = [vintage_response, response]
 
         result = fetch_fred_weekly_asof_values(
             config=SERIES_CONFIGS[0],
@@ -178,41 +215,76 @@ class BuildRealtimeMacroDatasetTests(unittest.TestCase):
             session=session,
         )
 
-        params = session.get.call_args.kwargs["params"]
+        params = session.get.call_args_list[-1].kwargs["params"]
         self.assertEqual(params["vintage_dates"], "2015-01-16,2015-01-23")
         self.assertEqual(params["output_type"], 2)
         self.assertEqual(result.loc[0, "value"], 1.7)
         self.assertEqual(result.loc[1, "value"], 1.9)
         self.assertEqual(result.loc[0, "vintage_method"], "fred_api_asof")
+        self.assertEqual(result.loc[0, "source"], "FRED/Federal Reserve H.15")
+        self.assertTrue(bool(result.loc[0, "true_vintage_data_available"]))
+        self.assertFalse(bool(result.loc[0, "fallback_used"]))
 
-    def test_current_vintage_fallback_is_explicitly_flagged(self):
-        response = Mock()
-        response.json.return_value = {
-            "observations": [
-                {"date": "2015-01-02", "value": "100.0"},
-                {"date": "2015-01-16", "value": "101.0"},
-            ]
-        }
-        response.raise_for_status.return_value = None
-        session = Mock()
-        session.get.return_value = response
+    def test_dxy_uses_dtwexbgs_true_vintage_proxy_metadata(self):
+        dxy = next(config for config in SERIES_CONFIGS if config.output_name == "DXY")
 
-        result = fetch_current_vintage_observation_asof_fallback(
-            config=SERIES_CONFIGS[3],
-            api_key="dummy",
-            weekly_dates=pd.DatetimeIndex(
-                [pd.Timestamp("2015-01-09"), pd.Timestamp("2015-01-16")]
-            ),
-            observation_start="2013-01-09",
-            fallback_reason="not in ALFRED",
-            session=session,
+        self.assertEqual(dxy.series_id, "DTWEXBGS")
+        self.assertEqual(dxy.title, "Nominal Broad U.S. Dollar Index")
+        self.assertEqual(dxy.data_source, "FRED/Federal Reserve H.10")
+        self.assertEqual(dxy.conceptual_role, "dollar_strength_proxy")
+        self.assertIn("not ICE DXY/USDX", dxy.note)
+
+    def test_resolve_series_configs_requires_dtwexbgs_dxy_pair(self):
+        configs = resolve_series_configs(
+            dollar_series_id="DTWEXBGS",
+            dollar_column_name="DXY",
+        )
+        dxy = next(config for config in configs if config.output_name == "DXY")
+
+        self.assertEqual(dxy.series_id, "DTWEXBGS")
+        self.assertEqual(dxy.data_source, "FRED/Federal Reserve H.10")
+        with self.assertRaisesRegex(ValueError, "Only DTWEXBGS"):
+            resolve_series_configs(dollar_series_id="UNSUPPORTED")
+        with self.assertRaisesRegex(ValueError, "must remain DXY"):
+            resolve_series_configs(dollar_column_name="USD")
+        without_dxy = resolve_series_configs(exclude_series=("DXY",))
+        self.assertNotIn("DXY", {config.output_name for config in without_dxy})
+
+    def test_validate_vintage_coverage_fails_when_series_starts_too_late(self):
+        with self.assertRaisesRegex(ValueError, "after required start"):
+            validate_vintage_coverage(
+                series_id="DTWEXBGS",
+                vintage_dates=["2019-02-04", "2019-02-11"],
+                required_start=pd.Timestamp("2015-01-09"),
+                required_end=pd.Timestamp("2019-02-11"),
+            )
+
+    def test_validate_vintage_coverage_passes_when_window_is_covered(self):
+        validate_vintage_coverage(
+            series_id="DGS10",
+            vintage_dates=["2015-01-02", "2026-05-15"],
+            required_start=pd.Timestamp("2015-01-09"),
+            required_end=pd.Timestamp("2026-05-15"),
         )
 
-        self.assertEqual(result.loc[0, "value"], 100.0)
-        self.assertEqual(result.loc[1, "value"], 101.0)
-        self.assertFalse(bool(result.loc[0, "true_vintage_data_available"]))
-        self.assertTrue(bool(result.loc[0, "fallback_used"]))
-        self.assertEqual(result.loc[0, "source"], "fred_current_vintage_fallback")
+    def test_endpoint_usability_fails_when_endpoint_observation_is_stale(self):
+        selected = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2015-01-09", "2026-05-15"]),
+                "value": [100.0, 105.0],
+                "observation_date_used": pd.to_datetime(["2015-01-09", "2024-01-01"]),
+                "true_vintage_data_available": [True, True],
+            }
+        )
+        dxy = next(config for config in SERIES_CONFIGS if config.output_name == "DXY")
+
+        with self.assertRaisesRegex(ValueError, "Discontinued/stale series"):
+            validate_asof_endpoint_usability(
+                selected=selected,
+                config=dxy,
+                required_start=pd.Timestamp("2015-01-09"),
+                required_end=pd.Timestamp("2026-05-15"),
+            )
 
 
 def _write_returns(path: Path) -> None:

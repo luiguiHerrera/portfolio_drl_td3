@@ -204,6 +204,71 @@ class StatisticalValidationReportTests(unittest.TestCase):
         self.assertFalse(report["pairwise_bootstrap"].empty)
         self.assertIn("V3_cap_0.60", set(report["pairwise_bootstrap"]["candidate"]))
 
+    def test_v3_clean_no_dxy_history_resolves_from_optional_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            final_dir = Path(temp_dir) / "final"
+            output_dir = Path(temp_dir) / "out"
+            base_cap_dir = Path(temp_dir) / "base_cap"
+            clean_cap_dir = Path(temp_dir) / "clean_cap"
+            bench_dir = Path(temp_dir) / "bench"
+            final_dir.mkdir()
+            base_cap_dir.mkdir()
+            clean_history_dir = (
+                clean_cap_dir
+                / "per_candidate"
+                / "V3_real_macro_vintage_clean_no_dxy"
+                / "F1_V3_real_macro_vintage_clean_no_dxy_cap_0p50_seed_7"
+            )
+            clean_history_dir.mkdir(parents=True)
+            bench_history_dir = bench_dir / "benchmarks" / "histories"
+            bench_history_dir.mkdir(parents=True)
+            self._write_history(clean_history_dir / "test_policy_history.csv", value=0.02)
+            self._write_history(bench_history_dir / "BuyHold_GLD_history.csv", value=0.005)
+
+            pd.DataFrame(
+                [
+                    {
+                        "strategy_name": "V3_real_macro_vintage_clean_no_dxy_cap_0.50",
+                        "base_candidate": "V3_real_macro_vintage_clean_no_dxy",
+                        "source": "v3_clean_no_dxy_cap_sensitivity",
+                        "selected_cap": 0.50,
+                    }
+                ]
+            ).to_csv(final_dir / "final_constrained_td3_selected_candidates.csv", index=False)
+            pd.DataFrame(
+                [
+                    {"strategy_name": "BuyHold_GLD", "strategy_type": "benchmark"},
+                ]
+            ).to_csv(final_dir / "final_constrained_td3_mandate_ranking.csv", index=False)
+            (final_dir / "final_constrained_td3_metadata.json").write_text(
+                json.dumps(
+                    {
+                        "cap_sensitivity_dir": str(base_cap_dir),
+                        "benchmark_comparison_dir": str(bench_dir),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = build_statistical_validation_report(
+                final_report_dir=str(final_dir),
+                output_dir=str(output_dir),
+                n_bootstrap=20,
+                block_size=2,
+                v3_clean_no_dxy_cap_sensitivity_dir=str(clean_cap_dir),
+            )
+
+        records = report["history_records"].set_index("strategy_name")
+        strategy_name = "V3_real_macro_vintage_clean_no_dxy_cap_0.50"
+        self.assertTrue(bool(records.loc[strategy_name, "history_found"]))
+        self.assertIn(
+            "V3_real_macro_vintage_clean_no_dxy",
+            records.loc[strategy_name, "source"],
+        )
+        self.assertFalse(
+            any(strategy_name in warning for warning in report["warnings"]),
+        )
+
     @staticmethod
     def _write_history(path: Path, value: float = 0.01) -> None:
         dates = pd.date_range("2024-01-05", periods=20, freq="W-FRI")

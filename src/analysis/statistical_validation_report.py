@@ -24,7 +24,12 @@ BENCHMARK_HISTORY_DIR = "benchmarks/histories"
 DEFAULT_FINAL_REPORT_DIR = "outputs/tables/final_constrained_td3_report_with_v3_v4_60ep_10seeds"
 DEFAULT_OUTPUT_DIR = "outputs/tables/statistical_validation_final_v3_v4"
 
-PRIMARY_CANDIDATES = ["V3_cap_0.60", "V4_cap_0.50"]
+PRIMARY_CANDIDATES = [
+    "V3_real_macro_vintage_clean_no_dxy_cap_0.50",
+    "V3_real_macro_vintage_cap_0.50",
+    "V3_cap_0.60",
+    "V4_cap_0.50",
+]
 DEFAULT_BENCHMARKS = [
     "BuyHold_GLD",
     "trend_spy_cash_12p",
@@ -38,6 +43,12 @@ def build_statistical_validation_report(
     n_bootstrap: int = 1000,
     block_size: int = 12,
     random_seed: int = 123,
+    v3_cap_sensitivity_dir: str | None = None,
+    v3_vintage_cap_sensitivity_dir: str | None = None,
+    v3_clean_no_dxy_cap_sensitivity_dir: str | None = None,
+    v4_cap_sensitivity_dir: str | None = None,
+    v7_cap_sensitivity_dir: str | None = None,
+    v8_cap_sensitivity_dir: str | None = None,
 ) -> dict[str, Any]:
     """Build statistical validation CSVs and markdown from existing histories."""
     final_dir = Path(final_report_dir)
@@ -46,6 +57,15 @@ def build_statistical_validation_report(
 
     selected = pd.read_csv(final_dir / SELECTED_FILE)
     metadata = json.loads((final_dir / METADATA_FILE).read_text(encoding="utf-8"))
+    metadata = _with_cap_sensitivity_overrides(
+        metadata,
+        v3_cap_sensitivity_dir=v3_cap_sensitivity_dir,
+        v3_vintage_cap_sensitivity_dir=v3_vintage_cap_sensitivity_dir,
+        v3_clean_no_dxy_cap_sensitivity_dir=v3_clean_no_dxy_cap_sensitivity_dir,
+        v4_cap_sensitivity_dir=v4_cap_sensitivity_dir,
+        v7_cap_sensitivity_dir=v7_cap_sensitivity_dir,
+        v8_cap_sensitivity_dir=v8_cap_sensitivity_dir,
+    )
     histories, history_records, warnings = locate_strategy_histories(
         final_report_dir=final_dir,
         selected_candidates=selected,
@@ -539,11 +559,44 @@ def _source_dir_for_row(row: pd.Series, metadata: dict[str, Any]) -> Path | None
     source = str(row.get("source"))
     if source == "seeded_cap_sensitivity":
         path = metadata.get("v3_cap_sensitivity_dir")
+    elif source == "v3_vintage_cap_sensitivity":
+        path = metadata.get("v3_vintage_cap_sensitivity_dir")
+    elif source == "v3_clean_no_dxy_cap_sensitivity":
+        path = metadata.get("v3_clean_no_dxy_cap_sensitivity_dir")
     elif source == "v4_cap_sensitivity":
         path = metadata.get("v4_cap_sensitivity_dir")
+    elif source == "v7_cap_sensitivity":
+        path = metadata.get("v7_cap_sensitivity_dir")
+    elif source == "v8_cap_sensitivity":
+        path = metadata.get("v8_cap_sensitivity_dir")
     else:
         path = metadata.get("cap_sensitivity_dir")
     return Path(path) if path else None
+
+
+def _with_cap_sensitivity_overrides(
+    metadata: dict[str, Any],
+    *,
+    v3_cap_sensitivity_dir: str | None = None,
+    v3_vintage_cap_sensitivity_dir: str | None = None,
+    v3_clean_no_dxy_cap_sensitivity_dir: str | None = None,
+    v4_cap_sensitivity_dir: str | None = None,
+    v7_cap_sensitivity_dir: str | None = None,
+    v8_cap_sensitivity_dir: str | None = None,
+) -> dict[str, Any]:
+    updated = dict(metadata)
+    overrides = {
+        "v3_cap_sensitivity_dir": v3_cap_sensitivity_dir,
+        "v3_vintage_cap_sensitivity_dir": v3_vintage_cap_sensitivity_dir,
+        "v3_clean_no_dxy_cap_sensitivity_dir": v3_clean_no_dxy_cap_sensitivity_dir,
+        "v4_cap_sensitivity_dir": v4_cap_sensitivity_dir,
+        "v7_cap_sensitivity_dir": v7_cap_sensitivity_dir,
+        "v8_cap_sensitivity_dir": v8_cap_sensitivity_dir,
+    }
+    for key, value in overrides.items():
+        if value:
+            updated[key] = value
+    return updated
 
 
 def _benchmark_history_dir(final_report_dir: Path, metadata: dict[str, Any]) -> Path:
@@ -640,6 +693,12 @@ def main() -> None:
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--n-bootstrap", type=int, default=1000)
     parser.add_argument("--block-size", type=int, default=12)
+    parser.add_argument("--v3-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v3-vintage-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v3-clean-no-dxy-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v4-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v7-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v8-cap-sensitivity-dir", default=None)
     args = parser.parse_args()
 
     report = build_statistical_validation_report(
@@ -647,6 +706,12 @@ def main() -> None:
         output_dir=args.output_dir,
         n_bootstrap=args.n_bootstrap,
         block_size=args.block_size,
+        v3_cap_sensitivity_dir=args.v3_cap_sensitivity_dir,
+        v3_vintage_cap_sensitivity_dir=args.v3_vintage_cap_sensitivity_dir,
+        v3_clean_no_dxy_cap_sensitivity_dir=args.v3_clean_no_dxy_cap_sensitivity_dir,
+        v4_cap_sensitivity_dir=args.v4_cap_sensitivity_dir,
+        v7_cap_sensitivity_dir=args.v7_cap_sensitivity_dir,
+        v8_cap_sensitivity_dir=args.v8_cap_sensitivity_dir,
     )
     print("Histories found:")
     print(report["history_records"].to_string(index=False))

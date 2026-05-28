@@ -63,6 +63,7 @@ The project is structured around candidate feature sets:
 
 - `V2_reference_full`: base return, momentum, volatility, and regime-style features
 - `V3_real_macro_current`: V2 plus local macro features
+- `V3_real_macro_vintage_clean_no_dxy`: V2 plus clean real-time/as-of macro features
 - `V4_real_garch_current`: V2 plus real rolling fitted GARCH volatility forecasts
 - `V5_no_volatility_block`: ablation candidate without the volatility block
 - `V6_financial_state`: financial-state candidate with cash/risk-off structure
@@ -71,15 +72,16 @@ The project is structured around candidate feature sets:
 
 V3 uses local macro data only. Macro data is prepared outside training and loaded from a processed CSV. No macro download happens during training or evaluation.
 
-Current V3 macro variables:
+The clean leading V3 macro specification is `V3_real_macro_vintage_clean_no_dxy`. It uses real-time/as-of FRED vintage macro data for:
 
 - `DGS10`
 - `DGS2`
 - `VIX`
-- `DXY`
 - `CPI`
 
-Important caveat: the macro dataset uses current-vintage data and a conservative CPI lag approximation. It is not yet a full real-time vintage or release-calendar macro database.
+The dollar proxy is excluded from this clean specification. The reason is methodological, not cosmetic: no full-window fresh true-vintage dollar proxy was available for 2015-2026 without fallback or discontinuation. The project therefore does not label any current-vintage or fallback dollar series as clean real-time macro information.
+
+`V3_real_macro_current` is retained as a historical/current-vintage comparison. An intermediate V3 real-time/as-of vintage specification with a DXY fallback improved the methodology, but it is superseded by the clean no-DXY specification.
 
 V4 uses real rolling fitted GARCH forecasts:
 
@@ -184,21 +186,25 @@ Again: good. Suspiciously perfect results should not be a flex.
 
 The strongest current constrained TD3 candidates are:
 
-- `V3_cap_0.60`: best TD3 candidate by mandate-aware score
-- `V4_cap_0.50`: best TD3 candidate by robust score
+- `V3_real_macro_vintage_clean_no_dxy_cap_0.50`: leading TD3 candidate by mandate-aware score
+- `V3_real_macro_vintage_clean_no_dxy_cap_0.60`: strongest robust-score variant among the V3 macro candidates
+- `V4_cap_0.50`: still highly competitive by robust score
 - `V7_cap_0.50`: improves materially with a cap, but does not beat V3/V4
 - `V8_cap_0.50`: improves materially with a cap, but does not beat V3/V4
 
 Current top mandate-aware ranking from the final constrained report:
 
-1. `V3_cap_0.60`
-2. `V4_cap_0.50`
-3. `V7_cap_0.50`
-4. `V6_cap_0.50`
-5. `V2_cap_0.50`
-6. `V8_cap_0.50`
-7. `V5_cap_0.70`
-8. `BuyHold_GLD`
+1. `V3_real_macro_vintage_clean_no_dxy_cap_0.50`
+2. `V3_real_macro_vintage_clean_no_dxy_cap_0.60`
+3. `V3_real_macro_vintage_cap_0.50`
+4. `V3_cap_0.60`
+5. `V4_cap_0.50`
+6. `V7_cap_0.50`
+7. `V6_cap_0.50`
+8. `V2_cap_0.50`
+9. `V8_cap_0.50`
+10. `V5_cap_0.70`
+11. `BuyHold_GLD`
 
 The important result is not that TD3 wins everything.
 
@@ -231,6 +237,8 @@ The cap experiments were not cosmetic. They materially improved:
 Macro and GARCH features became much more interesting once the allocation problem was constrained.
 
 Without the cap, the agent often remained fragile.
+
+The latest clean macro result is deliberately conservative: `V3_real_macro_vintage_clean_no_dxy` uses real-time/as-of FRED vintage data for rates, VIX and CPI, while excluding the dollar proxy rather than accepting a fallback or discontinued series. This clean specification now leads the mandate-aware TD3 ranking.
 
 ### 4. More features do not automatically mean better policy
 
@@ -331,19 +339,19 @@ Build the final constrained report:
 Build statistical validation:
 
     .venv/bin/python -m src.analysis.statistical_validation_report \
-      --final-report-dir outputs/tables/final_constrained_td3_report_with_v3_v4_v7_v8_60ep_10seeds \
+      --final-report-dir outputs/tables/final_constrained_td3_report_with_v3_clean_no_dxy_v4_v7_v8_60ep_10seeds \
       --output-dir outputs/tables/statistical_validation_final_v3_v4
 
 Build regime analysis:
 
     .venv/bin/python -m src.analysis.regime_analysis_report \
-      --final-report-dir outputs/tables/final_constrained_td3_report_with_v3_v4_v7_v8_60ep_10seeds \
+      --final-report-dir outputs/tables/final_constrained_td3_report_with_v3_clean_no_dxy_v4_v7_v8_60ep_10seeds \
       --output-dir outputs/tables/regime_analysis_final_v3_v4
 
 Build final figures:
 
     .venv/bin/python -m src.analysis.build_final_figures \
-      --final-report-dir outputs/tables/final_constrained_td3_report_with_v3_v4_v7_v8_60ep_10seeds \
+      --final-report-dir outputs/tables/final_constrained_td3_report_with_v3_clean_no_dxy_v4_v7_v8_60ep_10seeds \
       --regime-analysis-dir outputs/tables/regime_analysis_final_v3_v4 \
       --output-dir outputs/figures/final_v3_v4_v7_v8
 

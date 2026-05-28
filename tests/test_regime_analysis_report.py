@@ -97,6 +97,71 @@ class RegimeAnalysisReportTests(unittest.TestCase):
         self.assertEqual(len(metadata["regimes"]), len(REGIME_DEFINITIONS))
         self.assertEqual(metadata["history_policy"].split()[0], "TD3")
 
+    def test_v3_clean_no_dxy_history_resolves_from_optional_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            final_dir = root / "final"
+            output_dir = root / "out"
+            base_cap_dir = root / "base_cap"
+            clean_cap_dir = root / "clean_cap"
+            bench_dir = root / "bench"
+            final_dir.mkdir()
+            base_cap_dir.mkdir()
+            (bench_dir / "benchmarks" / "histories").mkdir(parents=True)
+
+            selected = pd.DataFrame(
+                [
+                    {
+                        "strategy_name": "V3_real_macro_vintage_clean_no_dxy_cap_0.50",
+                        "base_candidate": "V3_real_macro_vintage_clean_no_dxy",
+                        "selected_cap": 0.50,
+                        "strategy_group": "td3_best_constrained",
+                    }
+                ]
+            )
+            selected.to_csv(final_dir / "final_constrained_td3_selected_candidates.csv", index=False)
+            metadata = {
+                "cap_sensitivity_dir": str(base_cap_dir),
+                "benchmark_comparison_dir": str(bench_dir),
+            }
+            (final_dir / "final_constrained_td3_metadata.json").write_text(
+                json.dumps(metadata),
+                encoding="utf-8",
+            )
+            clean_history_dir = (
+                clean_cap_dir
+                / "per_candidate"
+                / "V3_real_macro_vintage_clean_no_dxy"
+                / "F1_V3_real_macro_vintage_clean_no_dxy_cap_0p50_seed_7"
+            )
+            clean_history_dir.mkdir(parents=True)
+            self._history_frame("2022-01-07", [0.01] * 52).to_csv(
+                clean_history_dir / "test_policy_history.csv",
+                index=False,
+            )
+            self._history_frame("2022-01-07", [0.005] * 52).to_csv(
+                bench_dir / "benchmarks" / "histories" / "BuyHold_GLD_history.csv",
+                index=False,
+            )
+
+            result = build_regime_analysis_report(
+                final_report_dir=str(final_dir),
+                output_dir=str(output_dir),
+                v3_clean_no_dxy_cap_sensitivity_dir=str(clean_cap_dir),
+            )
+
+        strategy_name = "V3_real_macro_vintage_clean_no_dxy_cap_0.50"
+        self.assertIn(strategy_name, result["histories"])
+        self.assertEqual(
+            result["history_sources"][strategy_name]["source_dir"],
+            str(clean_cap_dir),
+        )
+        self.assertIn(
+            "V3_real_macro_vintage_clean_no_dxy",
+            result["history_sources"][strategy_name]["history_files_sample"][0],
+        )
+        self.assertFalse(any(strategy_name in warning for warning in result["warnings"]))
+
     def _write_synthetic_report(
         self,
         temp_dir: str,

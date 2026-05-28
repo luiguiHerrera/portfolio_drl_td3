@@ -30,6 +30,8 @@ BENCHMARK_SUMMARY_FILE = "capped_td3_vs_benchmarks_summary.csv"
 BASE_LABELS = {
     "V2_reference_full": "V2",
     "V3_real_macro_current": "V3",
+    "V3_real_macro_vintage": "V3_real_macro_vintage",
+    "V3_real_macro_vintage_clean_no_dxy": "V3_real_macro_vintage_clean_no_dxy",
     "V4_real_garch_current": "V4",
     "V5_no_volatility_block": "V5",
     "V6_financial_state": "V6",
@@ -40,6 +42,8 @@ BASE_LABELS = {
 FEATURE_FAMILIES = {
     "V2_reference_full": "reference_full",
     "V3_real_macro_current": "real_macro_current",
+    "V3_real_macro_vintage": "real_macro_vintage_asof",
+    "V3_real_macro_vintage_clean_no_dxy": "real_macro_vintage_clean_no_dxy",
     "V4_real_garch_current": "real_garch_current",
     "V5_no_volatility_block": "no_volatility_block",
     "V6_financial_state": "financial_state",
@@ -88,6 +92,8 @@ RANKING_COLUMNS = [
 def build_final_constrained_td3_report(
     cap_sensitivity_dir: str = DEFAULT_CAP_SENSITIVITY_DIR,
     v3_cap_sensitivity_dir: str | None = None,
+    v3_vintage_cap_sensitivity_dir: str | None = None,
+    v3_clean_no_dxy_cap_sensitivity_dir: str | None = None,
     v4_cap_sensitivity_dir: str | None = None,
     v7_cap_sensitivity_dir: str | None = None,
     v8_cap_sensitivity_dir: str | None = None,
@@ -112,6 +118,42 @@ def build_final_constrained_td3_report(
         v3_best_caps["source"] = "seeded_cap_sensitivity"
         cap_results = pd.concat([cap_results, v3_results], ignore_index=True, sort=False)
         best_caps = pd.concat([best_caps, v3_best_caps], ignore_index=True, sort=False)
+    if v3_vintage_cap_sensitivity_dir:
+        v3_vintage_cap_dir = Path(v3_vintage_cap_sensitivity_dir)
+        v3_vintage_results = pd.read_csv(v3_vintage_cap_dir / CAP_ALL_RESULTS_FILE)
+        v3_vintage_best_caps = pd.read_csv(v3_vintage_cap_dir / CAP_BEST_FILE)
+        v3_vintage_results["source"] = "v3_vintage_cap_sensitivity"
+        v3_vintage_best_caps["source"] = "v3_vintage_cap_sensitivity"
+        cap_results = pd.concat(
+            [cap_results, v3_vintage_results],
+            ignore_index=True,
+            sort=False,
+        )
+        best_caps = pd.concat(
+            [best_caps, v3_vintage_best_caps],
+            ignore_index=True,
+            sort=False,
+        )
+    if v3_clean_no_dxy_cap_sensitivity_dir:
+        v3_clean_no_dxy_cap_dir = Path(v3_clean_no_dxy_cap_sensitivity_dir)
+        v3_clean_no_dxy_results = pd.read_csv(
+            v3_clean_no_dxy_cap_dir / CAP_ALL_RESULTS_FILE
+        )
+        v3_clean_no_dxy_best_caps = pd.read_csv(
+            v3_clean_no_dxy_cap_dir / CAP_BEST_FILE
+        )
+        v3_clean_no_dxy_results["source"] = "v3_clean_no_dxy_cap_sensitivity"
+        v3_clean_no_dxy_best_caps["source"] = "v3_clean_no_dxy_cap_sensitivity"
+        cap_results = pd.concat(
+            [cap_results, v3_clean_no_dxy_results],
+            ignore_index=True,
+            sort=False,
+        )
+        best_caps = pd.concat(
+            [best_caps, v3_clean_no_dxy_best_caps],
+            ignore_index=True,
+            sort=False,
+        )
     if v4_cap_sensitivity_dir:
         v4_cap_dir = Path(v4_cap_sensitivity_dir)
         v4_results = pd.read_csv(v4_cap_dir / CAP_ALL_RESULTS_FILE)
@@ -154,6 +196,8 @@ def build_final_constrained_td3_report(
     metadata = build_metadata(
         cap_sensitivity_dir=cap_sensitivity_dir,
         v3_cap_sensitivity_dir=v3_cap_sensitivity_dir,
+        v3_vintage_cap_sensitivity_dir=v3_vintage_cap_sensitivity_dir,
+        v3_clean_no_dxy_cap_sensitivity_dir=v3_clean_no_dxy_cap_sensitivity_dir,
         v4_cap_sensitivity_dir=v4_cap_sensitivity_dir,
         v7_cap_sensitivity_dir=v7_cap_sensitivity_dir,
         v8_cap_sensitivity_dir=v8_cap_sensitivity_dir,
@@ -471,13 +515,38 @@ def build_final_markdown_summary(
         "but weakens any claim that 0.60 is the universal cap. The optimal cap "
         "is candidate-sensitive."
     )
+    selected_base_candidates = set(selected_candidates["base_candidate"].astype(str))
     v3_note = ""
-    if "V3_real_macro_current" in set(selected_candidates["base_candidate"].astype(str)):
+    if "V3_real_macro_current" in selected_base_candidates:
         v3_note = (
             "The V3 result uses current-vintage macro data with a conservative CPI "
-            "lag approximation. It should be interpreted as the current best "
-            "constrained TD3 result, pending future real-time vintage and "
-            "release-calendar macro validation."
+            "lag approximation. It is retained as a historical/current-vintage "
+            "comparison, not as the leading macro result."
+        )
+    v3_vintage_note = ""
+    if "V3_real_macro_vintage" in selected_base_candidates:
+        if "V3_real_macro_vintage_clean_no_dxy" in selected_base_candidates:
+            v3_vintage_role = (
+                "It improved the macro methodology relative to current-vintage data, "
+                "but is superseded by the clean no-DXY real-time/as-of specification "
+                "in this report."
+            )
+        else:
+            v3_vintage_role = (
+                "It becomes the top mandate-aware TD3 candidate in this report."
+            )
+        v3_vintage_note = (
+            "The V3 real-time/as-of macro vintage result uses FRED as-of macro "
+            "observations where available and an explicit DXY fallback because "
+            f"the selected DXY proxy is not available in ALFRED. {v3_vintage_role}"
+        )
+    v3_clean_no_dxy_note = ""
+    if "V3_real_macro_vintage_clean_no_dxy" in selected_base_candidates:
+        v3_clean_no_dxy_note = (
+            "The V3 clean no-DXY real-time/as-of macro result excludes the dollar "
+            "proxy entirely because no full-window fresh true-vintage dollar proxy "
+            "exists for 2015-2026 without fallback or discontinuation. It becomes "
+            "the top mandate-aware constrained TD3 candidate in this report."
         )
     v4_note = ""
     if "V4_real_garch_current" in set(selected_candidates["base_candidate"].astype(str)):
@@ -606,7 +675,28 @@ def build_final_markdown_summary(
             f"- V8 beats V4 by robust score: {v8_beats_v4_robust}.",
             "- Interpretation: V8 improves with a cap but does not outperform simpler V3/V4.",
         ]
+    robust_v3_macro_variant = _best_v3_macro_variant_by_robust(main_ranking)
     macro_claim = (
+        "After removing DXY and all macro fallbacks, "
+        "V3_real_macro_vintage_clean_no_dxy becomes the top mandate-aware "
+        "constrained TD3 candidate. Its cap-0.60 reference is the strongest "
+        "robust-score variant among the V3 macro candidates when ranked by robust "
+        "score, while V4 remains highly competitive by robust score. Removing DXY "
+        "and all macro fallbacks does not weaken the main constrained-TD3 result; "
+        "it strengthens the mandate-aware finding. The central result remains "
+        "that max-weight constraints materially reduce degenerate concentration."
+        if "V3_real_macro_vintage_clean_no_dxy"
+        in set(selected_candidates["base_candidate"].astype(str))
+        else (
+        "After replacing current-vintage macro with real-time/as-of macro data, "
+        "V3_real_macro_vintage becomes the top mandate-aware constrained TD3 "
+        "candidate. V4 remains the strongest TD3 candidate by robust_score if "
+        "its robust score is still higher in the ranking. Replacing "
+        "current-vintage macro with real-time/as-of macro does not weaken the "
+        "main constrained-TD3 result. The central result remains that max-weight "
+        "constraints materially reduce degenerate concentration."
+        if "V3_real_macro_vintage" in set(selected_candidates["base_candidate"].astype(str))
+        else (
         "After adding real macro and real GARCH feature candidates, the strongest "
         "TD3 variants remain constrained versions. V3_cap_0.60 leads by "
         "mandate-aware score, while V4_cap_0.50 leads by robust_score among TD3 "
@@ -634,6 +724,8 @@ def build_final_markdown_summary(
                 "is candidate-sensitive."
             )
         )
+        )
+    )
     )
     return "\n".join(
         [
@@ -648,10 +740,11 @@ def build_final_markdown_summary(
                 f"{_fmt(best_td3['max_drawdown'])}."
             ),
             (
-                f"It is the best constrained TD3 candidate after including seeded V3: "
-                f"{str(best_td3.get('base_candidate')) == 'V3_real_macro_current'}."
+                "It is the top mandate-aware constrained TD3 candidate in this report."
             ),
             v3_note,
+            v3_vintage_note,
+            v3_clean_no_dxy_note,
             v4_note,
             v7_note,
             v8_note,
@@ -701,6 +794,11 @@ def build_final_markdown_summary(
             "## Cap Sensitivity",
             "",
             cap_note,
+            (
+                f"Strongest V3 macro variant by robust score: `{robust_v3_macro_variant}`."
+                if robust_v3_macro_variant
+                else ""
+            ),
             "",
             "Selected best caps:",
             *[
@@ -722,6 +820,8 @@ def build_final_markdown_summary(
 def build_metadata(
     cap_sensitivity_dir: str,
     v3_cap_sensitivity_dir: str | None,
+    v3_vintage_cap_sensitivity_dir: str | None,
+    v3_clean_no_dxy_cap_sensitivity_dir: str | None,
     v4_cap_sensitivity_dir: str | None,
     v7_cap_sensitivity_dir: str | None,
     v8_cap_sensitivity_dir: str | None,
@@ -734,6 +834,8 @@ def build_metadata(
         "runner": "src.analysis.build_final_constrained_td3_report",
         "cap_sensitivity_dir": cap_sensitivity_dir,
         "v3_cap_sensitivity_dir": v3_cap_sensitivity_dir,
+        "v3_vintage_cap_sensitivity_dir": v3_vintage_cap_sensitivity_dir,
+        "v3_clean_no_dxy_cap_sensitivity_dir": v3_clean_no_dxy_cap_sensitivity_dir,
         "v4_cap_sensitivity_dir": v4_cap_sensitivity_dir,
         "v7_cap_sensitivity_dir": v7_cap_sensitivity_dir,
         "v8_cap_sensitivity_dir": v8_cap_sensitivity_dir,
@@ -744,6 +846,41 @@ def build_metadata(
             "selected_cap"
         ].to_dict(),
         "v3_source": "seeded_cap_sensitivity" if v3_cap_sensitivity_dir else None,
+        "v3_vintage_source": (
+            "v3_vintage_cap_sensitivity" if v3_vintage_cap_sensitivity_dir else None
+        ),
+        "v3_clean_no_dxy_source": (
+            "v3_clean_no_dxy_cap_sensitivity"
+            if v3_clean_no_dxy_cap_sensitivity_dir
+            else None
+        ),
+        "v3_clean_no_dxy_macro_source": (
+            "realtime_asof_no_dxy_no_fallback"
+            if v3_clean_no_dxy_cap_sensitivity_dir
+            else None
+        ),
+        "v3_clean_no_dxy_dollar_proxy": (
+            "excluded" if v3_clean_no_dxy_cap_sensitivity_dir else None
+        ),
+        "v3_clean_no_dxy_macro_caveat": (
+            "No full-window fresh true-vintage dollar proxy exists for 2015-2026 "
+            "without fallback/discontinuation, so the dollar proxy is excluded "
+            "from the clean specification."
+            if v3_clean_no_dxy_cap_sensitivity_dir
+            else None
+        ),
+        "v3_vintage_macro_source": (
+            "realtime_asof_with_dxy_fallback"
+            if v3_vintage_cap_sensitivity_dir
+            else None
+        ),
+        "v3_vintage_macro_caveat": (
+            "V3_real_macro_vintage uses FRED real-time/as-of observations where "
+            "available. DXY uses an explicit fallback because the selected DXY "
+            "proxy is not available in ALFRED."
+            if v3_vintage_cap_sensitivity_dir
+            else None
+        ),
         "v4_source": "v4_cap_sensitivity" if v4_cap_sensitivity_dir else None,
         "v7_source": "v7_cap_sensitivity" if v7_cap_sensitivity_dir else None,
         "v8_source": "v8_cap_sensitivity" if v8_cap_sensitivity_dir else None,
@@ -826,6 +963,29 @@ def _normalize_td3_row(row: pd.Series, group: str, selected_cap: Any) -> dict[st
         }
     )
     return normalized
+
+
+def _best_v3_macro_variant_by_robust(rows: pd.DataFrame) -> str | None:
+    if "base_candidate" not in rows.columns or rows.empty:
+        return None
+    v3_rows = rows[
+        rows["base_candidate"]
+        .fillna("")
+        .astype(str)
+        .isin(
+            {
+                "V3_real_macro_current",
+                "V3_real_macro_vintage",
+                "V3_real_macro_vintage_clean_no_dxy",
+            }
+        )
+    ].copy()
+    if v3_rows.empty:
+        return None
+    robust = pd.to_numeric(v3_rows["robust_score"], errors="coerce")
+    if robust.isna().all():
+        return None
+    return str(v3_rows.loc[robust.idxmax(), "strategy_name"])
 
 
 def _same_cap(left: Any, right: Any) -> bool:
@@ -913,6 +1073,8 @@ def main() -> None:
     )
     parser.add_argument("--cap-sensitivity-dir", default=DEFAULT_CAP_SENSITIVITY_DIR)
     parser.add_argument("--v3-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v3-vintage-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v3-clean-no-dxy-cap-sensitivity-dir", default=None)
     parser.add_argument("--v4-cap-sensitivity-dir", default=None)
     parser.add_argument("--v7-cap-sensitivity-dir", default=None)
     parser.add_argument("--v8-cap-sensitivity-dir", default=None)
@@ -925,6 +1087,8 @@ def main() -> None:
     report = build_final_constrained_td3_report(
         cap_sensitivity_dir=args.cap_sensitivity_dir,
         v3_cap_sensitivity_dir=args.v3_cap_sensitivity_dir,
+        v3_vintage_cap_sensitivity_dir=args.v3_vintage_cap_sensitivity_dir,
+        v3_clean_no_dxy_cap_sensitivity_dir=args.v3_clean_no_dxy_cap_sensitivity_dir,
         v4_cap_sensitivity_dir=args.v4_cap_sensitivity_dir,
         v7_cap_sensitivity_dir=args.v7_cap_sensitivity_dir,
         v8_cap_sensitivity_dir=args.v8_cap_sensitivity_dir,

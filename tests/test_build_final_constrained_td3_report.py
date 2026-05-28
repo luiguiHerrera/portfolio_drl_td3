@@ -171,6 +171,36 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
             set(report["selected_candidates"]["base_candidate"]),
         )
 
+    def test_v3_vintage_absent_when_no_vintage_directory_is_provided(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        self.assertNotIn(
+            "V3_real_macro_vintage",
+            set(report["selected_candidates"]["base_candidate"]),
+        )
+
+    def test_v3_clean_no_dxy_absent_when_no_clean_directory_is_provided(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        self.assertNotIn(
+            "V3_real_macro_vintage_clean_no_dxy",
+            set(report["selected_candidates"]["base_candidate"]),
+        )
+
     def test_v3_appears_when_v3_directory_is_provided(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cap_dir, benchmark_dir = self._write_inputs(temp_dir)
@@ -249,6 +279,60 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
             "td3_evaluated_constrained",
         )
 
+    def test_v3_vintage_appears_when_vintage_directory_is_provided(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v3_vintage_dir = self._write_v3_vintage_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v3_vintage_cap_sensitivity_dir=str(v3_vintage_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        selected = report["selected_candidates"].set_index("base_candidate")
+        self.assertIn("V3_real_macro_vintage", selected.index)
+        self.assertEqual(
+            selected.loc["V3_real_macro_vintage", "strategy_name"],
+            "V3_real_macro_vintage_cap_0.50",
+        )
+        self.assertEqual(
+            selected.loc["V3_real_macro_vintage", "feature_family"],
+            "real_macro_vintage_asof",
+        )
+        self.assertEqual(
+            selected.loc["V3_real_macro_vintage", "source"],
+            "v3_vintage_cap_sensitivity",
+        )
+
+    def test_v3_clean_no_dxy_appears_when_clean_directory_is_provided(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v3_clean_dir = self._write_v3_clean_no_dxy_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v3_clean_no_dxy_cap_sensitivity_dir=str(v3_clean_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        selected = report["selected_candidates"].set_index("base_candidate")
+        self.assertIn("V3_real_macro_vintage_clean_no_dxy", selected.index)
+        self.assertEqual(
+            selected.loc["V3_real_macro_vintage_clean_no_dxy", "strategy_name"],
+            "V3_real_macro_vintage_clean_no_dxy_cap_0.50",
+        )
+        self.assertEqual(
+            selected.loc["V3_real_macro_vintage_clean_no_dxy", "feature_family"],
+            "real_macro_vintage_clean_no_dxy",
+        )
+        self.assertEqual(
+            selected.loc["V3_real_macro_vintage_clean_no_dxy", "source"],
+            "v3_clean_no_dxy_cap_sensitivity",
+        )
+
     def test_v3_and_v4_can_both_be_included(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cap_dir, benchmark_dir = self._write_inputs(temp_dir)
@@ -311,6 +395,45 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
         self.assertIn("V4_real_garch_current", bases)
         self.assertIn("V7_real_macro_garch_current", bases)
         self.assertIn("V8_ewma_garch_vol_current", bases)
+
+    def test_vintage_and_current_v3_can_both_be_included(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v3_dir = self._write_v3_inputs(temp_dir)
+            v3_vintage_dir = self._write_v3_vintage_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v3_cap_sensitivity_dir=str(v3_dir),
+                v3_vintage_cap_sensitivity_dir=str(v3_vintage_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        bases = set(report["selected_candidates"]["base_candidate"])
+        self.assertIn("V3_real_macro_current", bases)
+        self.assertIn("V3_real_macro_vintage", bases)
+
+    def test_vintage_current_and_clean_no_dxy_v3_can_all_be_included(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v3_dir = self._write_v3_inputs(temp_dir)
+            v3_vintage_dir = self._write_v3_vintage_inputs(temp_dir)
+            v3_clean_dir = self._write_v3_clean_no_dxy_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v3_cap_sensitivity_dir=str(v3_dir),
+                v3_vintage_cap_sensitivity_dir=str(v3_vintage_dir),
+                v3_clean_no_dxy_cap_sensitivity_dir=str(v3_clean_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        bases = set(report["selected_candidates"]["base_candidate"])
+        self.assertIn("V3_real_macro_current", bases)
+        self.assertIn("V3_real_macro_vintage", bases)
+        self.assertIn("V3_real_macro_vintage_clean_no_dxy", bases)
 
     def test_benchmarks_are_included_and_classified(self):
         selected = build_selected_td3_rows(self._cap_results(), self._best_caps())
@@ -414,6 +537,51 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
         self.assertGreater(
             int(ranking.loc["V7_cap_0.50", "mandate_rank"]),
             int(ranking.loc["V4_cap_0.50", "mandate_rank"]),
+        )
+
+    def test_v3_vintage_ranks_above_current_v3_by_mandate_score(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v3_dir = self._write_v3_inputs(temp_dir)
+            v3_vintage_dir = self._write_v3_vintage_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v3_cap_sensitivity_dir=str(v3_dir),
+                v3_vintage_cap_sensitivity_dir=str(v3_vintage_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        ranking = report["mandate_ranking"].set_index("strategy_name")
+        self.assertLess(
+            int(ranking.loc["V3_real_macro_vintage_cap_0.50", "mandate_rank"]),
+            int(ranking.loc["V3_cap_0.60", "mandate_rank"]),
+        )
+
+    def test_v3_clean_no_dxy_ranks_above_current_v3_by_mandate_score(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v3_dir = self._write_v3_inputs(temp_dir)
+            v3_clean_dir = self._write_v3_clean_no_dxy_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v3_cap_sensitivity_dir=str(v3_dir),
+                v3_clean_no_dxy_cap_sensitivity_dir=str(v3_clean_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        ranking = report["mandate_ranking"].set_index("strategy_name")
+        self.assertLess(
+            int(
+                ranking.loc[
+                    "V3_real_macro_vintage_clean_no_dxy_cap_0.50",
+                    "mandate_rank",
+                ]
+            ),
+            int(ranking.loc["V3_cap_0.60", "mandate_rank"]),
         )
 
     def test_v3_v4_remain_top_with_v7_and_v8_from_scores(self):
@@ -565,6 +733,63 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
         self.assertIn("lagged EWMA volatility", metadata["v8_caveat"])
         self.assertIn("GARCH/EWMA", metadata["v8_caveat"])
 
+    def test_metadata_records_v3_vintage_source_and_dxy_fallback_caveat(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v3_vintage_dir = self._write_v3_vintage_inputs(temp_dir)
+            output_dir = Path(temp_dir) / "out"
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v3_vintage_cap_sensitivity_dir=str(v3_vintage_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(output_dir),
+            )
+            metadata = json.loads(Path(report["paths"]["metadata"]).read_text())
+
+        self.assertEqual(
+            metadata["v3_vintage_cap_sensitivity_dir"],
+            str(v3_vintage_dir),
+        )
+        self.assertEqual(metadata["v3_vintage_source"], "v3_vintage_cap_sensitivity")
+        self.assertEqual(
+            metadata["v3_vintage_macro_source"],
+            "realtime_asof_with_dxy_fallback",
+        )
+        self.assertIn("DXY uses an explicit fallback", metadata["v3_vintage_macro_caveat"])
+
+    def test_metadata_records_v3_clean_no_dxy_source_and_dollar_proxy_exclusion(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v3_clean_dir = self._write_v3_clean_no_dxy_inputs(temp_dir)
+            output_dir = Path(temp_dir) / "out"
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v3_clean_no_dxy_cap_sensitivity_dir=str(v3_clean_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(output_dir),
+            )
+            metadata = json.loads(Path(report["paths"]["metadata"]).read_text())
+
+        self.assertEqual(
+            metadata["v3_clean_no_dxy_cap_sensitivity_dir"],
+            str(v3_clean_dir),
+        )
+        self.assertEqual(
+            metadata["v3_clean_no_dxy_source"],
+            "v3_clean_no_dxy_cap_sensitivity",
+        )
+        self.assertEqual(
+            metadata["v3_clean_no_dxy_macro_source"],
+            "realtime_asof_no_dxy_no_fallback",
+        )
+        self.assertEqual(metadata["v3_clean_no_dxy_dollar_proxy"], "excluded")
+        self.assertIn(
+            "No full-window fresh true-vintage dollar proxy",
+            metadata["v3_clean_no_dxy_macro_caveat"],
+        )
+
     def test_markdown_summary_mentions_v7_underperforms_simpler_candidates(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cap_dir, benchmark_dir = self._write_inputs(temp_dir)
@@ -605,6 +830,47 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
         self.assertIn("V7 and V8 improve materially with caps", report["markdown_summary"])
         self.assertIn("More econometric or volatility information", report["markdown_summary"])
         self.assertIn("model-expansion phase is closed", report["markdown_summary"])
+
+    def test_markdown_summary_mentions_realtime_asof_macro_result(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v3_dir = self._write_v3_inputs(temp_dir)
+            v3_vintage_dir = self._write_v3_vintage_inputs(temp_dir)
+            v4_dir = self._write_v4_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v3_cap_sensitivity_dir=str(v3_dir),
+                v3_vintage_cap_sensitivity_dir=str(v3_vintage_dir),
+                v4_cap_sensitivity_dir=str(v4_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        self.assertIn("real-time/as-of macro", report["markdown_summary"])
+        self.assertIn("top mandate-aware TD3 candidate", report["markdown_summary"])
+        self.assertIn("does not weaken the main constrained-TD3 result", report["markdown_summary"])
+
+    def test_markdown_summary_mentions_clean_no_dxy_macro_result(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v3_dir = self._write_v3_inputs(temp_dir)
+            v3_clean_dir = self._write_v3_clean_no_dxy_inputs(temp_dir)
+            v4_dir = self._write_v4_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v3_cap_sensitivity_dir=str(v3_dir),
+                v3_clean_no_dxy_cap_sensitivity_dir=str(v3_clean_dir),
+                v4_cap_sensitivity_dir=str(v4_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        self.assertIn("clean no-DXY", report["markdown_summary"])
+        self.assertIn("top mandate-aware constrained TD3 candidate", report["markdown_summary"])
+        self.assertIn("Removing DXY and all macro fallbacks", report["markdown_summary"])
+        self.assertIn("max-weight constraints materially reduce", report["markdown_summary"])
 
     def test_benchmark_comparison_includes_key_benchmarks_with_v3(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -649,6 +915,32 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
             index=False,
         )
         return v3_dir
+
+    def _write_v3_vintage_inputs(self, temp_dir: str) -> Path:
+        v3_vintage_dir = Path(temp_dir) / "v3_vintage_cap"
+        v3_vintage_dir.mkdir()
+        self._v3_vintage_cap_results().to_csv(
+            v3_vintage_dir / "cap_sensitivity_all_results.csv",
+            index=False,
+        )
+        self._v3_vintage_best_caps().to_csv(
+            v3_vintage_dir / "cap_sensitivity_best_caps.csv",
+            index=False,
+        )
+        return v3_vintage_dir
+
+    def _write_v3_clean_no_dxy_inputs(self, temp_dir: str) -> Path:
+        v3_clean_dir = Path(temp_dir) / "v3_clean_no_dxy_cap"
+        v3_clean_dir.mkdir()
+        self._v3_clean_no_dxy_cap_results().to_csv(
+            v3_clean_dir / "cap_sensitivity_all_results.csv",
+            index=False,
+        )
+        self._v3_clean_no_dxy_best_caps().to_csv(
+            v3_clean_dir / "cap_sensitivity_best_caps.csv",
+            index=False,
+        )
+        return v3_clean_dir
 
     def _write_v4_inputs(self, temp_dir: str) -> Path:
         v4_dir = Path(temp_dir) / "v4_cap"
@@ -810,6 +1102,141 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
                     "best_by_robust_score": 0.60,
                     "best_robust_score": 0.80,
                     "source": "seeded_cap_sensitivity",
+                }
+            ]
+        )
+
+    def _v3_vintage_cap_results(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "candidate_name": "V3_real_macro_vintage_cap_uncapped",
+                    "base_candidate": "V3_real_macro_vintage",
+                    "max_weight_cap": pd.NA,
+                    "cap_label": "uncapped",
+                    "robust_score": 0.20,
+                    "mandate_aware_score": 0.10,
+                    "annualized_return": 0.03,
+                    "annualized_volatility": 0.18,
+                    "sharpe": 0.25,
+                    "sortino": 0.40,
+                    "calmar": 0.30,
+                    "max_drawdown": -0.24,
+                    "average_turnover": 0.55,
+                    "average_effective_number_of_assets": 1.05,
+                    "average_max_weight": 0.98,
+                    "decision_label": "uncapped_baseline",
+                    "source": "v3_vintage_cap_sensitivity",
+                },
+                {
+                    "candidate_name": "V3_real_macro_vintage_cap_0p50",
+                    "base_candidate": "V3_real_macro_vintage",
+                    "max_weight_cap": 0.50,
+                    "cap_label": "0.50",
+                    "robust_score": 0.81,
+                    "mandate_aware_score": 0.72,
+                    "annualized_return": 0.095,
+                    "annualized_volatility": 0.13,
+                    "sharpe": 0.92,
+                    "sortino": 1.45,
+                    "calmar": 1.55,
+                    "max_drawdown": -0.13,
+                    "average_turnover": 0.20,
+                    "average_effective_number_of_assets": 3.15,
+                    "average_max_weight": 0.50,
+                    "decision_label": "cap_dominates_uncapped",
+                    "source": "v3_vintage_cap_sensitivity",
+                },
+            ]
+        )
+
+    def _v3_vintage_best_caps(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "base_candidate": "V3_real_macro_vintage",
+                    "best_by_mandate_aware_score": 0.50,
+                    "best_mandate_aware_score": 0.72,
+                    "best_by_robust_score": 0.50,
+                    "best_robust_score": 0.81,
+                    "source": "v3_vintage_cap_sensitivity",
+                }
+            ]
+        )
+
+    def _v3_clean_no_dxy_cap_results(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "candidate_name": "V3_real_macro_vintage_clean_no_dxy_cap_uncapped",
+                    "base_candidate": "V3_real_macro_vintage_clean_no_dxy",
+                    "max_weight_cap": pd.NA,
+                    "cap_label": "uncapped",
+                    "robust_score": 0.22,
+                    "mandate_aware_score": 0.12,
+                    "annualized_return": 0.03,
+                    "annualized_volatility": 0.18,
+                    "sharpe": 0.25,
+                    "sortino": 0.40,
+                    "calmar": 0.30,
+                    "max_drawdown": -0.24,
+                    "average_turnover": 0.55,
+                    "average_effective_number_of_assets": 1.05,
+                    "average_max_weight": 0.98,
+                    "decision_label": "uncapped_baseline",
+                    "source": "v3_clean_no_dxy_cap_sensitivity",
+                },
+                {
+                    "candidate_name": "V3_real_macro_vintage_clean_no_dxy_cap_0p50",
+                    "base_candidate": "V3_real_macro_vintage_clean_no_dxy",
+                    "max_weight_cap": 0.50,
+                    "cap_label": "0.50",
+                    "robust_score": 0.83,
+                    "mandate_aware_score": 0.74,
+                    "annualized_return": 0.11,
+                    "annualized_volatility": 0.13,
+                    "sharpe": 0.95,
+                    "sortino": 1.55,
+                    "calmar": 1.70,
+                    "max_drawdown": -0.12,
+                    "average_turnover": 0.20,
+                    "average_effective_number_of_assets": 3.15,
+                    "average_max_weight": 0.50,
+                    "decision_label": "cap_dominates_uncapped",
+                    "source": "v3_clean_no_dxy_cap_sensitivity",
+                },
+                {
+                    "candidate_name": "V3_real_macro_vintage_clean_no_dxy_cap_0p60",
+                    "base_candidate": "V3_real_macro_vintage_clean_no_dxy",
+                    "max_weight_cap": 0.60,
+                    "cap_label": "0.60",
+                    "robust_score": 0.84,
+                    "mandate_aware_score": 0.735,
+                    "annualized_return": 0.12,
+                    "annualized_volatility": 0.13,
+                    "sharpe": 0.97,
+                    "sortino": 1.58,
+                    "calmar": 1.68,
+                    "max_drawdown": -0.13,
+                    "average_turnover": 0.29,
+                    "average_effective_number_of_assets": 2.47,
+                    "average_max_weight": 0.60,
+                    "decision_label": "cap_dominates_uncapped",
+                    "source": "v3_clean_no_dxy_cap_sensitivity",
+                },
+            ]
+        )
+
+    def _v3_clean_no_dxy_best_caps(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "base_candidate": "V3_real_macro_vintage_clean_no_dxy",
+                    "best_by_mandate_aware_score": 0.50,
+                    "best_mandate_aware_score": 0.74,
+                    "best_by_robust_score": 0.60,
+                    "best_robust_score": 0.84,
+                    "source": "v3_clean_no_dxy_cap_sensitivity",
                 }
             ]
         )

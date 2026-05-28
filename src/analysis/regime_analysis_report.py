@@ -46,6 +46,9 @@ DEFAULT_BENCHMARKS = [
 ]
 
 PAIRWISE_COMPARISONS = [
+    ("V3_real_macro_vintage_clean_no_dxy_cap_0.50", "BuyHold_GLD"),
+    ("V3_real_macro_vintage_clean_no_dxy_cap_0.50", "trend_spy_cash_12p"),
+    ("V3_real_macro_vintage_clean_no_dxy_cap_0.50", "V4_cap_0.50"),
     ("V3_cap_0.60", "BuyHold_GLD"),
     ("V3_cap_0.60", "trend_spy_cash_12p"),
     ("V4_cap_0.50", "BuyHold_GLD"),
@@ -57,13 +60,27 @@ PAIRWISE_COMPARISONS = [
 def build_regime_analysis_report(
     final_report_dir: str = DEFAULT_FINAL_REPORT_DIR,
     output_dir: str = DEFAULT_OUTPUT_DIR,
+    v3_cap_sensitivity_dir: str | None = None,
+    v3_vintage_cap_sensitivity_dir: str | None = None,
+    v3_clean_no_dxy_cap_sensitivity_dir: str | None = None,
+    v4_cap_sensitivity_dir: str | None = None,
+    v7_cap_sensitivity_dir: str | None = None,
+    v8_cap_sensitivity_dir: str | None = None,
 ) -> dict[str, Any]:
     """Build and write regime analysis outputs."""
     final_path = Path(final_report_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    histories, history_sources, warnings = locate_and_load_histories(final_path)
+    histories, history_sources, warnings = locate_and_load_histories(
+        final_path,
+        v3_cap_sensitivity_dir=v3_cap_sensitivity_dir,
+        v3_vintage_cap_sensitivity_dir=v3_vintage_cap_sensitivity_dir,
+        v3_clean_no_dxy_cap_sensitivity_dir=v3_clean_no_dxy_cap_sensitivity_dir,
+        v4_cap_sensitivity_dir=v4_cap_sensitivity_dir,
+        v7_cap_sensitivity_dir=v7_cap_sensitivity_dir,
+        v8_cap_sensitivity_dir=v8_cap_sensitivity_dir,
+    )
     metrics = build_regime_strategy_metrics(histories)
     rankings = build_regime_strategy_rankings(metrics)
     pairwise = build_regime_pairwise_comparisons(metrics, PAIRWISE_COMPARISONS)
@@ -108,6 +125,13 @@ def build_regime_analysis_report(
 
 def locate_and_load_histories(
     final_report_dir: Path,
+    *,
+    v3_cap_sensitivity_dir: str | None = None,
+    v3_vintage_cap_sensitivity_dir: str | None = None,
+    v3_clean_no_dxy_cap_sensitivity_dir: str | None = None,
+    v4_cap_sensitivity_dir: str | None = None,
+    v7_cap_sensitivity_dir: str | None = None,
+    v8_cap_sensitivity_dir: str | None = None,
 ) -> tuple[dict[str, pd.Series], dict[str, Any], list[str]]:
     """Load benchmark histories and date-averaged TD3 histories."""
     metadata_path = final_report_dir / "final_constrained_td3_metadata.json"
@@ -118,6 +142,15 @@ def locate_and_load_histories(
         raise FileNotFoundError(f"Missing selected candidates table: {selected_path}")
 
     metadata = json.loads(metadata_path.read_text())
+    metadata = _with_cap_sensitivity_overrides(
+        metadata,
+        v3_cap_sensitivity_dir=v3_cap_sensitivity_dir,
+        v3_vintage_cap_sensitivity_dir=v3_vintage_cap_sensitivity_dir,
+        v3_clean_no_dxy_cap_sensitivity_dir=v3_clean_no_dxy_cap_sensitivity_dir,
+        v4_cap_sensitivity_dir=v4_cap_sensitivity_dir,
+        v7_cap_sensitivity_dir=v7_cap_sensitivity_dir,
+        v8_cap_sensitivity_dir=v8_cap_sensitivity_dir,
+    )
     selected = pd.read_csv(selected_path)
     histories: dict[str, pd.Series] = {}
     sources: dict[str, Any] = {}
@@ -565,11 +598,38 @@ def cap_to_label(cap: Any) -> str:
 def _source_dir_for_candidate(base_candidate: str, metadata: dict[str, Any]) -> str | None:
     source_key = {
         "V3_real_macro_current": "v3_cap_sensitivity_dir",
+        "V3_real_macro_vintage": "v3_vintage_cap_sensitivity_dir",
+        "V3_real_macro_vintage_clean_no_dxy": "v3_clean_no_dxy_cap_sensitivity_dir",
         "V4_real_garch_current": "v4_cap_sensitivity_dir",
         "V7_real_macro_garch_current": "v7_cap_sensitivity_dir",
         "V8_ewma_garch_vol_current": "v8_cap_sensitivity_dir",
     }.get(base_candidate, "cap_sensitivity_dir")
     return metadata.get(source_key)
+
+
+def _with_cap_sensitivity_overrides(
+    metadata: dict[str, Any],
+    *,
+    v3_cap_sensitivity_dir: str | None = None,
+    v3_vintage_cap_sensitivity_dir: str | None = None,
+    v3_clean_no_dxy_cap_sensitivity_dir: str | None = None,
+    v4_cap_sensitivity_dir: str | None = None,
+    v7_cap_sensitivity_dir: str | None = None,
+    v8_cap_sensitivity_dir: str | None = None,
+) -> dict[str, Any]:
+    updated = dict(metadata)
+    overrides = {
+        "v3_cap_sensitivity_dir": v3_cap_sensitivity_dir,
+        "v3_vintage_cap_sensitivity_dir": v3_vintage_cap_sensitivity_dir,
+        "v3_clean_no_dxy_cap_sensitivity_dir": v3_clean_no_dxy_cap_sensitivity_dir,
+        "v4_cap_sensitivity_dir": v4_cap_sensitivity_dir,
+        "v7_cap_sensitivity_dir": v7_cap_sensitivity_dir,
+        "v8_cap_sensitivity_dir": v8_cap_sensitivity_dir,
+    }
+    for key, value in overrides.items():
+        if value:
+            updated[key] = value
+    return updated
 
 
 def _benchmark_history_dir(metadata: dict[str, Any]) -> Path:
@@ -730,10 +790,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build regime analysis report.")
     parser.add_argument("--final-report-dir", default=DEFAULT_FINAL_REPORT_DIR)
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--v3-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v3-vintage-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v3-clean-no-dxy-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v4-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v7-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v8-cap-sensitivity-dir", default=None)
     args = parser.parse_args()
     result = build_regime_analysis_report(
         final_report_dir=args.final_report_dir,
         output_dir=args.output_dir,
+        v3_cap_sensitivity_dir=args.v3_cap_sensitivity_dir,
+        v3_vintage_cap_sensitivity_dir=args.v3_vintage_cap_sensitivity_dir,
+        v3_clean_no_dxy_cap_sensitivity_dir=args.v3_clean_no_dxy_cap_sensitivity_dir,
+        v4_cap_sensitivity_dir=args.v4_cap_sensitivity_dir,
+        v7_cap_sensitivity_dir=args.v7_cap_sensitivity_dir,
+        v8_cap_sensitivity_dir=args.v8_cap_sensitivity_dir,
     )
     print(f"Histories found: {len(result['histories'])}")
     print("\nRegime winners:")

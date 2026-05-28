@@ -36,6 +36,7 @@ BASE_LABELS = {
     "V5_no_volatility_block": "V5",
     "V6_financial_state": "V6",
     "V7_real_macro_garch_current": "V7",
+    "V7_real_macro_vintage_clean_no_dxy_garch": "V7_real_macro_vintage_clean_no_dxy_garch",
     "V8_ewma_garch_vol_current": "V8",
 }
 
@@ -48,11 +49,13 @@ FEATURE_FAMILIES = {
     "V5_no_volatility_block": "no_volatility_block",
     "V6_financial_state": "financial_state",
     "V7_real_macro_garch_current": "real_macro_garch_current",
+    "V7_real_macro_vintage_clean_no_dxy_garch": "real_macro_vintage_clean_no_dxy_garch",
     "V8_ewma_garch_vol_current": "ewma_garch_vol_current",
 }
 
 EVALUATED_BUT_NOT_LEADING_CANDIDATES = {
     "V7_real_macro_garch_current",
+    "V7_real_macro_vintage_clean_no_dxy_garch",
     "V8_ewma_garch_vol_current",
 }
 
@@ -96,6 +99,7 @@ def build_final_constrained_td3_report(
     v3_clean_no_dxy_cap_sensitivity_dir: str | None = None,
     v4_cap_sensitivity_dir: str | None = None,
     v7_cap_sensitivity_dir: str | None = None,
+    v7_clean_no_dxy_garch_cap_sensitivity_dir: str | None = None,
     v8_cap_sensitivity_dir: str | None = None,
     benchmark_comparison_dir: str = DEFAULT_BENCHMARK_COMPARISON_DIR,
     output_dir: str = DEFAULT_OUTPUT_DIR,
@@ -170,6 +174,22 @@ def build_final_constrained_td3_report(
         v7_best_caps["source"] = "v7_cap_sensitivity"
         cap_results = pd.concat([cap_results, v7_results], ignore_index=True, sort=False)
         best_caps = pd.concat([best_caps, v7_best_caps], ignore_index=True, sort=False)
+    if v7_clean_no_dxy_garch_cap_sensitivity_dir:
+        v7_clean_cap_dir = Path(v7_clean_no_dxy_garch_cap_sensitivity_dir)
+        v7_clean_results = pd.read_csv(v7_clean_cap_dir / CAP_ALL_RESULTS_FILE)
+        v7_clean_best_caps = pd.read_csv(v7_clean_cap_dir / CAP_BEST_FILE)
+        v7_clean_results["source"] = "v7_clean_no_dxy_garch_cap_sensitivity"
+        v7_clean_best_caps["source"] = "v7_clean_no_dxy_garch_cap_sensitivity"
+        cap_results = pd.concat(
+            [cap_results, v7_clean_results],
+            ignore_index=True,
+            sort=False,
+        )
+        best_caps = pd.concat(
+            [best_caps, v7_clean_best_caps],
+            ignore_index=True,
+            sort=False,
+        )
     if v8_cap_sensitivity_dir:
         v8_cap_dir = Path(v8_cap_sensitivity_dir)
         v8_results = pd.read_csv(v8_cap_dir / CAP_ALL_RESULTS_FILE)
@@ -200,6 +220,9 @@ def build_final_constrained_td3_report(
         v3_clean_no_dxy_cap_sensitivity_dir=v3_clean_no_dxy_cap_sensitivity_dir,
         v4_cap_sensitivity_dir=v4_cap_sensitivity_dir,
         v7_cap_sensitivity_dir=v7_cap_sensitivity_dir,
+        v7_clean_no_dxy_garch_cap_sensitivity_dir=(
+            v7_clean_no_dxy_garch_cap_sensitivity_dir
+        ),
         v8_cap_sensitivity_dir=v8_cap_sensitivity_dir,
         benchmark_comparison_dir=benchmark_comparison_dir,
         output_dir=output_dir,
@@ -445,7 +468,11 @@ def build_vs_benchmarks_table(combined: pd.DataFrame) -> pd.DataFrame:
         "Equal_Weight_Risky",
     ]
     rows = []
-    selected = combined[combined["strategy_group"] == "td3_best_constrained"]
+    selected = combined[
+        combined["strategy_group"].isin(
+            ["td3_best_constrained", "td3_evaluated_constrained"]
+        )
+    ]
     benchmarks = combined.set_index("strategy_name")
     for _, td3 in selected.iterrows():
         for benchmark_name in key_names:
@@ -562,6 +589,16 @@ def build_final_markdown_summary(
             "features. It improves materially with the cap, but it does not "
             "outperform the simpler V3 and V4 constrained candidates in this report."
         )
+    v7_clean_note = ""
+    if "V7_real_macro_vintage_clean_no_dxy_garch" in selected_base_candidates:
+        v7_clean_note = (
+            "The V7 clean no-DXY + GARCH result combines the clean real-time/as-of "
+            "macro state with rolling fitted real GARCH features. It improves "
+            "materially with max-weight caps and is competitive, but it does not "
+            "outperform the simpler V3 clean no-DXY candidate. This supports the "
+            "interpretation that adding GARCH to the clean macro state does not "
+            "automatically improve TD3 policy quality."
+        )
     v8_note = ""
     if "V8_ewma_garch_vol_current" in set(selected_candidates["base_candidate"].astype(str)):
         v8_note = (
@@ -643,6 +680,39 @@ def build_final_markdown_summary(
             f"- V7 beats V3 by robust score: {v7_beats_v3_robust}.",
             f"- V7 beats V4 by robust score: {v7_beats_v4_robust}.",
             "- Interpretation: V7 improves with a cap but does not outperform simpler V3/V4.",
+        ]
+    v7_clean_question_lines = []
+    if "V7_real_macro_vintage_clean_no_dxy_garch" in selected_by_base.index:
+        v7_clean = selected_by_base.loc["V7_real_macro_vintage_clean_no_dxy_garch"]
+        v7_clean_beats_v3_clean_mandate = False
+        v7_clean_beats_v3_clean_robust = False
+        if "V3_real_macro_vintage_clean_no_dxy" in selected_by_base.index:
+            v3_clean = selected_by_base.loc["V3_real_macro_vintage_clean_no_dxy"]
+            v7_clean_beats_v3_clean_mandate = _num(
+                v7_clean["mandate_aware_score"]
+            ) > _num(v3_clean["mandate_aware_score"])
+            v7_clean_beats_v3_clean_robust = _num(v7_clean["robust_score"]) > _num(
+                v3_clean["robust_score"]
+            )
+        v7_clean_question_lines = [
+            (
+                f"- V7 clean no-DXY + GARCH selected candidate: "
+                f"`{v7_clean['strategy_name']}` with mandate-aware score "
+                f"{_fmt(v7_clean['mandate_aware_score'])} and robust score "
+                f"{_fmt(v7_clean['robust_score'])}."
+            ),
+            (
+                "- V7 clean no-DXY + GARCH beats V3 clean no-DXY by "
+                f"mandate-aware score: {v7_clean_beats_v3_clean_mandate}."
+            ),
+            (
+                "- V7 clean no-DXY + GARCH beats V3 clean no-DXY by "
+                f"robust score: {v7_clean_beats_v3_clean_robust}."
+            ),
+            (
+                "- Interpretation: V7 clean no-DXY + GARCH improves with a cap "
+                "but does not outperform the simpler V3 clean no-DXY candidate."
+            ),
         ]
     v8_question_lines = []
     if "V8_ewma_garch_vol_current" in selected_by_base.index:
@@ -747,6 +817,7 @@ def build_final_markdown_summary(
             v3_clean_no_dxy_note,
             v4_note,
             v7_note,
+            v7_clean_note,
             v8_note,
             "",
             "## Benchmark Comparisons",
@@ -786,6 +857,7 @@ def build_final_markdown_summary(
             "## V7 Macro + GARCH Check",
             "",
             *v7_question_lines,
+            *v7_clean_question_lines,
             "",
             "## V8 EWMA + GARCH Check",
             "",
@@ -824,6 +896,7 @@ def build_metadata(
     v3_clean_no_dxy_cap_sensitivity_dir: str | None,
     v4_cap_sensitivity_dir: str | None,
     v7_cap_sensitivity_dir: str | None,
+    v7_clean_no_dxy_garch_cap_sensitivity_dir: str | None,
     v8_cap_sensitivity_dir: str | None,
     benchmark_comparison_dir: str,
     output_dir: str,
@@ -838,6 +911,9 @@ def build_metadata(
         "v3_clean_no_dxy_cap_sensitivity_dir": v3_clean_no_dxy_cap_sensitivity_dir,
         "v4_cap_sensitivity_dir": v4_cap_sensitivity_dir,
         "v7_cap_sensitivity_dir": v7_cap_sensitivity_dir,
+        "v7_clean_no_dxy_garch_cap_sensitivity_dir": (
+            v7_clean_no_dxy_garch_cap_sensitivity_dir
+        ),
         "v8_cap_sensitivity_dir": v8_cap_sensitivity_dir,
         "benchmark_comparison_dir": benchmark_comparison_dir,
         "output_dir": output_dir,
@@ -883,6 +959,24 @@ def build_metadata(
         ),
         "v4_source": "v4_cap_sensitivity" if v4_cap_sensitivity_dir else None,
         "v7_source": "v7_cap_sensitivity" if v7_cap_sensitivity_dir else None,
+        "v7_clean_no_dxy_garch_source": (
+            "v7_clean_no_dxy_garch_cap_sensitivity"
+            if v7_clean_no_dxy_garch_cap_sensitivity_dir
+            else None
+        ),
+        "v7_clean_no_dxy_garch_macro_source": (
+            "realtime_asof_no_dxy_no_fallback"
+            if v7_clean_no_dxy_garch_cap_sensitivity_dir
+            else None
+        ),
+        "v7_clean_no_dxy_garch_dollar_proxy": (
+            "excluded" if v7_clean_no_dxy_garch_cap_sensitivity_dir else None
+        ),
+        "v7_clean_no_dxy_garch_garch_source": (
+            "rolling_fitted_arch_model"
+            if v7_clean_no_dxy_garch_cap_sensitivity_dir
+            else None
+        ),
         "v8_source": "v8_cap_sensitivity" if v8_cap_sensitivity_dir else None,
         "v3_macro_caveat": (
             "V3_real_macro_current uses current-vintage macro data and a "
@@ -920,6 +1014,15 @@ def build_metadata(
             "experimental combined feature candidate and should not be assumed "
             "superior to the simpler V3 or V4 feature families."
             if v7_cap_sensitivity_dir
+            else None
+        ),
+        "v7_clean_no_dxy_garch_caveat": (
+            "V7_real_macro_vintage_clean_no_dxy_garch combines clean "
+            "real-time/as-of macro data without DXY or fallback with rolling "
+            "fitted real GARCH features from arch_model. It is evaluated as a "
+            "combined feature candidate and should not be assumed superior to "
+            "the simpler V3 clean no-DXY specification."
+            if v7_clean_no_dxy_garch_cap_sensitivity_dir
             else None
         ),
         "v8_caveat": (
@@ -1077,6 +1180,7 @@ def main() -> None:
     parser.add_argument("--v3-clean-no-dxy-cap-sensitivity-dir", default=None)
     parser.add_argument("--v4-cap-sensitivity-dir", default=None)
     parser.add_argument("--v7-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v7-clean-no-dxy-garch-cap-sensitivity-dir", default=None)
     parser.add_argument("--v8-cap-sensitivity-dir", default=None)
     parser.add_argument(
         "--benchmark-comparison-dir",
@@ -1091,6 +1195,9 @@ def main() -> None:
         v3_clean_no_dxy_cap_sensitivity_dir=args.v3_clean_no_dxy_cap_sensitivity_dir,
         v4_cap_sensitivity_dir=args.v4_cap_sensitivity_dir,
         v7_cap_sensitivity_dir=args.v7_cap_sensitivity_dir,
+        v7_clean_no_dxy_garch_cap_sensitivity_dir=(
+            args.v7_clean_no_dxy_garch_cap_sensitivity_dir
+        ),
         v8_cap_sensitivity_dir=args.v8_cap_sensitivity_dir,
         benchmark_comparison_dir=args.benchmark_comparison_dir,
         output_dir=args.output_dir,

@@ -26,6 +26,7 @@ DEFAULT_OUTPUT_DIR = "outputs/tables/statistical_validation_final_v3_v4"
 
 PRIMARY_CANDIDATES = [
     "V3_real_macro_vintage_clean_no_dxy_cap_0.50",
+    "V7_real_macro_vintage_clean_no_dxy_garch_cap_0.50",
     "V3_real_macro_vintage_cap_0.50",
     "V3_cap_0.60",
     "V4_cap_0.50",
@@ -48,6 +49,7 @@ def build_statistical_validation_report(
     v3_clean_no_dxy_cap_sensitivity_dir: str | None = None,
     v4_cap_sensitivity_dir: str | None = None,
     v7_cap_sensitivity_dir: str | None = None,
+    v7_clean_no_dxy_garch_cap_sensitivity_dir: str | None = None,
     v8_cap_sensitivity_dir: str | None = None,
 ) -> dict[str, Any]:
     """Build statistical validation CSVs and markdown from existing histories."""
@@ -64,6 +66,9 @@ def build_statistical_validation_report(
         v3_clean_no_dxy_cap_sensitivity_dir=v3_clean_no_dxy_cap_sensitivity_dir,
         v4_cap_sensitivity_dir=v4_cap_sensitivity_dir,
         v7_cap_sensitivity_dir=v7_cap_sensitivity_dir,
+        v7_clean_no_dxy_garch_cap_sensitivity_dir=(
+            v7_clean_no_dxy_garch_cap_sensitivity_dir
+        ),
         v8_cap_sensitivity_dir=v8_cap_sensitivity_dir,
     )
     histories, history_records, warnings = locate_strategy_histories(
@@ -567,6 +572,8 @@ def _source_dir_for_row(row: pd.Series, metadata: dict[str, Any]) -> Path | None
         path = metadata.get("v4_cap_sensitivity_dir")
     elif source == "v7_cap_sensitivity":
         path = metadata.get("v7_cap_sensitivity_dir")
+    elif source == "v7_clean_no_dxy_garch_cap_sensitivity":
+        path = metadata.get("v7_clean_no_dxy_garch_cap_sensitivity_dir")
     elif source == "v8_cap_sensitivity":
         path = metadata.get("v8_cap_sensitivity_dir")
     else:
@@ -582,6 +589,7 @@ def _with_cap_sensitivity_overrides(
     v3_clean_no_dxy_cap_sensitivity_dir: str | None = None,
     v4_cap_sensitivity_dir: str | None = None,
     v7_cap_sensitivity_dir: str | None = None,
+    v7_clean_no_dxy_garch_cap_sensitivity_dir: str | None = None,
     v8_cap_sensitivity_dir: str | None = None,
 ) -> dict[str, Any]:
     updated = dict(metadata)
@@ -591,6 +599,9 @@ def _with_cap_sensitivity_overrides(
         "v3_clean_no_dxy_cap_sensitivity_dir": v3_clean_no_dxy_cap_sensitivity_dir,
         "v4_cap_sensitivity_dir": v4_cap_sensitivity_dir,
         "v7_cap_sensitivity_dir": v7_cap_sensitivity_dir,
+        "v7_clean_no_dxy_garch_cap_sensitivity_dir": (
+            v7_clean_no_dxy_garch_cap_sensitivity_dir
+        ),
         "v8_cap_sensitivity_dir": v8_cap_sensitivity_dir,
     }
     for key, value in overrides.items():
@@ -698,6 +709,7 @@ def main() -> None:
     parser.add_argument("--v3-clean-no-dxy-cap-sensitivity-dir", default=None)
     parser.add_argument("--v4-cap-sensitivity-dir", default=None)
     parser.add_argument("--v7-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v7-clean-no-dxy-garch-cap-sensitivity-dir", default=None)
     parser.add_argument("--v8-cap-sensitivity-dir", default=None)
     args = parser.parse_args()
 
@@ -711,6 +723,9 @@ def main() -> None:
         v3_clean_no_dxy_cap_sensitivity_dir=args.v3_clean_no_dxy_cap_sensitivity_dir,
         v4_cap_sensitivity_dir=args.v4_cap_sensitivity_dir,
         v7_cap_sensitivity_dir=args.v7_cap_sensitivity_dir,
+        v7_clean_no_dxy_garch_cap_sensitivity_dir=(
+            args.v7_clean_no_dxy_garch_cap_sensitivity_dir
+        ),
         v8_cap_sensitivity_dir=args.v8_cap_sensitivity_dir,
     )
     print("Histories found:")

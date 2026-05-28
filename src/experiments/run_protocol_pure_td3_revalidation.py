@@ -170,6 +170,32 @@ PROTOCOL_CANDIDATES = [
         "garch_allow_scipy_fallback": False,
     },
     {
+        "name": "V7_real_macro_vintage_clean_no_dxy_garch",
+        "feature_version": "v7",
+        "description": (
+            "Clean real-time/as-of no-DXY V3 macro features plus V4 rolling "
+            "fitted real GARCH(1,1) features using arch_model."
+        ),
+        "default_enabled": False,
+        "macro_path": DEFAULT_V3_REALTIME_CLEAN_NO_DXY_MACRO_PATH,
+        "macro_date_column": "date",
+        "macro_source": "realtime_asof_no_dxy_no_fallback",
+        "dollar_proxy": "excluded",
+        "reason": (
+            "no full-window fresh true-vintage dollar proxy exists for 2015-2026 "
+            "without fallback/discontinuation"
+        ),
+        "exclude_blocks": [],
+        "use_dynamic_cash": False,
+        "cash_risk_off_column": None,
+        "garch_mode": GARCH_MODE_ROLLING_FITTED,
+        "garch_exclude_cash": True,
+        "garch_fallback": GARCH_FALLBACK_ROLLING_REALIZED,
+        "garch_min_history": 104,
+        "garch_window": 156,
+        "garch_allow_scipy_fallback": False,
+    },
+    {
         "name": "V8_ewma_garch_vol_current",
         "feature_version": "v8",
         "description": (

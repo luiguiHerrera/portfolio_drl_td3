@@ -249,6 +249,8 @@ V7 and V8 are useful negative results.
 
 Both improved with caps, but neither beat the simpler V3/V4 constrained candidates.
 
+V7_real_macro_vintage_clean_no_dxy_garch was also evaluated. It remains competitive after max-weight constraints, but it does not outperform the simpler V3_real_macro_vintage_clean_no_dxy candidate. This supports the finding that additional econometric complexity does not automatically improve TD3 policy quality.
+
 That is valuable. It prevents the project from becoming feature soup.
 
 ### 5. Benchmarks are still hard to beat

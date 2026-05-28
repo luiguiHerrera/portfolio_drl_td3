@@ -269,6 +269,72 @@ class StatisticalValidationReportTests(unittest.TestCase):
             any(strategy_name in warning for warning in report["warnings"]),
         )
 
+    def test_v7_clean_no_dxy_garch_history_resolves_from_optional_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            final_dir = Path(temp_dir) / "final"
+            output_dir = Path(temp_dir) / "out"
+            base_cap_dir = Path(temp_dir) / "base_cap"
+            clean_garch_cap_dir = Path(temp_dir) / "clean_garch_cap"
+            bench_dir = Path(temp_dir) / "bench"
+            final_dir.mkdir()
+            base_cap_dir.mkdir()
+            clean_garch_history_dir = (
+                clean_garch_cap_dir
+                / "per_candidate"
+                / "V7_real_macro_vintage_clean_no_dxy_garch"
+                / "F1_V7_real_macro_vintage_clean_no_dxy_garch_cap_0p50_seed_7"
+            )
+            clean_garch_history_dir.mkdir(parents=True)
+            bench_history_dir = bench_dir / "benchmarks" / "histories"
+            bench_history_dir.mkdir(parents=True)
+            self._write_history(clean_garch_history_dir / "test_policy_history.csv", value=0.02)
+            self._write_history(bench_history_dir / "BuyHold_GLD_history.csv", value=0.005)
+
+            strategy_name = "V7_real_macro_vintage_clean_no_dxy_garch_cap_0.50"
+            pd.DataFrame(
+                [
+                    {
+                        "strategy_name": strategy_name,
+                        "base_candidate": "V7_real_macro_vintage_clean_no_dxy_garch",
+                        "source": "v7_clean_no_dxy_garch_cap_sensitivity",
+                        "selected_cap": 0.50,
+                    }
+                ]
+            ).to_csv(final_dir / "final_constrained_td3_selected_candidates.csv", index=False)
+            pd.DataFrame(
+                [
+                    {"strategy_name": "BuyHold_GLD", "strategy_type": "benchmark"},
+                ]
+            ).to_csv(final_dir / "final_constrained_td3_mandate_ranking.csv", index=False)
+            (final_dir / "final_constrained_td3_metadata.json").write_text(
+                json.dumps(
+                    {
+                        "cap_sensitivity_dir": str(base_cap_dir),
+                        "benchmark_comparison_dir": str(bench_dir),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = build_statistical_validation_report(
+                final_report_dir=str(final_dir),
+                output_dir=str(output_dir),
+                n_bootstrap=20,
+                block_size=2,
+                v7_clean_no_dxy_garch_cap_sensitivity_dir=str(clean_garch_cap_dir),
+            )
+
+        records = report["history_records"].set_index("strategy_name")
+        self.assertTrue(bool(records.loc[strategy_name, "history_found"]))
+        self.assertIn(
+            "V7_real_macro_vintage_clean_no_dxy_garch",
+            records.loc[strategy_name, "source"],
+        )
+        self.assertIn(strategy_name, set(report["pairwise_bootstrap"]["candidate"]))
+        self.assertFalse(
+            any(strategy_name in warning for warning in report["warnings"]),
+        )
+
     @staticmethod
     def _write_history(path: Path, value: float = 0.01) -> None:
         dates = pd.date_range("2024-01-05", periods=20, freq="W-FRI")

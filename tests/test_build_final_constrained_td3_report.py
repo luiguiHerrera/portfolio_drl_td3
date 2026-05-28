@@ -171,6 +171,21 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
             set(report["selected_candidates"]["base_candidate"]),
         )
 
+    def test_v7_clean_no_dxy_garch_absent_when_no_directory_is_provided(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        self.assertNotIn(
+            "V7_real_macro_vintage_clean_no_dxy_garch",
+            set(report["selected_candidates"]["base_candidate"]),
+        )
+
     def test_v3_vintage_absent_when_no_vintage_directory_is_provided(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cap_dir, benchmark_dir = self._write_inputs(temp_dir)
@@ -277,6 +292,56 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
         self.assertEqual(
             selected.loc["V8_ewma_garch_vol_current", "strategy_group"],
             "td3_evaluated_constrained",
+        )
+
+    def test_v7_clean_no_dxy_garch_appears_when_directory_is_provided(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v7_clean_dir = self._write_v7_clean_no_dxy_garch_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v7_clean_no_dxy_garch_cap_sensitivity_dir=str(v7_clean_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        selected = report["selected_candidates"].set_index("base_candidate")
+        self.assertIn("V7_real_macro_vintage_clean_no_dxy_garch", selected.index)
+        self.assertEqual(
+            selected.loc[
+                "V7_real_macro_vintage_clean_no_dxy_garch",
+                "strategy_name",
+            ],
+            "V7_real_macro_vintage_clean_no_dxy_garch_cap_0.50",
+        )
+        self.assertEqual(
+            selected.loc[
+                "V7_real_macro_vintage_clean_no_dxy_garch",
+                "feature_family",
+            ],
+            "real_macro_vintage_clean_no_dxy_garch",
+        )
+        self.assertEqual(
+            selected.loc[
+                "V7_real_macro_vintage_clean_no_dxy_garch",
+                "strategy_group",
+            ],
+            "td3_evaluated_constrained",
+        )
+        self.assertEqual(
+            selected.loc[
+                "V7_real_macro_vintage_clean_no_dxy_garch",
+                "source",
+            ],
+            "v7_clean_no_dxy_garch_cap_sensitivity",
+        )
+        self.assertAlmostEqual(
+            selected.loc[
+                "V7_real_macro_vintage_clean_no_dxy_garch",
+                "selected_cap",
+            ],
+            0.50,
         )
 
     def test_v3_vintage_appears_when_vintage_directory_is_provided(self):
@@ -733,6 +798,40 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
         self.assertIn("lagged EWMA volatility", metadata["v8_caveat"])
         self.assertIn("GARCH/EWMA", metadata["v8_caveat"])
 
+    def test_metadata_records_v7_clean_no_dxy_garch_source_and_caveat(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v7_clean_dir = self._write_v7_clean_no_dxy_garch_inputs(temp_dir)
+            output_dir = Path(temp_dir) / "out"
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v7_clean_no_dxy_garch_cap_sensitivity_dir=str(v7_clean_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(output_dir),
+            )
+            metadata = json.loads(Path(report["paths"]["metadata"]).read_text())
+
+        self.assertEqual(
+            metadata["v7_clean_no_dxy_garch_cap_sensitivity_dir"],
+            str(v7_clean_dir),
+        )
+        self.assertEqual(
+            metadata["v7_clean_no_dxy_garch_source"],
+            "v7_clean_no_dxy_garch_cap_sensitivity",
+        )
+        self.assertEqual(
+            metadata["v7_clean_no_dxy_garch_macro_source"],
+            "realtime_asof_no_dxy_no_fallback",
+        )
+        self.assertEqual(metadata["v7_clean_no_dxy_garch_dollar_proxy"], "excluded")
+        self.assertEqual(
+            metadata["v7_clean_no_dxy_garch_garch_source"],
+            "rolling_fitted_arch_model",
+        )
+        self.assertIn("clean no-DXY", metadata["v7_clean_no_dxy_garch_caveat"])
+        self.assertIn("arch_model", metadata["v7_clean_no_dxy_garch_caveat"])
+
     def test_metadata_records_v3_vintage_source_and_dxy_fallback_caveat(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cap_dir, benchmark_dir = self._write_inputs(temp_dir)
@@ -808,6 +907,30 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
 
         self.assertIn("V7 improves with a cap", report["markdown_summary"])
         self.assertIn("does not outperform simpler V3/V4", report["markdown_summary"])
+
+    def test_markdown_summary_mentions_v7_clean_no_dxy_garch_underperforms_v3_clean(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cap_dir, benchmark_dir = self._write_inputs(temp_dir)
+            v3_clean_dir = self._write_v3_clean_no_dxy_inputs(temp_dir)
+            v7_clean_dir = self._write_v7_clean_no_dxy_garch_inputs(temp_dir)
+
+            report = build_final_constrained_td3_report(
+                cap_sensitivity_dir=str(cap_dir),
+                v3_clean_no_dxy_cap_sensitivity_dir=str(v3_clean_dir),
+                v7_clean_no_dxy_garch_cap_sensitivity_dir=str(v7_clean_dir),
+                benchmark_comparison_dir=str(benchmark_dir),
+                output_dir=str(Path(temp_dir) / "out"),
+            )
+
+        self.assertIn("V7 clean no-DXY + GARCH", report["markdown_summary"])
+        self.assertIn(
+            "does not outperform the simpler V3 clean no-DXY",
+            report["markdown_summary"],
+        )
+        self.assertIn(
+            "does not automatically improve TD3 policy quality",
+            report["markdown_summary"],
+        )
 
     def test_markdown_summary_mentions_evaluated_but_not_selected_candidates(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -967,6 +1090,19 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
             index=False,
         )
         return v7_dir
+
+    def _write_v7_clean_no_dxy_garch_inputs(self, temp_dir: str) -> Path:
+        v7_clean_dir = Path(temp_dir) / "v7_clean_no_dxy_garch_cap"
+        v7_clean_dir.mkdir()
+        self._v7_clean_no_dxy_garch_cap_results().to_csv(
+            v7_clean_dir / "cap_sensitivity_all_results.csv",
+            index=False,
+        )
+        self._v7_clean_no_dxy_garch_best_caps().to_csv(
+            v7_clean_dir / "cap_sensitivity_best_caps.csv",
+            index=False,
+        )
+        return v7_clean_dir
 
     def _write_v8_inputs(self, temp_dir: str) -> Path:
         v8_dir = Path(temp_dir) / "v8_cap"
@@ -1353,6 +1489,68 @@ class FinalConstrainedTD3ReportTests(unittest.TestCase):
                     "best_by_robust_score": 0.50,
                     "best_robust_score": 0.66,
                     "source": "v7_cap_sensitivity",
+                }
+            ]
+        )
+
+    def _v7_clean_no_dxy_garch_cap_results(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "candidate_name": (
+                        "V7_real_macro_vintage_clean_no_dxy_garch_cap_uncapped"
+                    ),
+                    "base_candidate": "V7_real_macro_vintage_clean_no_dxy_garch",
+                    "max_weight_cap": pd.NA,
+                    "cap_label": "uncapped",
+                    "robust_score": 0.18,
+                    "mandate_aware_score": 0.10,
+                    "annualized_return": 0.03,
+                    "annualized_volatility": 0.18,
+                    "sharpe": 0.25,
+                    "sortino": 0.40,
+                    "calmar": 0.30,
+                    "max_drawdown": -0.24,
+                    "average_turnover": 0.55,
+                    "average_effective_number_of_assets": 1.08,
+                    "average_max_weight": 0.97,
+                    "decision_label": "uncapped_baseline",
+                    "source": "v7_clean_no_dxy_garch_cap_sensitivity",
+                },
+                {
+                    "candidate_name": (
+                        "V7_real_macro_vintage_clean_no_dxy_garch_cap_0p50"
+                    ),
+                    "base_candidate": "V7_real_macro_vintage_clean_no_dxy_garch",
+                    "max_weight_cap": 0.50,
+                    "cap_label": "0.50",
+                    "robust_score": 0.82,
+                    "mandate_aware_score": 0.73,
+                    "annualized_return": 0.10,
+                    "annualized_volatility": 0.13,
+                    "sharpe": 0.93,
+                    "sortino": 1.45,
+                    "calmar": 1.55,
+                    "max_drawdown": -0.13,
+                    "average_turnover": 0.20,
+                    "average_effective_number_of_assets": 3.15,
+                    "average_max_weight": 0.50,
+                    "decision_label": "cap_dominates_uncapped",
+                    "source": "v7_clean_no_dxy_garch_cap_sensitivity",
+                },
+            ]
+        )
+
+    def _v7_clean_no_dxy_garch_best_caps(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "base_candidate": "V7_real_macro_vintage_clean_no_dxy_garch",
+                    "best_by_mandate_aware_score": 0.50,
+                    "best_mandate_aware_score": 0.73,
+                    "best_by_robust_score": 0.50,
+                    "best_robust_score": 0.82,
+                    "source": "v7_clean_no_dxy_garch_cap_sensitivity",
                 }
             ]
         )

@@ -49,6 +49,13 @@ PAIRWISE_COMPARISONS = [
     ("V3_real_macro_vintage_clean_no_dxy_cap_0.50", "BuyHold_GLD"),
     ("V3_real_macro_vintage_clean_no_dxy_cap_0.50", "trend_spy_cash_12p"),
     ("V3_real_macro_vintage_clean_no_dxy_cap_0.50", "V4_cap_0.50"),
+    ("V7_real_macro_vintage_clean_no_dxy_garch_cap_0.50", "BuyHold_GLD"),
+    ("V7_real_macro_vintage_clean_no_dxy_garch_cap_0.50", "trend_spy_cash_12p"),
+    ("V7_real_macro_vintage_clean_no_dxy_garch_cap_0.50", "V4_cap_0.50"),
+    (
+        "V7_real_macro_vintage_clean_no_dxy_garch_cap_0.50",
+        "V3_real_macro_vintage_clean_no_dxy_cap_0.50",
+    ),
     ("V3_cap_0.60", "BuyHold_GLD"),
     ("V3_cap_0.60", "trend_spy_cash_12p"),
     ("V4_cap_0.50", "BuyHold_GLD"),
@@ -65,6 +72,7 @@ def build_regime_analysis_report(
     v3_clean_no_dxy_cap_sensitivity_dir: str | None = None,
     v4_cap_sensitivity_dir: str | None = None,
     v7_cap_sensitivity_dir: str | None = None,
+    v7_clean_no_dxy_garch_cap_sensitivity_dir: str | None = None,
     v8_cap_sensitivity_dir: str | None = None,
 ) -> dict[str, Any]:
     """Build and write regime analysis outputs."""
@@ -79,6 +87,9 @@ def build_regime_analysis_report(
         v3_clean_no_dxy_cap_sensitivity_dir=v3_clean_no_dxy_cap_sensitivity_dir,
         v4_cap_sensitivity_dir=v4_cap_sensitivity_dir,
         v7_cap_sensitivity_dir=v7_cap_sensitivity_dir,
+        v7_clean_no_dxy_garch_cap_sensitivity_dir=(
+            v7_clean_no_dxy_garch_cap_sensitivity_dir
+        ),
         v8_cap_sensitivity_dir=v8_cap_sensitivity_dir,
     )
     metrics = build_regime_strategy_metrics(histories)
@@ -131,6 +142,7 @@ def locate_and_load_histories(
     v3_clean_no_dxy_cap_sensitivity_dir: str | None = None,
     v4_cap_sensitivity_dir: str | None = None,
     v7_cap_sensitivity_dir: str | None = None,
+    v7_clean_no_dxy_garch_cap_sensitivity_dir: str | None = None,
     v8_cap_sensitivity_dir: str | None = None,
 ) -> tuple[dict[str, pd.Series], dict[str, Any], list[str]]:
     """Load benchmark histories and date-averaged TD3 histories."""
@@ -149,6 +161,9 @@ def locate_and_load_histories(
         v3_clean_no_dxy_cap_sensitivity_dir=v3_clean_no_dxy_cap_sensitivity_dir,
         v4_cap_sensitivity_dir=v4_cap_sensitivity_dir,
         v7_cap_sensitivity_dir=v7_cap_sensitivity_dir,
+        v7_clean_no_dxy_garch_cap_sensitivity_dir=(
+            v7_clean_no_dxy_garch_cap_sensitivity_dir
+        ),
         v8_cap_sensitivity_dir=v8_cap_sensitivity_dir,
     )
     selected = pd.read_csv(selected_path)
@@ -602,6 +617,9 @@ def _source_dir_for_candidate(base_candidate: str, metadata: dict[str, Any]) -> 
         "V3_real_macro_vintage_clean_no_dxy": "v3_clean_no_dxy_cap_sensitivity_dir",
         "V4_real_garch_current": "v4_cap_sensitivity_dir",
         "V7_real_macro_garch_current": "v7_cap_sensitivity_dir",
+        "V7_real_macro_vintage_clean_no_dxy_garch": (
+            "v7_clean_no_dxy_garch_cap_sensitivity_dir"
+        ),
         "V8_ewma_garch_vol_current": "v8_cap_sensitivity_dir",
     }.get(base_candidate, "cap_sensitivity_dir")
     return metadata.get(source_key)
@@ -615,6 +633,7 @@ def _with_cap_sensitivity_overrides(
     v3_clean_no_dxy_cap_sensitivity_dir: str | None = None,
     v4_cap_sensitivity_dir: str | None = None,
     v7_cap_sensitivity_dir: str | None = None,
+    v7_clean_no_dxy_garch_cap_sensitivity_dir: str | None = None,
     v8_cap_sensitivity_dir: str | None = None,
 ) -> dict[str, Any]:
     updated = dict(metadata)
@@ -624,6 +643,9 @@ def _with_cap_sensitivity_overrides(
         "v3_clean_no_dxy_cap_sensitivity_dir": v3_clean_no_dxy_cap_sensitivity_dir,
         "v4_cap_sensitivity_dir": v4_cap_sensitivity_dir,
         "v7_cap_sensitivity_dir": v7_cap_sensitivity_dir,
+        "v7_clean_no_dxy_garch_cap_sensitivity_dir": (
+            v7_clean_no_dxy_garch_cap_sensitivity_dir
+        ),
         "v8_cap_sensitivity_dir": v8_cap_sensitivity_dir,
     }
     for key, value in overrides.items():
@@ -795,6 +817,7 @@ def main() -> None:
     parser.add_argument("--v3-clean-no-dxy-cap-sensitivity-dir", default=None)
     parser.add_argument("--v4-cap-sensitivity-dir", default=None)
     parser.add_argument("--v7-cap-sensitivity-dir", default=None)
+    parser.add_argument("--v7-clean-no-dxy-garch-cap-sensitivity-dir", default=None)
     parser.add_argument("--v8-cap-sensitivity-dir", default=None)
     args = parser.parse_args()
     result = build_regime_analysis_report(
@@ -805,6 +828,9 @@ def main() -> None:
         v3_clean_no_dxy_cap_sensitivity_dir=args.v3_clean_no_dxy_cap_sensitivity_dir,
         v4_cap_sensitivity_dir=args.v4_cap_sensitivity_dir,
         v7_cap_sensitivity_dir=args.v7_cap_sensitivity_dir,
+        v7_clean_no_dxy_garch_cap_sensitivity_dir=(
+            args.v7_clean_no_dxy_garch_cap_sensitivity_dir
+        ),
         v8_cap_sensitivity_dir=args.v8_cap_sensitivity_dir,
     )
     print(f"Histories found: {len(result['histories'])}")

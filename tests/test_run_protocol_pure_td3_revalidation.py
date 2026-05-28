@@ -12,6 +12,7 @@ from src.experiments.run_protocol_pure_td3_revalidation import (
     DEFAULT_V3_REALTIME_CLEAN_NO_DXY_MACRO_PATH,
     DEFAULT_V3_REALTIME_MACRO_PATH,
     PROTOCOL_CANDIDATES,
+    _build_feature_context,
     _build_metadata,
     _build_candidate_run_config,
     _build_v3_features,
@@ -186,6 +187,21 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
         self.assertNotIn("V7_real_macro_garch_current", default_names)
         self.assertEqual(explicit_names, {"V7_real_macro_garch_current"})
 
+    def test_v7_clean_no_dxy_garch_candidate_is_available_but_not_default_enabled(self):
+        default_names = {candidate["name"] for candidate in _select_candidates(None)}
+        explicit_names = {
+            candidate["name"]
+            for candidate in _select_candidates(
+                ["V7_real_macro_vintage_clean_no_dxy_garch"]
+            )
+        }
+
+        self.assertNotIn("V7_real_macro_vintage_clean_no_dxy_garch", default_names)
+        self.assertEqual(
+            explicit_names,
+            {"V7_real_macro_vintage_clean_no_dxy_garch"},
+        )
+
     def test_v8_candidate_is_available_but_not_default_enabled(self):
         default_names = {candidate["name"] for candidate in _select_candidates(None)}
         explicit_names = {
@@ -243,6 +259,36 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
         self.assertEqual(config["features"]["macro_path"], DEFAULT_V3_MACRO_PATH)
         self.assertEqual(config["features"]["garch_mode"], "rolling_fitted")
         self.assertTrue(config["features"]["garch_exclude_cash"])
+        self.assertFalse(config["reward"]["use_cash_risk_off_penalty"])
+
+    def test_v7_clean_no_dxy_garch_candidate_config_uses_clean_macro_and_garch(self):
+        base_config = self._base_config()
+        candidate = _candidate("V7_real_macro_vintage_clean_no_dxy_garch")
+
+        config = _build_candidate_run_config(
+            base_config=base_config,
+            candidate=candidate,
+            seed=7,
+            episodes=5,
+            batch_size=32,
+            actor_learning_rate=0.0005,
+            critic_learning_rate=0.0005,
+        )
+
+        self.assertEqual(config["features"]["version"], "v7")
+        self.assertEqual(
+            config["features"]["macro_path"],
+            DEFAULT_V3_REALTIME_CLEAN_NO_DXY_MACRO_PATH,
+        )
+        self.assertEqual(config["features"]["macro_date_column"], "date")
+        self.assertEqual(config["features"]["garch_mode"], "rolling_fitted")
+        self.assertTrue(config["features"]["garch_exclude_cash"])
+        self.assertEqual(config["features"]["garch_fallback"], "rolling_realized_vol")
+        self.assertEqual(config["features"]["garch_min_history"], 104)
+        self.assertEqual(config["features"]["garch_window"], 156)
+        self.assertFalse(candidate["garch_allow_scipy_fallback"])
+        self.assertEqual(candidate["macro_source"], "realtime_asof_no_dxy_no_fallback")
+        self.assertEqual(candidate["dollar_proxy"], "excluded")
         self.assertFalse(config["reward"]["use_cash_risk_off_penalty"])
 
     def test_v8_candidate_config_uses_ewma_and_rolling_fitted_garch(self):
@@ -310,6 +356,57 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
         self.assertIn("garch_vol_SPY", features.columns)
         self.assertNotIn("garch_vol_CASH", features.columns)
         self.assertIs(_candidate_raw_features(candidate, {"v7_features": features}), features)
+
+    def test_v7_clean_no_dxy_garch_features_include_macro_and_garch_without_dxy_or_cash(self):
+        returns = self._long_returns()
+        macro_path = self._write_macro_csv_for_returns(returns, include_dxy=False)
+        candidate = {
+            **_candidate("V7_real_macro_vintage_clean_no_dxy_garch"),
+            "macro_path": macro_path,
+            "garch_min_history": 5,
+            "garch_window": 8,
+        }
+
+        features = _build_v7_features(
+            returns=returns,
+            base_config=self._base_config(),
+            candidate=candidate,
+        )
+        shifted = features.shift(1).dropna()
+        aligned = shifted.loc[shifted.index.intersection(returns.index)]
+
+        self.assertTrue(any(column.startswith("macro_") for column in features.columns))
+        self.assertIn("macro_CPI", features.columns)
+        self.assertNotIn("macro_DXY", features.columns)
+        self.assertNotIn("macro_dollar_momentum_12p", features.columns)
+        self.assertIn("garch_vol_SPY", features.columns)
+        self.assertNotIn("garch_vol_CASH", features.columns)
+        self.assertFalse(aligned.isna().any().any())
+        self.assertIs(_candidate_raw_features(candidate, {"v7_features": features}), features)
+
+    def test_v7_clean_no_dxy_garch_feature_context_builds_without_missing_values(self):
+        returns = self._long_returns()
+        macro_path = self._write_macro_csv_for_returns(returns, include_dxy=False)
+        candidate = {
+            **_candidate("V7_real_macro_vintage_clean_no_dxy_garch"),
+            "macro_path": macro_path,
+            "garch_min_history": 5,
+            "garch_window": 8,
+        }
+
+        context = _build_feature_context(
+            returns=returns,
+            base_config=self._base_config(),
+            candidates=[candidate],
+        )
+        features = context["v7_features"]
+        shifted = features.shift(1).dropna()
+        aligned = shifted.loc[shifted.index.intersection(returns.index)]
+
+        self.assertFalse(aligned.empty)
+        self.assertFalse(aligned.isna().any().any())
+        self.assertNotIn("macro_DXY", features.columns)
+        self.assertIn("garch_vol_SPY", features.columns)
 
     def test_v8_raw_feature_generation_includes_ewma_garch_and_comparison(self):
         candidate = {
@@ -478,6 +575,39 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
 
         candidate_metadata = metadata["candidate_metadata"][
             "V3_real_macro_vintage_clean_no_dxy"
+        ]
+        self.assertEqual(
+            candidate_metadata["macro_source"],
+            "realtime_asof_no_dxy_no_fallback",
+        )
+        self.assertEqual(candidate_metadata["dollar_proxy"], "excluded")
+        self.assertIn("fallback/discontinuation", candidate_metadata["reason"])
+
+    def test_metadata_records_v7_clean_no_dxy_garch_macro_metadata(self):
+        candidate = _candidate("V7_real_macro_vintage_clean_no_dxy_garch")
+        actual_folds = pd.DataFrame(
+            [{"fold": "F1", "train_start": "2021-01-01", "test_end": "2021-02-01"}]
+        )
+
+        metadata = _build_metadata(
+            base_config_path="configs/config.yaml",
+            returns_path="returns.csv",
+            output_dir="out",
+            candidates=[candidate],
+            folds=[self.fold],
+            actual_folds=actual_folds,
+            seeds=[7],
+            episodes=5,
+            batch_size=32,
+            actor_learning_rate=0.0005,
+            critic_learning_rate=0.0005,
+            base_config=self._base_config(),
+            run_configs={},
+            smoke=True,
+        )
+
+        candidate_metadata = metadata["candidate_metadata"][
+            "V7_real_macro_vintage_clean_no_dxy_garch"
         ]
         self.assertEqual(
             candidate_metadata["macro_source"],

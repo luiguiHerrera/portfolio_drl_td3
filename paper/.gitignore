@@ -1,0 +1,12 @@
+*.aux
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.log
+*.out
+*.pdf
+*.synctex.gz
+
+# Keep the final compiled manuscript PDF
+!main.pdf

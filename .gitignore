@@ -30,3 +30,18 @@ reports/
 
 # Local environment lock snapshots
 requirements_arm64_lock.txt
+
+# LaTeX build artifacts
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.toc
+paper/*.bbl
+paper/*.blg
+paper/*.bcf
+paper/*.run.xml
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.synctex.gz
+paper/*.xdv
+

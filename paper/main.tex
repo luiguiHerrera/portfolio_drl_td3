@@ -209,6 +209,11 @@ the methodological stance of this paper: machine learning should be used to
 test economically meaningful hypotheses and control backtest overfitting,
 rather than to search mechanically for high-performing trading rules
 \citep{lopezdeprado2020mlam}.
+Outside the DRL literature, \citet{chen2022} provide a related example of
+machine-learning-based portfolio construction in which diversification is an
+explicit design objective. That perspective is consistent with this paper's
+treatment of concentration control as part of portfolio quality rather than a
+cosmetic post-processing step.
 
 This paper differs from performance-oriented backtests by treating mandate
 compliance as part of model quality rather than an afterthought. A high Sharpe
@@ -258,10 +263,12 @@ turnover, and drawdown mandate.
 The investable universe contains SPY, TLT, GLD, BTC-USD, and synthetic CASH.
 All standard experiments use weekly returns. CASH is treated as a zero-return
 asset in the standard protocol, so it functions as a defensive allocation
-channel rather than an estimated return process. The timing convention is
-lagged throughout: state information observed through week \(t-1\) is used to
-choose weights for week \(t\), and week-\(t\) returns are applied only after
-those weights have been fixed.
+channel rather than an estimated return process. This also creates a more
+realistic allocation setting, since a fund need not keep all capital
+continuously invested in risky assets. The timing convention is lagged
+throughout: state information observed through week \(t-1\) is used to choose
+weights for week \(t\), and week-\(t\) returns are applied only after those
+weights have been fixed.
 
 The leading macro specification uses real-time/as-of FRED vintage information
 for DGS10, DGS2, VIX, and CPI. Macro values are aligned to the weekly decision
@@ -307,7 +314,6 @@ Aggressive & -0.35 & 0.45 & 1.00 & 1.00 & 1.50 \\
 \end{tabular}
 \begin{flushleft}
 \footnotesize
-Source: mandate profile configuration in \path{src/risk/mandate_profiles.py}.
 The leading cap-0.50 result is especially relevant for concentration-aware
 clients because it enforces the conservative single-asset weight limit while
 remaining competitive under the final mandate-aware ranking.
@@ -335,14 +341,15 @@ Validation layer & Walk-forward folds, multiple seeds, static and dynamic benchm
 \subsection{Construction of the Eight Candidate State Specifications}
 
 The paper evaluates eight model families rather than a single preferred
-specification. The naming convention V1--V8 refers to the state representation
-given to the same TD3 allocation framework, with cap experiments applied after
-the unconstrained concentration behavior was diagnosed. This keeps the
-comparison focused: the research question is not whether one selected macro
-model works, but which information design survives a common mandate-aware
-evaluation protocol. Historical V3 variants that used current-vintage macro
-data or DXY fallback remain part of the audit trail, but they are not treated as
-final evidence once the clean no-DXY specification is available.
+specification. The naming convention V1--V8 refers to alternative state
+representations, each trained as a separate TD3 policy under the same
+allocation environment and evaluation protocol. This keeps the comparison
+focused: the question is not whether one manually selected feature block works,
+but which independently trained state specification survives the same
+mandate-aware evaluation protocol. Historical V3 variants that used
+current-vintage macro data or DXY fallback remain part of the audit trail, but
+they are not treated as final evidence once the clean no-DXY specification is
+available.
 
 \begin{table}[H]
 \centering
@@ -365,8 +372,11 @@ V8 & EWMA/GARCH hybrid & V2 plus fitted GARCH, EWMA volatility, and comparison f
 \end{tabularx}
 \end{table}
 
-The GARCH variants are constructed as rolling volatility forecasts rather than
-full-sample ex post features. For each eligible risky asset \(i\), the fitted
+The GARCH variants are constructed as rolling one-step-ahead volatility
+forecasts using only information available before the allocation date, rather
+than as full-sample ex post volatility features. This avoids look-ahead bias
+and keeps the volatility state consistent with the paper's lagged
+decision-timing convention. For each eligible risky asset \(i\), the fitted
 GARCH(1,1) forecast can be written as
 \begin{equation}
   \sigma^2_{i,t+1|t}
@@ -377,10 +387,11 @@ where \(\sigma^2_{i,t+1|t}\) is the one-step-ahead conditional variance,
 \((\omega_i,\alpha_i,\beta_i)\) are estimated using only information available
 before the allocation date. The implementation uses a rolling estimation
 window, requires a minimum return history before fitting, excludes synthetic
-CASH from fitted GARCH estimation, and falls back to realized rolling
-volatility only when the history is insufficient for a stable fit. The purpose
-of V4, V7, and V8 is therefore explicit: they test whether econometric
-volatility forecasts add value beyond return-derived and macro state variables.
+CASH from fitted GARCH estimation, and uses realized rolling volatility as a
+documented fallback only when the available rolling history is insufficient for
+a stable GARCH fit. The purpose of V4, V7, and V8 is therefore explicit: they
+test whether econometric volatility forecasts add value beyond return-derived
+and macro state variables.
 
 \section{Methodology}
 
@@ -531,8 +542,7 @@ Rank & Strategy & Mandate & Robust & Sharpe & Max DD & Eff. assets & Role \\
 \footnotesize
 Historical V3 current-vintage and DXY-fallback variants remain part of the
 research audit trail, but they are excluded from this final-candidate table
-because the clean no-DXY design supersedes them as evidence. Source: final
-constrained TD3 report outputs.
+because the clean no-DXY design supersedes them as evidence.
 \end{flushleft}
 \end{table}
 
@@ -580,10 +590,7 @@ V7 clean no-DXY + GARCH & 0.50 & 0.6093 & 0.7126 & -0.1266 & Competitive, not su
 \end{tabularx}
 \begin{flushleft}
 \footnotesize
-Source: cap-sensitivity summaries for
-\path{cap_sensitivity_experiment_v3_clean_no_dxy_60ep_10seeds_replication}
-and \path{cap_sensitivity_experiment_v7_clean_no_dxy_garch_60ep_10seeds}.
-The V3 clean no-DXY values come from the replication seed grid. The V7 values
+Note: The V3 clean no-DXY values come from the replication seed grid. The V7 values
 come from the corresponding clean no-DXY GARCH cap-sensitivity run. The
 replication run confirms the same qualitative cap benefit with a different seed
 grid, but its V3 values should not be mixed mechanically with the final
@@ -728,8 +735,7 @@ Trend SPY/CASH 12p & 10 & 228 & V6 cap 0.50 & 0.000765 & 0.4503 & No evidence of
 \setlength{\tabcolsep}{6pt}
 \begin{flushleft}
 \footnotesize
-Source: \path{outputs/tables/white_reality_check_final/}. The White Reality
-Check is computed over aligned realized out-of-sample weekly net returns and
+Note: The White Reality Check is computed over aligned realized out-of-sample weekly net returns and
 controls for selecting the best candidate among the evaluated TD3 set. It tests
 mean return differentials, not mandate-aware score. High p-values indicate no
 evidence that the best searched TD3 candidate is superior to the benchmark
@@ -803,8 +809,7 @@ Aggressive & Equal Weight & 0.8004 & 0.8004 & -0.3044 & 5.0000 & 0.2000 & 0.0000
 \setlength{\tabcolsep}{6pt}
 \begin{flushleft}
 \footnotesize
-Source: \path{outputs/tables/mandate_profile_comparison_final/}. Full strategy
-identifiers are retained in the generated output files. Profile score applies
+Note: Full strategy identifiers are retained in the generated output files. Profile score applies
 the corresponding mandate thresholds to the already realized strategy metrics;
 higher values indicate better profile-specific admissibility and quality. V7
 clean no-DXY + GARCH remains competitive in the broader report but does not

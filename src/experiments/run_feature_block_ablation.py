@@ -26,7 +26,7 @@ from src.backtest.benchmarks import (
     equal_weight_returns,
     individual_buy_and_hold_returns,
 )
-from src.backtest.evaluate_agent import build_policy_history
+from src.backtest.evaluate_agent import build_policy_history, flatten_transaction_cost_info
 from src.backtest.evaluate_policy import summary_metrics
 from src.backtest.performance_metrics import extended_summary_metrics
 from src.data.build_dataset import build_returns_dataset
@@ -497,6 +497,8 @@ def train_td3_ablation_on_datasets(datasets: dict, config: dict) -> dict:
         auxiliary_features=datasets.get("train_auxiliary_features"),
         initial_cash=environment_config["initial_cash"],
         transaction_cost=environment_config["transaction_cost"],
+        transaction_cost_mode=environment_config.get("transaction_cost_mode", "scalar"),
+        asset_transaction_cost_bps=environment_config.get("asset_transaction_cost_bps"),
         reward_config=reward_config,
     )
     agent = TD3Agent(
@@ -623,6 +625,8 @@ def evaluate_agent_ablation(
         auxiliary_features,
         initial_cash=env_config["initial_cash"],
         transaction_cost=env_config["transaction_cost"],
+        transaction_cost_mode=env_config.get("transaction_cost_mode", "scalar"),
+        asset_transaction_cost_bps=env_config.get("asset_transaction_cost_bps"),
         reward_config=config["reward"],
     )
     return {
@@ -641,6 +645,8 @@ def run_policy_episode_ablation(
     initial_cash: float,
     transaction_cost: float,
     reward_config: dict,
+    transaction_cost_mode: str = "scalar",
+    asset_transaction_cost_bps: dict | None = None,
 ) -> dict:
     """Run one policy episode with optional auxiliary reward features."""
     env = PortfolioEnv(
@@ -649,6 +655,8 @@ def run_policy_episode_ablation(
         auxiliary_features=auxiliary_features,
         initial_cash=initial_cash,
         transaction_cost=transaction_cost,
+        transaction_cost_mode=transaction_cost_mode,
+        asset_transaction_cost_bps=asset_transaction_cost_bps,
         reward_config=reward_config,
     )
     state = env.reset()
@@ -665,6 +673,7 @@ def run_policy_episode_ablation(
         "weights": [],
     }
     info_frames = []
+    transaction_cost_info_frames = []
     while not done:
         action = agent.select_action(state)
         next_state, reward, done, info = env.step(action)
@@ -693,6 +702,7 @@ def run_policy_episode_ablation(
                 )
             }
         )
+        transaction_cost_info_frames.append(flatten_transaction_cost_info(info))
         state = next_state
 
     index = env.returns.index
@@ -703,6 +713,10 @@ def run_policy_episode_ablation(
     }
     episode["weights"] = pd.DataFrame(rows["weights"], index=index, columns=env.asset_names)
     episode["turnover_reward_info"] = pd.DataFrame(info_frames, index=index)
+    episode["transaction_cost_info"] = pd.DataFrame(
+        transaction_cost_info_frames,
+        index=index,
+    )
     episode["final_portfolio_value"] = rows["portfolio_values"][-1]
     return episode
 

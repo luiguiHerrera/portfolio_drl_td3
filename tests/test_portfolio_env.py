@@ -374,6 +374,135 @@ class PortfolioEnvTests(unittest.TestCase):
             info["portfolio_return"] - info["transaction_cost"],
         )
 
+    def test_asset_specific_zero_turnover_produces_zero_transaction_cost(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps=self._asset_cost_bps(),
+        )
+        env.reset()
+
+        _, _, _, info = env.step(np.full(5, 1.0))
+
+        self.assertEqual(info["transaction_cost_mode"], "asset_specific")
+        self.assertAlmostEqual(info["turnover"], 0.0)
+        self.assertAlmostEqual(info["transaction_cost"], 0.0)
+        self.assertIn("asset_turnover", info)
+        self.assertIn("asset_transaction_cost_contribution", info)
+
+    def test_asset_specific_cash_has_zero_cost(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps=self._asset_cost_bps(),
+        )
+        env.reset()
+
+        _, _, _, info = env.step(np.array([0.0, 0.0, 0.0, 0.0, 1.0]))
+
+        self.assertGreater(info["asset_turnover"]["CASH"], 0.0)
+        self.assertEqual(info["asset_transaction_cost_contribution"]["CASH"], 0.0)
+
+    def test_asset_specific_btc_cost_exceeds_etf_for_higher_bps(self):
+        spy_env = PortfolioEnv(
+            self.returns,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps=self._asset_cost_bps(),
+        )
+        btc_env = PortfolioEnv(
+            self.returns,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps=self._asset_cost_bps(),
+        )
+        spy_env.reset()
+        btc_env.reset()
+
+        _, _, _, spy_info = spy_env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+        _, _, _, btc_info = btc_env.step(np.array([0.0, 0.0, 0.0, 1.0, 0.0]))
+
+        self.assertGreater(btc_info["transaction_cost"], spy_info["transaction_cost"])
+
+    def test_equal_asset_cost_vector_reproduces_scalar_cost_model(self):
+        action = np.array([1.0, 0.0, 0.0, 0.0, 0.0])
+        scalar_env = PortfolioEnv(self.returns, transaction_cost=0.001)
+        asset_env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.0,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps={
+                asset: 10.0 for asset in self.returns.columns
+            },
+        )
+        scalar_env.reset()
+        asset_env.reset()
+
+        _, _, _, scalar_info = scalar_env.step(action)
+        _, _, _, asset_info = asset_env.step(action)
+
+        self.assertAlmostEqual(
+            asset_info["transaction_cost"],
+            scalar_info["transaction_cost"],
+        )
+        self.assertAlmostEqual(
+            asset_info["financial_net_return"],
+            scalar_info["financial_net_return"],
+        )
+
+    def test_asset_specific_cost_reduces_financial_net_return(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps=self._asset_cost_bps(),
+        )
+        env.reset()
+
+        _, _, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        self.assertAlmostEqual(
+            info["financial_net_return"],
+            info["portfolio_return"] - info["transaction_cost"],
+        )
+        self.assertGreater(info["transaction_cost"], 0.0)
+
+    def test_asset_specific_missing_asset_costs_fail(self):
+        costs = self._asset_cost_bps()
+        del costs["BTC-USD"]
+
+        with self.assertRaisesRegex(ValueError, "missing costs"):
+            PortfolioEnv(
+                self.returns,
+                transaction_cost_mode="asset_specific",
+                asset_transaction_cost_bps=costs,
+            )
+
+    def test_asset_specific_negative_asset_costs_fail(self):
+        costs = self._asset_cost_bps()
+        costs["BTC-USD"] = -1.0
+
+        with self.assertRaisesRegex(ValueError, "non-negative"):
+            PortfolioEnv(
+                self.returns,
+                transaction_cost_mode="asset_specific",
+                asset_transaction_cost_bps=costs,
+            )
+
+    def test_scalar_transaction_cost_mode_is_backward_compatible(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost=0.01,
+            transaction_cost_mode="scalar",
+            asset_transaction_cost_bps={
+                asset: 999.0 for asset in self.returns.columns
+            },
+        )
+        env.reset()
+
+        _, _, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        self.assertEqual(info["transaction_cost_mode"], "scalar")
+        self.assertAlmostEqual(info["transaction_cost"], 0.01 * info["turnover"])
+        self.assertNotIn("asset_transaction_cost_contribution", info)
+
     def test_excess_linear_turnover_penalty_ignores_turnover_below_free_band(self):
         env = PortfolioEnv(
             self.returns,
@@ -760,6 +889,15 @@ class PortfolioEnvTests(unittest.TestCase):
             {"risk_off_state": values},
             index=self.returns.index,
         )
+
+    def _asset_cost_bps(self) -> dict:
+        return {
+            "SPY": 2.0,
+            "TLT": 2.0,
+            "GLD": 2.0,
+            "BTC-USD": 18.0,
+            "CASH": 0.0,
+        }
 
 
 if __name__ == "__main__":

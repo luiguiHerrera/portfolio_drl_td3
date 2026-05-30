@@ -40,6 +40,8 @@ def train_td3_on_datasets(
         features=datasets["train_features"],
         initial_cash=environment_config["initial_cash"],
         transaction_cost=environment_config["transaction_cost"],
+        transaction_cost_mode=environment_config.get("transaction_cost_mode", "scalar"),
+        asset_transaction_cost_bps=environment_config.get("asset_transaction_cost_bps"),
         reward_config=config["reward"],
     )
     state_dim = env.observation_dim
@@ -118,6 +120,8 @@ def train_td3_on_datasets(
     evaluation_kwargs = {
         "initial_cash": environment_config["initial_cash"],
         "transaction_cost": environment_config["transaction_cost"],
+        "transaction_cost_mode": environment_config.get("transaction_cost_mode", "scalar"),
+        "asset_transaction_cost_bps": environment_config.get("asset_transaction_cost_bps"),
         "reward_config": config["reward"],
         "periods_per_year": 52,
         "risk_free_rate": 0.0,

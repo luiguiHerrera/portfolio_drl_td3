@@ -29,6 +29,8 @@ def compare_agent_to_basic_benchmarks(
     risk_free_rate: float = 0.0,
     initial_cash: float = 100000.0,
     transaction_cost: float = 0.001,
+    transaction_cost_mode: str = "scalar",
+    asset_transaction_cost_bps: dict | None = None,
     reward_config: dict | None = None,
 ) -> dict:
     """Compare an agent policy against basic in-memory portfolio benchmarks."""
@@ -40,6 +42,8 @@ def compare_agent_to_basic_benchmarks(
         risk_free_rate=risk_free_rate,
         initial_cash=initial_cash,
         transaction_cost=transaction_cost,
+        transaction_cost_mode=transaction_cost_mode,
+        asset_transaction_cost_bps=asset_transaction_cost_bps,
         reward_config=reward_config,
     )
     agent_returns = agent_evaluation["episode"]["financial_net_returns"]

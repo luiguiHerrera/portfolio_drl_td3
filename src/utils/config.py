@@ -138,14 +138,58 @@ def _validate_data(config: dict) -> None:
 
 
 def _validate_environment(config: dict) -> None:
-    initial_cash = config["environment"]["initial_cash"]
-    transaction_cost = config["environment"]["transaction_cost"]
+    environment = config["environment"]
+    initial_cash = environment["initial_cash"]
+    transaction_cost = environment["transaction_cost"]
 
     _validate_positive_number(initial_cash, "environment.initial_cash")
     if not _is_number(transaction_cost):
         raise ValueError("Config field environment.transaction_cost must be numeric.")
     if transaction_cost < 0.0 or transaction_cost >= 1.0:
         raise ValueError("Config field environment.transaction_cost must be in the range [0, 1).")
+
+    transaction_cost_mode = environment.get("transaction_cost_mode", "scalar")
+    if transaction_cost_mode not in {"scalar", "asset_specific"}:
+        raise ValueError(
+            "Config field environment.transaction_cost_mode must be scalar or asset_specific."
+        )
+
+    asset_transaction_cost_bps = environment.get("asset_transaction_cost_bps")
+    if asset_transaction_cost_bps is None:
+        if transaction_cost_mode == "asset_specific":
+            raise ValueError(
+                "Config field environment.asset_transaction_cost_bps is required "
+                "when transaction_cost_mode is asset_specific."
+            )
+        return
+
+    if not isinstance(asset_transaction_cost_bps, dict):
+        raise ValueError(
+            "Config field environment.asset_transaction_cost_bps must be a mapping."
+        )
+    assets = set(config["data"]["assets"])
+    unknown_assets = set(asset_transaction_cost_bps) - assets
+    if unknown_assets:
+        raise ValueError(
+            "Config field environment.asset_transaction_cost_bps contains unknown assets: "
+            f"{sorted(unknown_assets)}."
+        )
+    if transaction_cost_mode == "asset_specific":
+        missing_assets = assets - set(asset_transaction_cost_bps)
+        if missing_assets:
+            raise ValueError(
+                "Config field environment.asset_transaction_cost_bps is missing assets: "
+                f"{sorted(missing_assets)}."
+            )
+    for asset, cost_bps in asset_transaction_cost_bps.items():
+        if not _is_number(cost_bps):
+            raise ValueError(
+                f"Config field environment.asset_transaction_cost_bps.{asset} must be numeric."
+            )
+        if cost_bps < 0.0:
+            raise ValueError(
+                f"Config field environment.asset_transaction_cost_bps.{asset} must be greater than or equal to 0."
+            )
 
 
 def _validate_reward(config: dict) -> None:

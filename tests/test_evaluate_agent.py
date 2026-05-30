@@ -60,6 +60,7 @@ class EvaluateAgentTests(unittest.TestCase):
             "weights",
             "final_portfolio_value",
             "turnover_reward_info",
+            "transaction_cost_info",
         }
 
         self.assertEqual(set(episode.keys()), expected_keys)
@@ -197,6 +198,37 @@ class EvaluateAgentTests(unittest.TestCase):
         self.assertTrue(expected_columns.issubset(policy_history.columns))
         self.assertEqual(policy_history["turnover_penalty_mode"].iloc[0], "excess_linear")
         self.assertAlmostEqual(policy_history["turnover_free_band"].iloc[0], 0.10)
+
+    def test_policy_history_includes_asset_specific_transaction_cost_fields(self):
+        result = evaluate_agent(
+            DummyAgent(),
+            self.returns,
+            self.features,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps={
+                "SPY": 2.0,
+                "TLT": 2.0,
+                "GLD": 2.0,
+                "BTC-USD": 10.0,
+                "CASH": 0.0,
+            },
+        )
+        policy_history = result["policy_history"]
+
+        self.assertIn("transaction_cost_mode", policy_history.columns)
+        self.assertIn("asset_turnover_BTC-USD", policy_history.columns)
+        self.assertIn(
+            "asset_transaction_cost_contribution_BTC-USD",
+            policy_history.columns,
+        )
+        self.assertIn(
+            "asset_transaction_cost_contribution_CASH",
+            policy_history.columns,
+        )
+        self.assertEqual(policy_history["transaction_cost_mode"].iloc[0], "asset_specific")
+        self.assertTrue(
+            (policy_history["asset_transaction_cost_contribution_CASH"] == 0.0).all()
+        )
 
     def test_build_policy_history_does_not_require_turnover_reward_fields(self):
         episode = run_policy_episode(DummyAgent(), self.returns, self.features)

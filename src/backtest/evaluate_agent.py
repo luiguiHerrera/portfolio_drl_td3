@@ -28,12 +28,32 @@ TURNOVER_REWARD_INFO_FIELDS = (
 )
 
 
+def flatten_transaction_cost_info(info: dict) -> dict:
+    """Flatten per-step transaction cost diagnostics for CSV policy histories."""
+    flattened = {"transaction_cost_mode": info.get("transaction_cost_mode", pd.NA)}
+    nested_fields = (
+        ("asset_turnover", "asset_turnover"),
+        (
+            "asset_transaction_cost_contribution",
+            "asset_transaction_cost_contribution",
+        ),
+    )
+    for info_key, column_prefix in nested_fields:
+        values = info.get(info_key)
+        if isinstance(values, dict):
+            for asset, value in values.items():
+                flattened[f"{column_prefix}_{asset}"] = value
+    return flattened
+
+
 def run_policy_episode(
     agent,
     returns: pd.DataFrame,
     features: pd.DataFrame,
     initial_cash: float = 100000.0,
     transaction_cost: float = 0.001,
+    transaction_cost_mode: str = "scalar",
+    asset_transaction_cost_bps: dict | None = None,
     reward_config: dict | None = None,
 ) -> dict:
     """Run one policy episode and collect realized portfolio diagnostics."""
@@ -42,6 +62,8 @@ def run_policy_episode(
         features=features,
         initial_cash=initial_cash,
         transaction_cost=transaction_cost,
+        transaction_cost_mode=transaction_cost_mode,
+        asset_transaction_cost_bps=asset_transaction_cost_bps,
         reward_config=reward_config,
     )
     state = env.reset()
@@ -59,6 +81,7 @@ def run_policy_episode(
     turnover_reward_info_values = {
         field: [] for field in TURNOVER_REWARD_INFO_FIELDS
     }
+    transaction_cost_info_values = []
 
     while not done:
         action = agent.select_action(state)
@@ -77,6 +100,7 @@ def run_policy_episode(
             mandate_info_values[field].append(info.get(field, pd.NA))
         for field in TURNOVER_REWARD_INFO_FIELDS:
             turnover_reward_info_values[field].append(info.get(field, pd.NA))
+        transaction_cost_info_values.append(flatten_transaction_cost_info(info))
         state = next_state
 
     episode_index = env.returns.index
@@ -118,6 +142,10 @@ def run_policy_episode(
     )
     if not turnover_reward_info.isna().all(axis=None):
         episode["turnover_reward_info"] = turnover_reward_info
+    episode["transaction_cost_info"] = pd.DataFrame(
+        transaction_cost_info_values,
+        index=episode_index,
+    )
 
     return episode
 
@@ -130,6 +158,8 @@ def evaluate_agent(
     risk_free_rate: float = 0.0,
     initial_cash: float = 100000.0,
     transaction_cost: float = 0.001,
+    transaction_cost_mode: str = "scalar",
+    asset_transaction_cost_bps: dict | None = None,
     reward_config: dict | None = None,
 ) -> dict:
     """Evaluate an agent episode and compute return-based summary metrics."""
@@ -139,6 +169,8 @@ def evaluate_agent(
         features=features,
         initial_cash=initial_cash,
         transaction_cost=transaction_cost,
+        transaction_cost_mode=transaction_cost_mode,
+        asset_transaction_cost_bps=asset_transaction_cost_bps,
         reward_config=reward_config,
     )
 
@@ -177,6 +209,8 @@ def build_policy_history(episode: dict) -> pd.DataFrame:
         history = pd.concat([history, episode["mandate_info"]], axis=1)
     if "turnover_reward_info" in episode:
         history = pd.concat([history, episode["turnover_reward_info"]], axis=1)
+    if "transaction_cost_info" in episode:
+        history = pd.concat([history, episode["transaction_cost_info"]], axis=1)
 
     return pd.concat([history, weights], axis=1)
 

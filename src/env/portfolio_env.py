@@ -39,6 +39,8 @@ class PortfolioEnv:
         auxiliary_features: pd.DataFrame | None = None,
         initial_cash: float = 100000.0,
         transaction_cost: float = 0.001,
+        transaction_cost_mode: str = "scalar",
+        asset_transaction_cost_bps: dict | None = None,
         reward_config: dict | None = None,
     ):
         if returns.empty:
@@ -62,6 +64,9 @@ class PortfolioEnv:
         self.asset_names = list(self.returns.columns)
         self.initial_cash = initial_cash
         self.transaction_cost = transaction_cost
+        self.transaction_cost_mode = transaction_cost_mode
+        self.asset_transaction_cost_bps = asset_transaction_cost_bps
+        self.asset_transaction_costs = self._validate_transaction_cost_config()
         self._validate_cash_risk_off_auxiliary_config()
 
         self.current_step = 0
@@ -88,8 +93,10 @@ class PortfolioEnv:
         weights = self._normalize_action(action)
         period_returns = self.returns.iloc[self.current_step].to_numpy(dtype=float)
 
-        turnover = float(np.sum(np.abs(weights - self.previous_weights)))
-        realized_transaction_cost = float(self.transaction_cost * turnover)
+        asset_turnover = np.abs(weights - self.previous_weights)
+        turnover = float(np.sum(asset_turnover))
+        transaction_cost_result = self._compute_transaction_cost(asset_turnover, turnover)
+        realized_transaction_cost = transaction_cost_result["transaction_cost"]
         portfolio_return = float(np.dot(weights, period_returns))
         financial_net_return = portfolio_return - realized_transaction_cost
         new_portfolio_value = self.portfolio_value * (1.0 + financial_net_return)
@@ -136,6 +143,7 @@ class PortfolioEnv:
             "portfolio_return": portfolio_return,
             "financial_net_return": financial_net_return,
             "transaction_cost": realized_transaction_cost,
+            "transaction_cost_mode": self.transaction_cost_mode,
             "turnover": turnover,
             "turnover_penalty": turnover_penalty_result["turnover_penalty"],
             "turnover_penalty_mode": turnover_penalty_result[
@@ -149,6 +157,7 @@ class PortfolioEnv:
             "reward": reward,
             "peak_portfolio_value": self.peak_portfolio_value,
         }
+        info.update(transaction_cost_result["diagnostics"])
         if mandate_result is not None:
             breaches = mandate_result["breaches"]
             info.update(
@@ -186,6 +195,75 @@ class PortfolioEnv:
             return self._equal_weights()
 
         return clipped_action / action_sum
+
+    def _validate_transaction_cost_config(self) -> np.ndarray | None:
+        if self.transaction_cost_mode not in {"scalar", "asset_specific"}:
+            raise ValueError(
+                "transaction_cost_mode must be either 'scalar' or 'asset_specific'."
+            )
+        if self.asset_transaction_cost_bps is None:
+            if self.transaction_cost_mode == "asset_specific":
+                raise ValueError(
+                    "asset_transaction_cost_bps is required when "
+                    "transaction_cost_mode='asset_specific'."
+                )
+            return None
+        if not isinstance(self.asset_transaction_cost_bps, dict):
+            raise ValueError("asset_transaction_cost_bps must be a mapping.")
+
+        unknown_assets = set(self.asset_transaction_cost_bps) - set(self.asset_names)
+        if unknown_assets:
+            raise ValueError(
+                "asset_transaction_cost_bps contains unknown assets: "
+                f"{sorted(unknown_assets)}."
+            )
+        if self.transaction_cost_mode == "asset_specific":
+            missing_assets = set(self.asset_names) - set(self.asset_transaction_cost_bps)
+            if missing_assets:
+                raise ValueError(
+                    "asset_transaction_cost_bps is missing costs for assets: "
+                    f"{sorted(missing_assets)}."
+                )
+
+        costs = []
+        for asset in self.asset_names:
+            raw_cost = self.asset_transaction_cost_bps.get(asset, 0.0)
+            if isinstance(raw_cost, bool) or not isinstance(raw_cost, (int, float)):
+                raise ValueError(
+                    f"asset_transaction_cost_bps.{asset} must be numeric."
+                )
+            if raw_cost < 0.0:
+                raise ValueError(
+                    f"asset_transaction_cost_bps.{asset} must be non-negative."
+                )
+            costs.append(float(raw_cost) / 10000.0)
+        return np.asarray(costs, dtype=float)
+
+    def _compute_transaction_cost(
+        self,
+        asset_turnover: np.ndarray,
+        turnover: float,
+    ) -> dict:
+        if self.transaction_cost_mode == "scalar":
+            return {
+                "transaction_cost": float(self.transaction_cost * turnover),
+                "diagnostics": {},
+            }
+
+        asset_contributions = self.asset_transaction_costs * asset_turnover
+        return {
+            "transaction_cost": float(asset_contributions.sum()),
+            "diagnostics": {
+                "asset_turnover": {
+                    asset: float(value)
+                    for asset, value in zip(self.asset_names, asset_turnover)
+                },
+                "asset_transaction_cost_contribution": {
+                    asset: float(value)
+                    for asset, value in zip(self.asset_names, asset_contributions)
+                },
+            },
+        }
 
     def _compute_mandate_penalty(
         self,

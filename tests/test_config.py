@@ -123,6 +123,59 @@ class ConfigTests(unittest.TestCase):
             ):
                 load_config(str(config_path))
 
+    def test_load_config_accepts_asset_specific_transaction_costs(self):
+        config = _valid_config()
+        config["environment"]["transaction_cost_mode"] = "asset_specific"
+        config["environment"]["asset_transaction_cost_bps"] = {
+            "SPY": 2.0,
+            "TLT": 2.0,
+            "GLD": 2.0,
+            "BTC-USD": 18.0,
+            "CASH": 0.0,
+        }
+
+        with self._temporary_config(config) as config_path:
+            loaded = load_config(str(config_path))
+
+        self.assertEqual(loaded["environment"]["transaction_cost_mode"], "asset_specific")
+        self.assertEqual(loaded["environment"]["asset_transaction_cost_bps"]["CASH"], 0.0)
+
+    def test_load_config_rejects_unknown_transaction_cost_mode(self):
+        config = _valid_config()
+        config["environment"]["transaction_cost_mode"] = "unknown"
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "transaction_cost_mode"):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_missing_asset_costs_in_asset_specific_mode(self):
+        config = _valid_config()
+        config["environment"]["transaction_cost_mode"] = "asset_specific"
+        config["environment"]["asset_transaction_cost_bps"] = {
+            "SPY": 2.0,
+            "TLT": 2.0,
+            "GLD": 2.0,
+            "CASH": 0.0,
+        }
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "missing assets"):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_negative_asset_transaction_costs(self):
+        config = _valid_config()
+        config["environment"]["asset_transaction_cost_bps"] = {
+            "SPY": 2.0,
+            "TLT": 2.0,
+            "GLD": 2.0,
+            "BTC-USD": -1.0,
+            "CASH": 0.0,
+        }
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "BTC-USD"):
+                load_config(str(config_path))
+
     def test_load_config_rejects_training_ratios_that_do_not_sum_to_one(self):
         config = _valid_config()
         config["training"]["test_ratio"] = 0.2

@@ -222,17 +222,23 @@ def evaluate_weight_strategy(
     returns: pd.DataFrame,
     weights: pd.DataFrame,
     transaction_cost: float = 0.001,
+    transaction_cost_mode: str = "scalar",
+    asset_transaction_cost_bps: dict | None = None,
     initial_value: float = 100000,
     initial_weights: pd.Series | None = None,
 ) -> dict:
-    """Evaluate a precomputed weight strategy with simple turnover costs."""
+    """Evaluate a precomputed weight strategy with scalar or asset-specific costs."""
     _validate_returns(returns)
     if weights.empty:
         raise ValueError("weights must not be empty.")
     if not isinstance(weights.index, pd.DatetimeIndex):
         raise TypeError("weights index must be a DatetimeIndex.")
-    if transaction_cost < 0.0 or transaction_cost >= 1.0:
-        raise ValueError("transaction_cost must be greater than or equal to 0 and less than 1.")
+    _validate_transaction_cost_inputs(
+        returns=returns,
+        transaction_cost=transaction_cost,
+        transaction_cost_mode=transaction_cost_mode,
+        asset_transaction_cost_bps=asset_transaction_cost_bps,
+    )
     if initial_value <= 0.0:
         raise ValueError("initial_value must be positive.")
     _validate_required_assets(weights, list(returns.columns))
@@ -247,13 +253,31 @@ def evaluate_weight_strategy(
 
     gross_returns = (aligned_weights * aligned_returns).sum(axis=1)
     turnover_values = []
+    asset_turnover_rows = []
+    asset_cost_rows = []
+    transaction_cost_values = []
+    asset_cost_rates = _asset_transaction_cost_rates(
+        aligned_returns.columns,
+        transaction_cost_mode,
+        asset_transaction_cost_bps,
+    )
     for _, current_weights in aligned_weights.iterrows():
-        turnover_values.append(
-            float((current_weights - previous_weights).abs().sum())
-        )
+        asset_turnover = (current_weights - previous_weights).abs()
+        turnover_values.append(float(asset_turnover.sum()))
+        asset_turnover_rows.append(asset_turnover.to_numpy(dtype=float))
+        if transaction_cost_mode == "asset_specific":
+            asset_cost_contribution = asset_turnover * asset_cost_rates
+            transaction_cost_values.append(float(asset_cost_contribution.sum()))
+            asset_cost_rows.append(asset_cost_contribution.to_numpy(dtype=float))
+        else:
+            transaction_cost_values.append(float(transaction_cost * asset_turnover.sum()))
         previous_weights = current_weights
     turnover = pd.Series(turnover_values, index=aligned_index, name="turnover")
-    transaction_costs = transaction_cost * turnover
+    transaction_costs = pd.Series(
+        transaction_cost_values,
+        index=aligned_index,
+        name="transaction_cost",
+    )
     net_returns = gross_returns - transaction_costs
 
     portfolio_value = initial_value * (1.0 + net_returns).cumprod()
@@ -275,6 +299,25 @@ def evaluate_weight_strategy(
     )
     for asset in returns.columns:
         history[f"weight_{asset}"] = aligned_weights[asset].to_numpy(dtype=float)
+    if transaction_cost_mode == "asset_specific":
+        history["transaction_cost_mode"] = "asset_specific"
+        asset_turnover_frame = pd.DataFrame(
+            asset_turnover_rows,
+            index=aligned_index,
+            columns=returns.columns,
+        )
+        asset_cost_frame = pd.DataFrame(
+            asset_cost_rows,
+            index=aligned_index,
+            columns=returns.columns,
+        )
+        for asset in returns.columns:
+            history[f"asset_turnover_{asset}"] = asset_turnover_frame[asset].to_numpy(
+                dtype=float,
+            )
+            history[f"asset_transaction_cost_contribution_{asset}"] = asset_cost_frame[
+                asset
+            ].to_numpy(dtype=float)
 
     base_metrics = summary_metrics(net_returns)
     risk_adjusted_metrics = extended_summary_metrics(net_returns)
@@ -302,6 +345,49 @@ def evaluate_weight_strategy(
         "calmar_ratio_is_infinite": bool(np.isinf(calmar_value)),
         "max_drawdown_is_zero": bool(max_drawdown_value == 0.0),
     }
+
+
+def _validate_transaction_cost_inputs(
+    returns: pd.DataFrame,
+    transaction_cost: float,
+    transaction_cost_mode: str,
+    asset_transaction_cost_bps: dict | None,
+) -> None:
+    if transaction_cost_mode not in {"scalar", "asset_specific"}:
+        raise ValueError("transaction_cost_mode must be scalar or asset_specific.")
+    if transaction_cost < 0.0 or transaction_cost >= 1.0:
+        raise ValueError("transaction_cost must be greater than or equal to 0 and less than 1.")
+    if transaction_cost_mode == "scalar":
+        return
+    if not isinstance(asset_transaction_cost_bps, dict):
+        raise ValueError("asset_transaction_cost_bps is required in asset_specific mode.")
+    missing_assets = set(returns.columns) - set(asset_transaction_cost_bps)
+    if missing_assets:
+        raise ValueError(f"asset_transaction_cost_bps is missing assets: {sorted(missing_assets)}")
+    for asset, cost_bps in asset_transaction_cost_bps.items():
+        if asset not in returns.columns:
+            raise ValueError(f"asset_transaction_cost_bps contains unknown asset: {asset}")
+        if isinstance(cost_bps, bool) or not isinstance(cost_bps, (int, float)):
+            raise ValueError(f"asset_transaction_cost_bps.{asset} must be numeric.")
+        if cost_bps < 0.0:
+            raise ValueError(f"asset_transaction_cost_bps.{asset} must be non-negative.")
+
+
+def _asset_transaction_cost_rates(
+    assets: pd.Index,
+    transaction_cost_mode: str,
+    asset_transaction_cost_bps: dict | None,
+) -> pd.Series | None:
+    if transaction_cost_mode != "asset_specific":
+        return None
+    return pd.Series(
+        {
+            asset: float(asset_transaction_cost_bps[asset]) / 10000.0
+            for asset in assets
+        },
+        index=assets,
+        dtype=float,
+    )
 
 
 def build_dynamic_benchmark_suite(

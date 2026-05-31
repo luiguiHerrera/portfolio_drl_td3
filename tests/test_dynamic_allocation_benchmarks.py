@@ -438,6 +438,121 @@ class DynamicAllocationBenchmarkTests(unittest.TestCase):
         self.assertAlmostEqual(result["returns"].iloc[0], 0.09)
         self.assertAlmostEqual(result["returns"].iloc[1], 0.02)
 
+    def test_asset_specific_equal_cost_vector_reproduces_scalar_cost(self):
+        returns = pd.DataFrame(
+            {"SPY": [0.10, 0.00], "GLD": [0.00, 0.04], "CASH": [0.0, 0.0]},
+            index=pd.date_range("2024-01-05", periods=2, freq="W-FRI"),
+        )
+        weights = pd.DataFrame(
+            {"SPY": [1.0, 0.0], "GLD": [0.0, 1.0], "CASH": [0.0, 0.0]},
+            index=returns.index,
+        )
+
+        scalar = evaluate_weight_strategy(returns, weights, transaction_cost=0.01)
+        asset_specific = evaluate_weight_strategy(
+            returns,
+            weights,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps={"SPY": 100.0, "GLD": 100.0, "CASH": 100.0},
+        )
+
+        self.assertTrue(
+            scalar["history"]["transaction_cost"]
+            .round(12)
+            .equals(asset_specific["history"]["transaction_cost"].round(12))
+        )
+        self.assertTrue(
+            scalar["returns"].round(12).equals(asset_specific["returns"].round(12))
+        )
+
+    def test_asset_specific_btc_costs_more_than_etf_for_equal_turnover(self):
+        returns = pd.DataFrame(
+            {"SPY": [0.0], "BTC-USD": [0.0], "CASH": [0.0]},
+            index=pd.date_range("2024-01-05", periods=1, freq="W-FRI"),
+        )
+        weights = pd.DataFrame(
+            {"SPY": [0.0], "BTC-USD": [1.0], "CASH": [0.0]},
+            index=returns.index,
+        )
+
+        result = evaluate_weight_strategy(
+            returns,
+            weights,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps={"SPY": 2.0, "BTC-USD": 10.0, "CASH": 0.0},
+        )
+        history = result["history"]
+
+        self.assertGreater(
+            history.loc[0, "asset_transaction_cost_contribution_BTC-USD"],
+            history.loc[0, "asset_transaction_cost_contribution_SPY"],
+        )
+
+    def test_asset_specific_cash_contribution_is_zero(self):
+        returns = pd.DataFrame(
+            {"SPY": [0.0], "CASH": [0.0]},
+            index=pd.date_range("2024-01-05", periods=1, freq="W-FRI"),
+        )
+        weights = pd.DataFrame({"SPY": [0.0], "CASH": [1.0]}, index=returns.index)
+
+        result = evaluate_weight_strategy(
+            returns,
+            weights,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps={"SPY": 2.0, "CASH": 0.0},
+        )
+
+        self.assertEqual(
+            result["history"].loc[0, "asset_transaction_cost_contribution_CASH"],
+            0.0,
+        )
+
+    def test_asset_specific_missing_asset_costs_fail(self):
+        weights = pd.DataFrame(1.0, index=self.returns.index, columns=["SPY"])
+        returns = self.returns[["SPY", "CASH"]]
+
+        with self.assertRaisesRegex(ValueError, "missing assets"):
+            evaluate_weight_strategy(
+                returns,
+                weights.reindex(columns=returns.columns, fill_value=0.0),
+                transaction_cost_mode="asset_specific",
+                asset_transaction_cost_bps={"SPY": 2.0},
+            )
+
+    def test_asset_specific_negative_asset_costs_fail(self):
+        weights = pd.DataFrame(1.0, index=self.returns.index, columns=["SPY"])
+        returns = self.returns[["SPY"]]
+
+        with self.assertRaisesRegex(ValueError, "non-negative"):
+            evaluate_weight_strategy(
+                returns,
+                weights,
+                transaction_cost_mode="asset_specific",
+                asset_transaction_cost_bps={"SPY": -1.0},
+            )
+
+    def test_asset_specific_history_contains_cost_diagnostics(self):
+        weights = pd.DataFrame(1.0, index=self.returns.index, columns=["SPY"])
+        returns = self.returns[["SPY", "CASH"]]
+
+        result = evaluate_weight_strategy(
+            returns,
+            weights.reindex(columns=returns.columns, fill_value=0.0),
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps={"SPY": 2.0, "CASH": 0.0},
+        )
+        history = result["history"]
+
+        for column in [
+            "transaction_cost_mode",
+            "asset_turnover_SPY",
+            "asset_turnover_CASH",
+            "asset_transaction_cost_contribution_SPY",
+            "asset_transaction_cost_contribution_CASH",
+        ]:
+            self.assertIn(column, history.columns)
+        self.assertEqual(history["transaction_cost_mode"].iloc[0], "asset_specific")
+
     def test_evaluate_weight_strategy_computes_turnover_including_first_allocation(self):
         returns = pd.DataFrame(
             {"SPY": [0.10, 0.00], "GLD": [0.00, 0.04]},

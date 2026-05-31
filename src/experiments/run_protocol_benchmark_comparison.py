@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -17,19 +18,27 @@ from src.backtest.dynamic_allocation_benchmarks import (
     build_trend_following_spy_cash_weights,
     evaluate_weight_strategy,
 )
+from src.utils.config import load_config
 
 
 STANDARD_ASSETS = ("SPY", "TLT", "GLD", "BTC-USD", "CASH")
 RISKY_ASSETS = ("SPY", "TLT", "GLD", "BTC-USD")
 DEFAULT_OUTPUT_DIR = "outputs/tables/protocol_benchmark_comparison"
+BROKER_COST_CAVEAT = (
+    "Broker/exchange-style trading-cost proxy only; does not model fiat ramps, "
+    "withdrawals, custody frictions, taxes, market impact, or delays."
+)
 
 
 def run_protocol_benchmark_comparison(
     returns_path: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     transaction_cost: float = 0.001,
+    transaction_cost_mode: str = "scalar",
+    asset_transaction_cost_bps: dict | None = None,
     initial_value: float = 100000.0,
     date_column: str = "date",
+    base_config_path: str | None = None,
 ) -> dict:
     """Evaluate protocol-comparable benchmarks and write summary outputs."""
     returns = load_protocol_returns(returns_path, date_column=date_column)
@@ -38,6 +47,8 @@ def run_protocol_benchmark_comparison(
         returns=returns,
         benchmark_weights=benchmark_weights,
         transaction_cost=transaction_cost,
+        transaction_cost_mode=transaction_cost_mode,
+        asset_transaction_cost_bps=asset_transaction_cost_bps,
         initial_value=initial_value,
     )
 
@@ -52,9 +63,22 @@ def run_protocol_benchmark_comparison(
     metrics_path = output_path / "benchmark_metrics_table.csv"
     summary_path = output_path / "benchmark_comparison_summary.csv"
     diagnostics_path = output_path / "benchmark_diagnostics.csv"
+    metadata_path = output_path / "benchmark_metadata.json"
     metrics_table.to_csv(metrics_path, index=False)
     comparison_summary.to_csv(summary_path, index=False)
     diagnostics.to_csv(diagnostics_path, index=False)
+    metadata = build_benchmark_metadata(
+        returns_path=returns_path,
+        output_dir=str(output_path),
+        transaction_cost=transaction_cost,
+        transaction_cost_mode=transaction_cost_mode,
+        asset_transaction_cost_bps=asset_transaction_cost_bps,
+        initial_value=initial_value,
+        date_column=date_column,
+        base_config_path=base_config_path,
+        benchmark_names=list(evaluations),
+    )
+    metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
     history_paths = {}
     for benchmark_name, evaluation in evaluations.items():
@@ -73,6 +97,7 @@ def run_protocol_benchmark_comparison(
             "metrics_table": str(metrics_path),
             "comparison_summary": str(summary_path),
             "diagnostics": str(diagnostics_path),
+            "metadata": str(metadata_path),
             "histories_dir": str(histories_path),
             "histories": history_paths,
         },
@@ -167,6 +192,8 @@ def evaluate_protocol_benchmark_weights(
     returns: pd.DataFrame,
     benchmark_weights: dict[str, pd.DataFrame],
     transaction_cost: float = 0.001,
+    transaction_cost_mode: str = "scalar",
+    asset_transaction_cost_bps: dict | None = None,
     initial_value: float = 100000.0,
 ) -> dict[str, dict]:
     """Evaluate benchmark weights through the shared protocol evaluator."""
@@ -176,6 +203,8 @@ def evaluate_protocol_benchmark_weights(
             returns=returns,
             weights=weights,
             transaction_cost=transaction_cost,
+            transaction_cost_mode=transaction_cost_mode,
+            asset_transaction_cost_bps=asset_transaction_cost_bps,
             initial_value=initial_value,
         )
     return evaluations
@@ -203,6 +232,7 @@ def build_benchmark_metrics_table(evaluations: dict[str, dict]) -> pd.DataFrame:
             "max_drawdown": evaluation["max_drawdown"],
             "average_turnover": evaluation["average_turnover"],
             "total_transaction_cost": float(history["transaction_cost"].sum()),
+            "average_transaction_cost": float(history["transaction_cost"].mean()),
             "average_max_weight": diagnostics["average_max_weight"],
             "average_effective_number_of_assets": diagnostics[
                 "average_effective_number_of_assets"
@@ -232,6 +262,13 @@ def build_benchmark_diagnostics(evaluations: dict[str, dict]) -> pd.DataFrame:
             {
                 "benchmark_name": benchmark_name,
                 "total_transaction_cost": float(history["transaction_cost"].sum()),
+                "average_transaction_cost": float(history["transaction_cost"].mean()),
+                "transaction_cost_mode": (
+                    str(history["transaction_cost_mode"].dropna().iloc[0])
+                    if "transaction_cost_mode" in history
+                    and not history["transaction_cost_mode"].dropna().empty
+                    else "scalar"
+                ),
                 "cash_above_10pct": (
                     float((history["weight_CASH"] > 0.10).mean())
                     if "weight_CASH" in history.columns
@@ -315,23 +352,113 @@ def _safe_filename(value: str) -> str:
     return value.replace("/", "_")
 
 
+def build_benchmark_metadata(
+    returns_path: str,
+    output_dir: str,
+    transaction_cost: float,
+    transaction_cost_mode: str,
+    asset_transaction_cost_bps: dict | None,
+    initial_value: float,
+    date_column: str,
+    base_config_path: str | None,
+    benchmark_names: list[str],
+) -> dict:
+    """Build benchmark reproducibility metadata."""
+    return {
+        "runner": "src.experiments.run_protocol_benchmark_comparison",
+        "returns_path": returns_path,
+        "output_dir": output_dir,
+        "transaction_cost": transaction_cost,
+        "transaction_cost_mode": transaction_cost_mode,
+        "asset_transaction_cost_bps": asset_transaction_cost_bps,
+        "initial_value": initial_value,
+        "date_column": date_column,
+        "base_config_path": base_config_path,
+        "benchmark_names": benchmark_names,
+        "cost_caveat": BROKER_COST_CAVEAT,
+        "reporting_only_note": (
+            "Deterministic benchmarks are regenerated from returns and benchmark "
+            "weight rules. No TD3 retraining is performed."
+        ),
+    }
+
+
+def parse_asset_transaction_cost_bps(value: str | None) -> dict | None:
+    """Parse CLI mapping like SPY:2.0,TLT:2.0."""
+    if value is None:
+        return None
+    result = {}
+    for item in value.split(","):
+        if not item.strip():
+            continue
+        if ":" not in item:
+            raise ValueError("asset transaction cost entries must use ASSET:BPS format.")
+        asset, bps = item.split(":", 1)
+        asset = asset.strip()
+        if not asset:
+            raise ValueError("asset transaction cost asset name must be non-empty.")
+        result[asset] = float(bps)
+    return result
+
+
+def resolve_transaction_cost_settings(
+    base_config_path: str | None,
+    transaction_cost: float | None,
+    transaction_cost_mode: str | None,
+    asset_transaction_cost_bps: dict | None,
+) -> dict:
+    """Resolve benchmark transaction-cost settings from config plus CLI overrides."""
+    resolved = {
+        "transaction_cost": 0.001,
+        "transaction_cost_mode": "scalar",
+        "asset_transaction_cost_bps": None,
+    }
+    if base_config_path:
+        config = load_config(base_config_path)
+        environment = config["environment"]
+        resolved["transaction_cost"] = environment.get("transaction_cost", 0.001)
+        resolved["transaction_cost_mode"] = environment.get("transaction_cost_mode", "scalar")
+        resolved["asset_transaction_cost_bps"] = environment.get("asset_transaction_cost_bps")
+    if transaction_cost is not None:
+        resolved["transaction_cost"] = transaction_cost
+    if transaction_cost_mode is not None:
+        resolved["transaction_cost_mode"] = transaction_cost_mode
+    if asset_transaction_cost_bps is not None:
+        resolved["asset_transaction_cost_bps"] = asset_transaction_cost_bps
+    return resolved
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run protocol-comparable benchmark-only evaluation.",
     )
     parser.add_argument("--returns-path", required=True)
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--transaction-cost", type=float, default=0.001)
+    parser.add_argument("--transaction-cost", type=float, default=None)
+    parser.add_argument("--transaction-cost-mode", choices=["scalar", "asset_specific"])
+    parser.add_argument("--asset-transaction-cost-bps")
+    parser.add_argument("--base-config-path")
     parser.add_argument("--initial-value", type=float, default=100000.0)
     parser.add_argument("--date-column", default="date")
     args = parser.parse_args()
+    cost_settings = resolve_transaction_cost_settings(
+        base_config_path=args.base_config_path,
+        transaction_cost=args.transaction_cost,
+        transaction_cost_mode=args.transaction_cost_mode,
+        asset_transaction_cost_bps=parse_asset_transaction_cost_bps(
+            args.asset_transaction_cost_bps,
+        ),
+    )
 
     result = run_protocol_benchmark_comparison(
         returns_path=args.returns_path,
         output_dir=args.output_dir,
-        transaction_cost=args.transaction_cost,
+        transaction_cost=cost_settings["transaction_cost"],
+        transaction_cost_mode=cost_settings["transaction_cost_mode"],
+        asset_transaction_cost_bps=cost_settings["asset_transaction_cost_bps"],
         initial_value=args.initial_value,
         date_column=args.date_column,
+        base_config_path=args.base_config_path,
     )
     print(result["comparison_summary"].to_string(index=False))
     print(f"Outputs written to {result['paths']['output_dir']}")

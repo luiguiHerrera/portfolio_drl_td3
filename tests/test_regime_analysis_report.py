@@ -234,6 +234,72 @@ class RegimeAnalysisReportTests(unittest.TestCase):
         )
         self.assertFalse(any(strategy_name in warning for warning in result["warnings"]))
 
+    def test_asset_specific_report_resolves_and_rejects_scalar_histories(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            final_dir = root / "asset_report"
+            source_dir = root / "asset_source"
+            benchmark_dir = root / "benchmarks"
+            output_dir = root / "out"
+            final_dir.mkdir()
+            history_dir = (
+                source_dir
+                / "per_candidate"
+                / "V5_no_volatility_block"
+                / "F1_V5_no_volatility_block_cap_0p50_seed_7"
+            )
+            history_dir.mkdir(parents=True)
+            (benchmark_dir / "histories").mkdir(parents=True)
+            self._asset_specific_history_frame("2022-01-07", [0.01] * 52).to_csv(
+                history_dir / "test_policy_history.csv",
+                index=False,
+            )
+            for benchmark in ["trend_spy_cash_12p", "BuyHold_GLD", "Equal_Weight"]:
+                self._asset_specific_history_frame("2022-01-07", [0.005] * 52).to_csv(
+                    benchmark_dir / "histories" / f"{benchmark}_history.csv",
+                    index=False,
+                )
+            pd.DataFrame(
+                [
+                    {
+                        "candidate_name": "V5_no_volatility_block_cap_0p50",
+                        "base_candidate": "V5_no_volatility_block",
+                        "max_weight_cap": 0.50,
+                    }
+                ]
+            ).to_csv(final_dir / "asset_specific_cost_selected_candidates.csv", index=False)
+            (final_dir / "asset_specific_cost_metadata.json").write_text(
+                json.dumps(
+                    {
+                        "runner": "src.analysis.asset_specific_cost_final_report",
+                        "source_dirs": {"v2_v6": str(source_dir)},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = build_regime_analysis_report(
+                final_report_dir=str(final_dir),
+                output_dir=str(output_dir),
+                benchmark_dir=str(benchmark_dir),
+            )
+
+            self.assertIn("V5_no_volatility_block_cap_0p50", result["histories"])
+            self.assertIn("trend_spy_cash_12p", result["histories"])
+            self.assertFalse(result["pairwise"].empty)
+
+            scalar_path = benchmark_dir / "histories" / "BuyHold_GLD_history.csv"
+            pd.read_csv(scalar_path).drop(columns=["transaction_cost_mode"]).to_csv(
+                scalar_path,
+                index=False,
+            )
+            with self.assertRaisesRegex(ValueError, "missing transaction_cost_mode"):
+                build_regime_analysis_report(
+                    final_report_dir=str(final_dir),
+                    output_dir=str(output_dir),
+                    benchmark_dir=str(benchmark_dir),
+                )
+
     def _write_synthetic_report(
         self,
         temp_dir: str,
@@ -291,6 +357,24 @@ class RegimeAnalysisReportTests(unittest.TestCase):
     def _history_frame(start: str, values: list[float]) -> pd.DataFrame:
         index = pd.date_range(start, periods=len(values), freq="W-FRI")
         return pd.DataFrame({"date": index, "financial_net_return": values})
+
+    @staticmethod
+    def _asset_specific_history_frame(start: str, values: list[float]) -> pd.DataFrame:
+        index = pd.date_range(start, periods=len(values), freq="W-FRI")
+        frame = pd.DataFrame(
+            {
+                "date": index,
+                "financial_net_return": values,
+                "portfolio_return": values,
+                "transaction_cost_mode": ["asset_specific"] * len(values),
+                "transaction_cost": [0.0001] * len(values),
+                "turnover": [0.1] * len(values),
+            }
+        )
+        for asset in ["SPY", "TLT", "GLD", "BTC-USD", "CASH"]:
+            frame[f"asset_turnover_{asset}"] = 0.0
+            frame[f"asset_transaction_cost_contribution_{asset}"] = 0.0
+        return frame
 
 
 if __name__ == "__main__":

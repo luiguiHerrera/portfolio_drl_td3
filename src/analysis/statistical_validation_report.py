@@ -19,12 +19,19 @@ import pandas as pd
 
 SELECTED_FILE = "final_constrained_td3_selected_candidates.csv"
 METADATA_FILE = "final_constrained_td3_metadata.json"
+ASSET_SPECIFIC_SELECTED_FILE = "asset_specific_cost_selected_candidates.csv"
+ASSET_SPECIFIC_METADATA_FILE = "asset_specific_cost_metadata.json"
+ASSET_SPECIFIC_COMBINED_RANKING_FILE = "asset_specific_cost_combined_ranking.csv"
 BENCHMARK_HISTORY_DIR = "benchmarks/histories"
 
 DEFAULT_FINAL_REPORT_DIR = "outputs/tables/final_constrained_td3_report_with_v3_v4_60ep_10seeds"
 DEFAULT_OUTPUT_DIR = "outputs/tables/statistical_validation_final_v3_v4"
 
 PRIMARY_CANDIDATES = [
+    "V5_no_volatility_block_cap_0p50",
+    "V3_real_macro_vintage_clean_no_dxy_cap_0p70",
+    "V4_real_garch_current_cap_0p50",
+    "V8_ewma_garch_vol_current_cap_0p80",
     "V3_real_macro_vintage_clean_no_dxy_cap_0.50",
     "V7_real_macro_vintage_clean_no_dxy_garch_cap_0.50",
     "V3_real_macro_vintage_cap_0.50",
@@ -32,8 +39,9 @@ PRIMARY_CANDIDATES = [
     "V4_cap_0.50",
 ]
 DEFAULT_BENCHMARKS = [
-    "BuyHold_GLD",
     "trend_spy_cash_12p",
+    "BuyHold_GLD",
+    "Equal_Weight",
 ]
 WEEKLY_PERIODS_PER_YEAR = 52
 
@@ -51,14 +59,15 @@ def build_statistical_validation_report(
     v7_cap_sensitivity_dir: str | None = None,
     v7_clean_no_dxy_garch_cap_sensitivity_dir: str | None = None,
     v8_cap_sensitivity_dir: str | None = None,
+    benchmark_dir: str | None = None,
+    asset_specific_only: bool | None = None,
 ) -> dict[str, Any]:
     """Build statistical validation CSVs and markdown from existing histories."""
     final_dir = Path(final_report_dir)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    selected = pd.read_csv(final_dir / SELECTED_FILE)
-    metadata = json.loads((final_dir / METADATA_FILE).read_text(encoding="utf-8"))
+    selected, metadata, report_mode = load_selected_candidates_and_metadata(final_dir)
     metadata = _with_cap_sensitivity_overrides(
         metadata,
         v3_cap_sensitivity_dir=v3_cap_sensitivity_dir,
@@ -71,10 +80,16 @@ def build_statistical_validation_report(
         ),
         v8_cap_sensitivity_dir=v8_cap_sensitivity_dir,
     )
+    if benchmark_dir is not None:
+        metadata["benchmark_comparison_dir"] = str(Path(benchmark_dir))
+    require_asset_specific = (
+        report_mode == "asset_specific" if asset_specific_only is None else asset_specific_only
+    )
     histories, history_records, warnings = locate_strategy_histories(
         final_report_dir=final_dir,
         selected_candidates=selected,
         metadata=metadata,
+        require_asset_specific=require_asset_specific,
     )
 
     metric_ci = build_metric_ci_table(
@@ -108,6 +123,7 @@ def build_statistical_validation_report(
         "histories": histories,
         "history_records": history_records,
         "warnings": warnings,
+        "report_mode": report_mode,
         "metric_ci": metric_ci,
         "pairwise_bootstrap": pairwise,
         "summary": summary,
@@ -120,6 +136,7 @@ def locate_strategy_histories(
     final_report_dir: Path,
     selected_candidates: pd.DataFrame,
     metadata: dict[str, Any],
+    require_asset_specific: bool = False,
 ) -> tuple[dict[str, pd.Series], pd.DataFrame, list[str]]:
     """Locate selected TD3 and benchmark histories."""
     histories: dict[str, pd.Series] = {}
@@ -130,7 +147,7 @@ def locate_strategy_histories(
         strategy_name = str(row["strategy_name"])
         base_candidate = str(row["base_candidate"])
         source_dir = _source_dir_for_row(row, metadata)
-        cap_label = _cap_label(row.get("selected_cap"))
+        cap_label = _row_cap_label(row)
         if source_dir is None:
             warnings.append(f"Missing source directory for {strategy_name}.")
             records.append(_history_record(strategy_name, "td3", False, "", 0, 0))
@@ -142,7 +159,10 @@ def locate_strategy_histories(
             warnings.append(f"No TD3 test policy histories found for {strategy_name}.")
             records.append(_history_record(strategy_name, "td3", False, str(per_candidate), 0, 0))
             continue
-        series = load_date_averaged_return_series(paths)
+        series = load_date_averaged_return_series(
+            paths,
+            require_asset_specific=require_asset_specific,
+        )
         histories[strategy_name] = series
         records.append(
             _history_record(
@@ -162,7 +182,7 @@ def locate_strategy_histories(
             warnings.append(f"No benchmark history found for {benchmark_name}.")
             records.append(_history_record(benchmark_name, "benchmark", False, str(path), 0, 0))
             continue
-        series = load_return_series(path)
+        series = load_return_series(path, require_asset_specific=require_asset_specific)
         histories[benchmark_name] = series
         records.append(
             _history_record(
@@ -178,11 +198,32 @@ def locate_strategy_histories(
     return histories, pd.DataFrame(records), warnings
 
 
-def load_date_averaged_return_series(paths: list[Path]) -> pd.Series:
+def load_selected_candidates_and_metadata(final_dir: Path) -> tuple[pd.DataFrame, dict[str, Any], str]:
+    """Load either legacy final report metadata or asset-specific official metadata."""
+    asset_selected = final_dir / ASSET_SPECIFIC_SELECTED_FILE
+    asset_metadata = final_dir / ASSET_SPECIFIC_METADATA_FILE
+    if asset_selected.exists() and asset_metadata.exists():
+        selected = pd.read_csv(asset_selected)
+        selected = selected.copy()
+        selected["strategy_name"] = selected["candidate_name"]
+        selected["selected_cap"] = selected["max_weight_cap"]
+        selected["source"] = "asset_specific_cost_full_report"
+        metadata = json.loads(asset_metadata.read_text(encoding="utf-8"))
+        return selected, metadata, "asset_specific"
+
+    selected = pd.read_csv(final_dir / SELECTED_FILE)
+    metadata = json.loads((final_dir / METADATA_FILE).read_text(encoding="utf-8"))
+    return selected, metadata, "legacy"
+
+
+def load_date_averaged_return_series(
+    paths: list[Path],
+    require_asset_specific: bool = False,
+) -> pd.Series:
     """Load multiple histories and average duplicate dates."""
     frames = []
     for path in paths:
-        series = load_return_series(path)
+        series = load_return_series(path, require_asset_specific=require_asset_specific)
         frames.append(series.rename("return").reset_index().rename(columns={"index": "date"}))
     combined = pd.concat(frames, ignore_index=True)
     combined["date"] = pd.to_datetime(combined["date"])
@@ -191,9 +232,11 @@ def load_date_averaged_return_series(paths: list[Path]) -> pd.Series:
     return averaged
 
 
-def load_return_series(path: Path) -> pd.Series:
+def load_return_series(path: Path, require_asset_specific: bool = False) -> pd.Series:
     """Load financial net return, falling back to portfolio return."""
     frame = pd.read_csv(path)
+    if require_asset_specific:
+        _validate_asset_specific_history(frame, path)
     date_column = "date" if "date" in frame.columns else frame.columns[0]
     if "financial_net_return" in frame.columns:
         return_column = "financial_net_return"
@@ -252,13 +295,14 @@ def build_pairwise_bootstrap_table(
     random_seed: int = 123,
 ) -> pd.DataFrame:
     """Compute paired bootstrap deltas for key TD3 candidates versus benchmarks."""
-    candidates = [
-        name for name in PRIMARY_CANDIDATES if name in histories
-    ] or [
+    selected_names = [
         str(name)
-        for name in selected_candidates["strategy_name"].head(2)
+        for name in selected_candidates["strategy_name"].dropna().astype(str)
         if str(name) in histories
     ]
+    candidates = list(dict.fromkeys(
+        [name for name in PRIMARY_CANDIDATES if name in histories] + selected_names
+    ))
     benchmark_names = _pairwise_benchmarks(selected_candidates, histories)
     rows = []
     seed_offset = 0
@@ -419,7 +463,9 @@ def build_summary_table(
 ) -> pd.DataFrame:
     """Build compact interpretation summary."""
     rows = []
-    for candidate in PRIMARY_CANDIDATES:
+    pairwise_candidates = list(pairwise["candidate"].dropna().astype(str).unique())
+    candidates = pairwise_candidates or list(PRIMARY_CANDIDATES)
+    for candidate in candidates:
         candidate_pairs = pairwise[pairwise["candidate"] == candidate]
         if candidate_pairs.empty:
             rows.append(
@@ -491,7 +537,9 @@ def build_summary_markdown(
         "## Main Pairwise Result",
         "",
     ]
-    for candidate in PRIMARY_CANDIDATES:
+    pairwise_candidates = list(pairwise["candidate"].dropna().astype(str).unique())
+    candidates = pairwise_candidates or list(PRIMARY_CANDIDATES)
+    for candidate in candidates:
         candidate_pairs = pairwise[
             (pairwise["candidate"] == candidate)
             & (pairwise["metric"] == "sharpe")
@@ -528,7 +576,9 @@ def build_summary_markdown(
 
 def _overall_interpretation(pairwise: pd.DataFrame) -> str:
     interpretations = []
-    for candidate in PRIMARY_CANDIDATES:
+    pairwise_candidates = list(pairwise["candidate"].dropna().astype(str).unique())
+    candidates = pairwise_candidates or list(PRIMARY_CANDIDATES)
+    for candidate in candidates:
         pairs = pairwise[
             (pairwise["candidate"] == candidate)
             & (pairwise["metric"] == "sharpe")
@@ -561,6 +611,16 @@ def _sample_blocks(values: np.ndarray, block_size: int, rng: np.random.Generator
 
 
 def _source_dir_for_row(row: pd.Series, metadata: dict[str, Any]) -> Path | None:
+    if metadata.get("runner") == "src.analysis.asset_specific_cost_final_report":
+        source_dirs = metadata.get("source_dirs", {})
+        base_candidate = str(row.get("base_candidate", ""))
+        if base_candidate == "V7_real_macro_vintage_clean_no_dxy_garch":
+            path = source_dirs.get("v7")
+        elif base_candidate == "V8_ewma_garch_vol_current":
+            path = source_dirs.get("v8")
+        else:
+            path = source_dirs.get("v2_v6")
+        return Path(path) if path else None
     source = str(row.get("source"))
     if source == "seeded_cap_sensitivity":
         path = metadata.get("v3_cap_sensitivity_dir")
@@ -611,13 +671,27 @@ def _with_cap_sensitivity_overrides(
 
 
 def _benchmark_history_dir(final_report_dir: Path, metadata: dict[str, Any]) -> Path:
-    benchmark_dir = Path(metadata["benchmark_comparison_dir"]) / BENCHMARK_HISTORY_DIR
+    benchmark_root = Path(metadata["benchmark_comparison_dir"])
+    benchmark_dir = (
+        benchmark_root / BENCHMARK_HISTORY_DIR
+        if not (benchmark_root / "histories").exists()
+        else benchmark_root / "histories"
+    )
     if benchmark_dir.exists():
         return benchmark_dir
     return final_report_dir.parent / "capped_td3_protocol_comparison_60ep_10seeds_cap060" / BENCHMARK_HISTORY_DIR
 
 
 def _benchmark_names_for_report(final_report_dir: Path) -> list[str]:
+    combined_path = final_report_dir.parent / "asset_specific_cost_benchmark_comparison" / ASSET_SPECIFIC_COMBINED_RANKING_FILE
+    if combined_path.exists():
+        ranking = pd.read_csv(combined_path)
+        benchmarks = ranking[ranking["strategy_type"].astype(str) == "benchmark"]
+        names = list(benchmarks["strategy_name"].dropna().astype(str).unique())
+        key_names = ["trend_spy_cash_12p", "BuyHold_GLD", "Equal_Weight"]
+        ordered = [name for name in key_names if name in names]
+        ordered.extend([name for name in names if name not in ordered])
+        return ordered
     ranking_path = final_report_dir / "final_constrained_td3_mandate_ranking.csv"
     if not ranking_path.exists():
         return list(DEFAULT_BENCHMARKS)
@@ -653,6 +727,36 @@ def _cap_label(value: Any) -> str:
     if pd.isna(numeric):
         return "uncapped"
     return f"{float(numeric):.2f}".replace(".", "p")
+
+
+def _row_cap_label(row: pd.Series) -> str:
+    candidate_name = str(row.get("strategy_name", ""))
+    if "_cap_" in candidate_name and "0p" in candidate_name.rsplit("_cap_", 1)[-1]:
+        return candidate_name.rsplit("_cap_", 1)[-1]
+    return _cap_label(row.get("selected_cap"))
+
+
+def _validate_asset_specific_history(frame: pd.DataFrame, path: Path) -> None:
+    if "transaction_cost_mode" not in frame.columns:
+        raise ValueError(f"Asset-specific validation failed; missing transaction_cost_mode: {path}")
+    modes = set(frame["transaction_cost_mode"].dropna().astype(str).unique().tolist())
+    if modes != {"asset_specific"}:
+        raise ValueError(f"Scalar/non asset-specific history detected in {path}: {sorted(modes)}")
+    required = [
+        "asset_turnover_SPY",
+        "asset_turnover_TLT",
+        "asset_turnover_GLD",
+        "asset_turnover_BTC-USD",
+        "asset_turnover_CASH",
+        "asset_transaction_cost_contribution_SPY",
+        "asset_transaction_cost_contribution_TLT",
+        "asset_transaction_cost_contribution_GLD",
+        "asset_transaction_cost_contribution_BTC-USD",
+        "asset_transaction_cost_contribution_CASH",
+    ]
+    missing = [column for column in required if column not in frame.columns]
+    if missing:
+        raise ValueError(f"Asset-specific history missing diagnostics in {path}: {missing}")
 
 
 def _history_record(
@@ -711,6 +815,8 @@ def main() -> None:
     parser.add_argument("--v7-cap-sensitivity-dir", default=None)
     parser.add_argument("--v7-clean-no-dxy-garch-cap-sensitivity-dir", default=None)
     parser.add_argument("--v8-cap-sensitivity-dir", default=None)
+    parser.add_argument("--benchmark-dir", default=None)
+    parser.add_argument("--asset-specific-only", action="store_true")
     args = parser.parse_args()
 
     report = build_statistical_validation_report(
@@ -727,6 +833,8 @@ def main() -> None:
             args.v7_clean_no_dxy_garch_cap_sensitivity_dir
         ),
         v8_cap_sensitivity_dir=args.v8_cap_sensitivity_dir,
+        benchmark_dir=args.benchmark_dir,
+        asset_specific_only=args.asset_specific_only or None,
     )
     print("Histories found:")
     print(report["history_records"].to_string(index=False))

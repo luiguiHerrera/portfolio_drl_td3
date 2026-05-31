@@ -194,6 +194,61 @@ class WhiteRealityCheckReportTests(unittest.TestCase):
             metadata = json.loads((output_dir / "white_reality_check_metadata.json").read_text())
             self.assertEqual(metadata["return_column_used"], "financial_net_return preferred, portfolio_return fallback")
 
+    def test_asset_specific_report_mode_uses_asset_specific_histories_only(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            final_dir = root / "asset_report"
+            source_dir = root / "asset_source"
+            benchmark_dir = root / "benchmarks"
+            final_dir.mkdir()
+            history_dir = (
+                source_dir
+                / "per_candidate"
+                / "V5_no_volatility_block"
+                / "F1_V5_no_volatility_block_cap_0p50_seed_7"
+            )
+            history_dir.mkdir(parents=True)
+            (benchmark_dir / "histories").mkdir(parents=True)
+            self._write_asset_specific_history(
+                history_dir / "test_policy_history.csv",
+                value=0.02,
+            )
+            self._write_asset_specific_history(
+                benchmark_dir / "histories" / "BuyHold_GLD_history.csv",
+                value=0.005,
+            )
+            pd.DataFrame(
+                [
+                    {
+                        "candidate_name": "V5_no_volatility_block_cap_0p50",
+                        "base_candidate": "V5_no_volatility_block",
+                        "max_weight_cap": 0.50,
+                    }
+                ]
+            ).to_csv(final_dir / "asset_specific_cost_selected_candidates.csv", index=False)
+            (final_dir / "asset_specific_cost_metadata.json").write_text(
+                json.dumps(
+                    {
+                        "runner": "src.analysis.asset_specific_cost_final_report",
+                        "source_dirs": {"v2_v6": str(source_dir)},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = build_white_reality_check_report(
+                final_report_dir=str(final_dir),
+                output_dir=str(root / "out"),
+                benchmark_dir=str(benchmark_dir),
+                benchmarks=["BuyHold_GLD"],
+                n_bootstrap=20,
+                block_length=4,
+                seed=7,
+            )
+
+            self.assertFalse(result["summary"].empty)
+            self.assertEqual(result["history_records"].loc[0, "strategy_name"], "V5_no_volatility_block_cap_0p50")
+
     def test_missing_candidate_histories_warn_without_crashing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -301,6 +356,24 @@ class WhiteRealityCheckReportTests(unittest.TestCase):
                 "portfolio_return": [value] * len(dates),
             }
         ).to_csv(path, index=False)
+
+    @staticmethod
+    def _write_asset_specific_history(path: Path, value: float) -> None:
+        dates = pd.date_range("2024-01-05", periods=40, freq="W-FRI")
+        frame = pd.DataFrame(
+            {
+                "date": dates,
+                "financial_net_return": [value] * len(dates),
+                "portfolio_return": [value] * len(dates),
+                "transaction_cost_mode": ["asset_specific"] * len(dates),
+                "transaction_cost": [0.0001] * len(dates),
+                "turnover": [0.1] * len(dates),
+            }
+        )
+        for asset in ["SPY", "TLT", "GLD", "BTC-USD", "CASH"]:
+            frame[f"asset_turnover_{asset}"] = 0.0
+            frame[f"asset_transaction_cost_contribution_{asset}"] = 0.0
+        frame.to_csv(path, index=False)
 
 
 if __name__ == "__main__":

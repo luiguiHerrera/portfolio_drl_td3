@@ -20,10 +20,9 @@ import pandas as pd
 
 from src.analysis.statistical_validation_report import (
     DEFAULT_BENCHMARKS,
-    METADATA_FILE,
-    SELECTED_FILE,
     align_return_pair,
     compute_return_metrics,
+    load_selected_candidates_and_metadata,
     locate_strategy_histories,
     _with_cap_sensitivity_overrides,
 )
@@ -53,14 +52,15 @@ def build_white_reality_check_report(
     v7_cap_sensitivity_dir: str | None = None,
     v7_clean_no_dxy_garch_cap_sensitivity_dir: str | None = None,
     v8_cap_sensitivity_dir: str | None = None,
+    benchmark_dir: str | None = None,
+    asset_specific_only: bool | None = None,
 ) -> dict[str, Any]:
     """Build White Reality Check CSVs and markdown from existing histories."""
     final_dir = Path(final_report_dir)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    selected = pd.read_csv(final_dir / SELECTED_FILE)
-    metadata = json.loads((final_dir / METADATA_FILE).read_text(encoding="utf-8"))
+    selected, metadata, report_mode = load_selected_candidates_and_metadata(final_dir)
     metadata = _with_cap_sensitivity_overrides(
         metadata,
         v3_cap_sensitivity_dir=v3_cap_sensitivity_dir,
@@ -73,10 +73,16 @@ def build_white_reality_check_report(
         ),
         v8_cap_sensitivity_dir=v8_cap_sensitivity_dir,
     )
+    if benchmark_dir is not None:
+        metadata["benchmark_comparison_dir"] = str(Path(benchmark_dir))
+    require_asset_specific = (
+        report_mode == "asset_specific" if asset_specific_only is None else asset_specific_only
+    )
     histories, history_records, warnings = locate_strategy_histories(
         final_report_dir=final_dir,
         selected_candidates=selected,
         metadata=metadata,
+        require_asset_specific=require_asset_specific,
     )
     benchmark_names = DEFAULT_BENCHMARKS if benchmarks is None else benchmarks
     candidate_names = [
@@ -130,6 +136,8 @@ def build_white_reality_check_report(
 
     metadata_out = {
         "final_report_dir": str(final_dir),
+        "report_mode": report_mode,
+        "asset_specific_only": require_asset_specific,
         "candidates_tested": candidate_names,
         "benchmarks_tested": benchmark_names,
         "history_dirs_used": history_records.to_dict(orient="records"),
@@ -470,6 +478,8 @@ def main() -> None:
     parser.add_argument("--v7-cap-sensitivity-dir", default=None)
     parser.add_argument("--v7-clean-no-dxy-garch-cap-sensitivity-dir", default=None)
     parser.add_argument("--v8-cap-sensitivity-dir", default=None)
+    parser.add_argument("--benchmark-dir", default=None)
+    parser.add_argument("--asset-specific-only", action="store_true")
     args = parser.parse_args()
 
     result = build_white_reality_check_report(
@@ -488,6 +498,8 @@ def main() -> None:
             args.v7_clean_no_dxy_garch_cap_sensitivity_dir
         ),
         v8_cap_sensitivity_dir=args.v8_cap_sensitivity_dir,
+        benchmark_dir=args.benchmark_dir,
+        asset_specific_only=args.asset_specific_only or None,
     )
 
     print("White Reality Check summary:")

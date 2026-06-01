@@ -41,7 +41,7 @@ class RewardTests(unittest.TestCase):
     def test_drawdown_penalty_returns_zero_above_peak(self):
         self.assertAlmostEqual(drawdown_penalty(110000.0, 100000.0), 0.0)
 
-    def test_compute_risk_aware_reward_matches_expected_formula(self):
+    def test_compute_risk_aware_reward_legacy_mode_matches_expected_formula(self):
         weights = np.array([0.5, 0.5])
         reward = compute_risk_aware_reward(
             portfolio_return=0.04,
@@ -51,6 +51,7 @@ class RewardTests(unittest.TestCase):
             portfolio_value=90000.0,
             peak_portfolio_value=100000.0,
             reward_config={
+                "reward_mode": "component_legacy",
                 "lambda_return": 1.5,
                 "lambda_transaction_cost": 0.2,
                 "lambda_turnover": 0.1,
@@ -62,7 +63,7 @@ class RewardTests(unittest.TestCase):
         expected_reward = 1.5 * 0.04 - 0.2 * 0.01 - 0.1 * 0.3 - 0.4 * 0.5 - 0.5 * 0.1
         self.assertAlmostEqual(reward, expected_reward)
 
-    def test_compute_risk_aware_reward_default_lambdas_equal_net_return_reward(self):
+    def test_net_return_first_reward_equals_net_return_when_other_penalties_zero(self):
         reward = compute_risk_aware_reward(
             portfolio_return=0.04,
             transaction_cost=0.01,
@@ -74,6 +75,52 @@ class RewardTests(unittest.TestCase):
         )
 
         self.assertAlmostEqual(reward, compute_net_return_reward(0.04, 0.01))
+
+    def test_net_return_first_lambda_return_scales_full_net_return(self):
+        reward = compute_risk_aware_reward(
+            portfolio_return=0.04,
+            transaction_cost=0.01,
+            turnover=0.3,
+            weights=np.array([0.5, 0.5]),
+            portfolio_value=100000.0,
+            peak_portfolio_value=100000.0,
+            reward_config={
+                "reward_mode": "net_return_first",
+                "lambda_return": 2.0,
+            },
+        )
+
+        self.assertAlmostEqual(reward, 2.0 * (0.04 - 0.01))
+
+    def test_net_return_first_does_not_underweight_transaction_cost(self):
+        reward = compute_risk_aware_reward(
+            portfolio_return=0.04,
+            transaction_cost=0.01,
+            turnover=0.0,
+            weights=np.array([0.5, 0.5]),
+            portfolio_value=100000.0,
+            peak_portfolio_value=100000.0,
+            reward_config={
+                "reward_mode": "net_return_first",
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.2,
+            },
+        )
+
+        self.assertAlmostEqual(reward, 0.03)
+        self.assertNotAlmostEqual(reward, 0.04 - 0.2 * 0.01)
+
+    def test_invalid_reward_mode_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "reward_mode"):
+            compute_risk_aware_reward(
+                portfolio_return=0.04,
+                transaction_cost=0.01,
+                turnover=0.3,
+                weights=np.array([0.5, 0.5]),
+                portfolio_value=100000.0,
+                peak_portfolio_value=100000.0,
+                reward_config={"reward_mode": "bad"},
+            )
 
     def test_robust_score_and_dsr_are_not_training_reward_dependencies(self):
         forbidden_terms = (

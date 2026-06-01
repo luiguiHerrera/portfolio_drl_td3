@@ -7,6 +7,8 @@ portfolio environment.
 
 import numpy as np
 
+REWARD_MODES = {"net_return_first", "component_legacy"}
+
 
 def compute_net_return_reward(portfolio_return: float, transaction_cost: float) -> float:
     """Return portfolio return net of realized transaction cost."""
@@ -56,28 +58,38 @@ def compute_risk_aware_reward(
         raise ValueError("turnover must be non-negative.")
 
     lambda_return = _get_lambda(reward_config, "lambda_return", 1.0)
-    lambda_transaction_cost = _get_lambda(
-        reward_config,
-        "lambda_transaction_cost",
-        1.0,
-    )
     lambda_turnover = _get_lambda(reward_config, "lambda_turnover", 0.0)
     lambda_concentration = _get_lambda(reward_config, "lambda_concentration", 0.0)
     lambda_drawdown = _get_lambda(reward_config, "lambda_drawdown", 0.0)
+    reward_mode = reward_config.get("reward_mode", "net_return_first")
+    if not isinstance(reward_mode, str) or reward_mode not in REWARD_MODES:
+        valid_modes = ", ".join(sorted(REWARD_MODES))
+        raise ValueError(f"reward_mode must be one of: {valid_modes}.")
 
     concentration = concentration_penalty(weights)
     drawdown = drawdown_penalty(portfolio_value, peak_portfolio_value)
+    turnover_penalty = compute_turnover_penalty(
+        turnover=turnover,
+        lambda_turnover=lambda_turnover,
+        mode=reward_config.get("turnover_penalty_mode", "linear"),
+        free_band=reward_config.get("turnover_free_band", 0.0),
+        quadratic_weight=reward_config.get("turnover_quadratic_weight", 0.0),
+    )
+
+    if reward_mode == "component_legacy":
+        lambda_transaction_cost = _get_lambda(
+            reward_config,
+            "lambda_transaction_cost",
+            1.0,
+        )
+        base_reward = lambda_return * portfolio_return - lambda_transaction_cost * transaction_cost
+    else:
+        financial_net_return = portfolio_return - transaction_cost
+        base_reward = lambda_return * financial_net_return
 
     return float(
-        lambda_return * portfolio_return
-        - lambda_transaction_cost * transaction_cost
-        - compute_turnover_penalty(
-            turnover=turnover,
-            lambda_turnover=lambda_turnover,
-            mode=reward_config.get("turnover_penalty_mode", "linear"),
-            free_band=reward_config.get("turnover_free_band", 0.0),
-            quadratic_weight=reward_config.get("turnover_quadratic_weight", 0.0),
-        )
+        base_reward
+        - turnover_penalty
         - lambda_concentration * concentration
         - lambda_drawdown * drawdown
     )

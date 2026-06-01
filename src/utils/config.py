@@ -56,7 +56,12 @@ TURNOVER_PENALTY_MODES = {
     "excess_linear",
     "excess_quadratic",
 }
+REWARD_MODES = {
+    "net_return_first",
+    "component_legacy",
+}
 SUPPORTED_REWARD_FIELDS = set(OPTIONAL_REWARD_LAMBDAS) | {
+    "reward_mode",
     "use_mandate_penalty",
     "mandate_profile",
     "mandate_penalty_weights",
@@ -197,6 +202,7 @@ def _validate_reward(config: dict) -> None:
         raise ValueError("Config field reward must be a mapping.")
 
     _validate_supported_reward_fields(config["reward"])
+    _validate_reward_mode(config["reward"])
 
     for field_name in OPTIONAL_REWARD_LAMBDAS:
         if field_name in config["reward"]:
@@ -208,6 +214,15 @@ def _validate_reward(config: dict) -> None:
     _validate_reward_mandate_fields(config["reward"])
     _validate_reward_cash_penalty_fields(config["reward"])
     _validate_reward_turnover_penalty_fields(config["reward"])
+
+
+def _validate_reward_mode(reward: dict) -> None:
+    reward_mode = reward.get("reward_mode")
+    if reward_mode is not None and (
+        not isinstance(reward_mode, str) or reward_mode not in REWARD_MODES
+    ):
+        valid_modes = ", ".join(sorted(REWARD_MODES))
+        raise ValueError(f"Config field reward.reward_mode must be one of: {valid_modes}.")
 
 
 def _validate_td3(config: dict) -> None:

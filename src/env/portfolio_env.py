@@ -145,6 +145,7 @@ class PortfolioEnv:
             "financial_net_return": financial_net_return,
             "transaction_cost": realized_transaction_cost,
             "transaction_cost_mode": self.transaction_cost_mode,
+            "reward_mode": self.reward_config.get("reward_mode", "net_return_first"),
             "turnover": turnover,
             "turnover_penalty": turnover_penalty_result["turnover_penalty"],
             "turnover_penalty_mode": turnover_penalty_result[

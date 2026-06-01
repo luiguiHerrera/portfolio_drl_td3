@@ -464,6 +464,47 @@ class PortfolioEnvTests(unittest.TestCase):
         )
         self.assertGreater(info["transaction_cost"], 0.0)
 
+    def test_net_return_first_reward_uses_full_asset_specific_cost(self):
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps=self._asset_cost_bps(),
+            reward_config={
+                "reward_mode": "net_return_first",
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+                "lambda_turnover": 0.0,
+                "lambda_concentration": 0.0,
+                "lambda_drawdown": 0.0,
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        self.assertEqual(info["reward_mode"], "net_return_first")
+        self.assertGreater(info["transaction_cost"], 0.0)
+        self.assertAlmostEqual(reward, info["financial_net_return"])
+
+    def test_portfolio_value_updates_with_full_transaction_cost(self):
+        env = PortfolioEnv(
+            self.returns,
+            initial_cash=100000.0,
+            transaction_cost=0.01,
+            reward_config={
+                "reward_mode": "component_legacy",
+                "lambda_return": 1.0,
+                "lambda_transaction_cost": 0.0,
+            },
+        )
+        env.reset()
+
+        _, reward, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        expected_value = 100000.0 * (1.0 + info["financial_net_return"])
+        self.assertAlmostEqual(info["portfolio_value"], expected_value)
+        self.assertAlmostEqual(reward, info["portfolio_return"])
+
     def test_asset_specific_missing_asset_costs_fail(self):
         costs = self._asset_cost_bps()
         del costs["BTC-USD"]

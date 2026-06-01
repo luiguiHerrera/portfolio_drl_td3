@@ -292,6 +292,32 @@ class ConfigTests(unittest.TestCase):
             ):
                 load_config(str(config_path))
 
+    def test_load_config_accepts_net_return_first_reward_mode(self):
+        config = _valid_config()
+        config["reward"]["reward_mode"] = "net_return_first"
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["reward"]["reward_mode"], "net_return_first")
+
+    def test_load_config_accepts_component_legacy_reward_mode(self):
+        config = _valid_config()
+        config["reward"]["reward_mode"] = "component_legacy"
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["reward"]["reward_mode"], "component_legacy")
+
+    def test_load_config_rejects_unknown_reward_mode(self):
+        config = _valid_config()
+        config["reward"]["reward_mode"] = "unknown"
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "reward.reward_mode"):
+                load_config(str(config_path))
+
     def test_load_config_accepts_missing_lambda_concentration(self):
         config = _valid_config()
         config["reward"].pop("lambda_concentration", None)

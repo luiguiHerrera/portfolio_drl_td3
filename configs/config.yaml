@@ -20,9 +20,10 @@ environment:
   max_weight_per_asset: 1.0
 
 reward:
+  reward_mode: net_return_first
   lambda_return: 1.0
   lambda_drawdown: 1.0
-  lambda_transaction_cost: 0.2
+  lambda_transaction_cost: 1.0
   lambda_turnover: 0.1
   lambda_concentration: 0.0
 

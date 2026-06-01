@@ -9,6 +9,8 @@ import pandas as pd
 
 from src.analysis.mandate_profile_comparison_report import (
     KEY_CANDIDATE_V3_CLEAN,
+    KEY_CANDIDATE_V3_CLEAN_ASSET_SPECIFIC,
+    KEY_CANDIDATE_V5_ASSET_SPECIFIC,
     build_mandate_profile_comparison_report,
     build_profile_rankings,
     build_profile_winners,
@@ -170,6 +172,167 @@ class MandateProfileComparisonReportTests(unittest.TestCase):
             self.assertTrue(metadata["reporting_only"])
             self.assertIn("conservative", metadata["profile_thresholds"])
 
+    def test_asset_specific_combined_report_includes_v5_and_v3_clean_ranks(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            td3_dir = root / "td3"
+            combined_dir = root / "combined"
+            benchmark_dir = root / "benchmarks"
+            histories_dir = benchmark_dir / "histories"
+            output_dir = root / "out"
+            td3_dir.mkdir()
+            combined_dir.mkdir()
+            histories_dir.mkdir(parents=True)
+
+            cost_model = {
+                "transaction_cost_mode": "asset_specific",
+                "asset_transaction_cost_bps": {
+                    "SPY": 2.0,
+                    "TLT": 2.0,
+                    "GLD": 2.0,
+                    "BTC-USD": 10.0,
+                    "CASH": 0.0,
+                },
+            }
+            (td3_dir / "asset_specific_cost_metadata.json").write_text(
+                json.dumps({"cost_model": cost_model}),
+                encoding="utf-8",
+            )
+            (combined_dir / "asset_specific_cost_benchmark_comparison_metadata.json").write_text(
+                json.dumps(
+                    {
+                        "cost_model": cost_model,
+                        "combined_score_scope": "test_scope",
+                        "benchmark_dir": str(benchmark_dir),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            pd.DataFrame(
+                {
+                    "date": ["2024-01-05", "2024-01-12"],
+                    "strategy_return": [0.01, 0.0],
+                    "transaction_cost_mode": ["asset_specific", "asset_specific"],
+                }
+            ).to_csv(histories_dir / "trend_spy_cash_12p_history.csv", index=False)
+            pd.DataFrame(
+                [
+                    _asset_specific_strategy_row(
+                        KEY_CANDIDATE_V5_ASSET_SPECIFIC,
+                        "td3",
+                        robust_score=0.80,
+                        max_drawdown=-0.09,
+                    ),
+                    _asset_specific_strategy_row(
+                        KEY_CANDIDATE_V3_CLEAN_ASSET_SPECIFIC,
+                        "td3",
+                        robust_score=0.72,
+                        max_drawdown=-0.10,
+                    ),
+                    _asset_specific_strategy_row(
+                        "trend_spy_cash_12p",
+                        "benchmark",
+                        robust_score=0.65,
+                        max_drawdown=-0.08,
+                    ),
+                ]
+            ).to_csv(combined_dir / "asset_specific_cost_combined_ranking.csv", index=False)
+
+            result = build_mandate_profile_comparison_report(
+                final_report_dir=str(td3_dir),
+                combined_report_dir=str(combined_dir),
+                benchmark_dir=str(benchmark_dir),
+                output_dir=str(output_dir),
+                asset_specific_only=True,
+            )
+
+            self.assertTrue((output_dir / "mandate_profile_strategy_scores.csv").exists())
+            self.assertTrue((output_dir / "mandate_profile_winners.csv").exists())
+            self.assertTrue((output_dir / "mandate_profile_summary.md").exists())
+            self.assertEqual(
+                set(result["winners"]["best_td3_candidate"].dropna()),
+                {KEY_CANDIDATE_V5_ASSET_SPECIFIC},
+            )
+            self.assertTrue((result["winners"]["v5_asset_specific_rank"] == 1.0).all())
+            self.assertIn("asset-specific-cost universe", result["summary"])
+            self.assertIn("statistical proof", result["summary"])
+
+            metadata = json.loads((output_dir / "mandate_profile_metadata.json").read_text())
+            self.assertTrue(metadata["asset_specific_only"])
+            self.assertEqual(metadata["source_metadata"]["input_mode"], "asset_specific_combined")
+
+    def test_asset_specific_mode_rejects_scalar_benchmark_history(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            td3_dir = root / "td3"
+            combined_dir = root / "combined"
+            benchmark_dir = root / "benchmarks"
+            histories_dir = benchmark_dir / "histories"
+            output_dir = root / "out"
+            td3_dir.mkdir()
+            combined_dir.mkdir()
+            histories_dir.mkdir(parents=True)
+
+            cost_model = {"transaction_cost_mode": "asset_specific"}
+            (td3_dir / "asset_specific_cost_metadata.json").write_text(
+                json.dumps({"cost_model": cost_model}),
+                encoding="utf-8",
+            )
+            (combined_dir / "asset_specific_cost_benchmark_comparison_metadata.json").write_text(
+                json.dumps({"cost_model": cost_model, "benchmark_dir": str(benchmark_dir)}),
+                encoding="utf-8",
+            )
+            pd.DataFrame(
+                [
+                    _asset_specific_strategy_row(
+                        KEY_CANDIDATE_V5_ASSET_SPECIFIC,
+                        "td3",
+                        robust_score=0.80,
+                        max_drawdown=-0.09,
+                    )
+                ]
+            ).to_csv(combined_dir / "asset_specific_cost_combined_ranking.csv", index=False)
+            pd.DataFrame(
+                {
+                    "date": ["2024-01-05"],
+                    "strategy_return": [0.01],
+                    "transaction_cost_mode": ["scalar"],
+                }
+            ).to_csv(histories_dir / "trend_spy_cash_12p_history.csv", index=False)
+
+            with self.assertRaisesRegex(ValueError, "asset-specific benchmark history"):
+                build_mandate_profile_comparison_report(
+                    final_report_dir=str(td3_dir),
+                    combined_report_dir=str(combined_dir),
+                    benchmark_dir=str(benchmark_dir),
+                    output_dir=str(output_dir),
+                    asset_specific_only=True,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _asset_specific_strategy_row(
+    strategy_name: str,
+    strategy_type: str,
+    *,
+    robust_score: float,
+    max_drawdown: float,
+) -> dict:
+    return {
+        "strategy_name": strategy_name,
+        "strategy_type": strategy_type,
+        "strategy_group": "td3_best_constrained" if strategy_type == "td3" else "benchmark",
+        "robust_score": robust_score,
+        "mandate_aware_score": robust_score,
+        "annualized_return": 0.10,
+        "annualized_volatility": 0.12,
+        "sharpe": 0.8,
+        "max_drawdown": max_drawdown,
+        "average_turnover": 0.20,
+        "average_effective_number_of_assets": 3.0 if strategy_type == "td3" else 2.0,
+        "average_max_weight": 0.50,
+        "transaction_cost_mode": "asset_specific",
+    }

@@ -24,22 +24,43 @@ DEFAULT_FINAL_REPORT_DIR = (
     "final_constrained_td3_report_with_v3_clean_no_dxy_v7_clean_garch_v4_v7_v8_60ep_10seeds"
 )
 DEFAULT_OUTPUT_DIR = "outputs/tables/mandate_profile_comparison_final"
+DEFAULT_ASSET_SPECIFIC_COMBINED_REPORT_DIR = (
+    "outputs/tables/asset_specific_cost_benchmark_comparison"
+)
+ASSET_SPECIFIC_COMBINED_RANKING_FILE = "asset_specific_cost_combined_ranking.csv"
+ASSET_SPECIFIC_COMBINED_METADATA_FILE = (
+    "asset_specific_cost_benchmark_comparison_metadata.json"
+)
 
 PROFILE_ORDER = ["conservative", "moderate", "aggressive"]
 KEY_CANDIDATE_V3_CLEAN = "V3_real_macro_vintage_clean_no_dxy_cap_0.50"
 KEY_CANDIDATE_V7_CLEAN_GARCH = "V7_real_macro_vintage_clean_no_dxy_garch_cap_0.50"
+KEY_CANDIDATE_V5_ASSET_SPECIFIC = "V5_no_volatility_block_cap_0p50"
+KEY_CANDIDATE_V3_CLEAN_ASSET_SPECIFIC = (
+    "V3_real_macro_vintage_clean_no_dxy_cap_0p70"
+)
 
 
 def build_mandate_profile_comparison_report(
     final_report_dir: str = DEFAULT_FINAL_REPORT_DIR,
     output_dir: str = DEFAULT_OUTPUT_DIR,
+    combined_report_dir: str | None = None,
+    benchmark_dir: str | None = None,
+    asset_specific_only: bool = False,
 ) -> dict[str, Any]:
     """Build mandate profile comparison outputs from an existing final report."""
     final_dir = Path(final_report_dir)
+    combined_dir = Path(combined_report_dir) if combined_report_dir else None
+    benchmark_path = Path(benchmark_dir) if benchmark_dir else None
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    strategies = load_final_strategy_metrics(final_dir)
+    strategies, source_metadata = load_strategy_metrics(
+        final_dir,
+        combined_report_dir=combined_dir,
+        benchmark_dir=benchmark_path,
+        asset_specific_only=asset_specific_only,
+    )
     profiles = {
         name: limits
         for name, limits in get_default_mandate_profiles().items()
@@ -64,10 +85,14 @@ def build_mandate_profile_comparison_report(
 
     metadata = {
         "final_report_dir": str(final_dir),
+        "combined_report_dir": str(combined_dir) if combined_dir else None,
+        "benchmark_dir": str(benchmark_path) if benchmark_path else None,
         "output_dir": str(output_path),
         "reporting_only": True,
         "does_not_retrain": True,
         "does_not_replace_main_result": True,
+        "asset_specific_only": asset_specific_only,
+        "source_metadata": source_metadata,
         "profile_thresholds": {
             name: limits.to_dict()
             for name, limits in profiles.items()
@@ -85,6 +110,7 @@ def build_mandate_profile_comparison_report(
         "rankings": rankings,
         "winners": winners,
         "summary": summary,
+        "metadata": metadata,
         "paths": {
             "scores": str(scores_path),
             "winners": str(winners_path),
@@ -107,6 +133,87 @@ def load_final_strategy_metrics(final_report_dir: Path) -> pd.DataFrame:
     if "robust_score" not in data.columns:
         raise ValueError("final_constrained_td3_main_ranking.csv must include robust_score.")
     return data
+
+
+def load_strategy_metrics(
+    final_report_dir: Path,
+    combined_report_dir: Path | None = None,
+    benchmark_dir: Path | None = None,
+    asset_specific_only: bool = False,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Load legacy final ranking or asset-specific combined TD3+benchmark ranking."""
+    if combined_report_dir is not None:
+        ranking_path = combined_report_dir / ASSET_SPECIFIC_COMBINED_RANKING_FILE
+        metadata_path = combined_report_dir / ASSET_SPECIFIC_COMBINED_METADATA_FILE
+        if not ranking_path.exists():
+            raise FileNotFoundError(f"Missing asset-specific combined ranking: {ranking_path}")
+        if not metadata_path.exists():
+            raise FileNotFoundError(f"Missing asset-specific combined metadata: {metadata_path}")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if asset_specific_only:
+            validate_asset_specific_sources(final_report_dir, metadata, benchmark_dir)
+        data = pd.read_csv(ranking_path)
+        if data.empty:
+            raise ValueError("asset-specific combined ranking must not be empty.")
+        if "transaction_cost_mode" not in data.columns:
+            raise ValueError("asset-specific combined ranking must include transaction_cost_mode.")
+        modes = set(data["transaction_cost_mode"].dropna().astype(str).unique().tolist())
+        if asset_specific_only and modes != {"asset_specific"}:
+            raise ValueError(f"Non asset-specific strategies found in combined ranking: {sorted(modes)}")
+        if "robust_score" not in data.columns:
+            raise ValueError("asset-specific combined ranking must include robust_score.")
+        return data, {
+            "input_mode": "asset_specific_combined",
+            "combined_ranking": str(ranking_path),
+            "combined_metadata": str(metadata_path),
+            "combined_score_scope": metadata.get("combined_score_scope"),
+            "n_strategies": int(len(data)),
+            "transaction_cost_modes": sorted(modes),
+        }
+
+    data = load_final_strategy_metrics(final_report_dir)
+    return data, {
+        "input_mode": "legacy_final_report",
+        "n_strategies": int(len(data)),
+    }
+
+
+def validate_asset_specific_sources(
+    final_report_dir: Path,
+    combined_metadata: dict[str, Any],
+    benchmark_dir: Path | None,
+) -> None:
+    """Fail loudly if cost metadata or benchmark histories are not asset-specific."""
+    td3_metadata_path = final_report_dir / "asset_specific_cost_metadata.json"
+    if not td3_metadata_path.exists():
+        raise FileNotFoundError(f"Missing TD3 asset-specific metadata: {td3_metadata_path}")
+    td3_metadata = json.loads(td3_metadata_path.read_text(encoding="utf-8"))
+    cost_model = td3_metadata.get("cost_model", {})
+    if cost_model.get("transaction_cost_mode") != "asset_specific":
+        raise ValueError("TD3 report is not asset-specific cost aware.")
+    if combined_metadata.get("cost_model", {}).get("transaction_cost_mode") != "asset_specific":
+        raise ValueError("Combined report is not asset-specific cost aware.")
+    if benchmark_dir is not None:
+        histories_dir = benchmark_dir / "histories"
+    else:
+        benchmark_dir_value = combined_metadata.get("benchmark_dir")
+        histories_dir = (
+            Path(benchmark_dir_value) / "histories"
+            if benchmark_dir_value
+            else None
+        )
+    if histories_dir is None or not histories_dir.exists():
+        raise FileNotFoundError(f"Missing benchmark histories directory: {histories_dir}")
+    history_paths = sorted(histories_dir.glob("*_history.csv"))
+    if not history_paths:
+        raise FileNotFoundError(f"No benchmark history files found in {histories_dir}")
+    for path in history_paths:
+        history = pd.read_csv(path, nrows=5)
+        if "transaction_cost_mode" not in history.columns:
+            raise ValueError(f"Benchmark history missing transaction_cost_mode: {path}")
+        modes = set(history["transaction_cost_mode"].dropna().astype(str).unique().tolist())
+        if modes != {"asset_specific"}:
+            raise ValueError(f"Scalar/non asset-specific benchmark history detected in {path}: {sorted(modes)}")
 
 
 def score_strategies_for_profiles(
@@ -270,6 +377,23 @@ def build_profile_winners(rankings: pd.DataFrame) -> pd.DataFrame:
                 "v7_clean_no_dxy_garch_is_best_td3": (
                     best_td3 is not None and best_td3["strategy_name"] == KEY_CANDIDATE_V7_CLEAN_GARCH
                 ),
+                "v5_asset_specific_rank": _rank_for(profile_rows, KEY_CANDIDATE_V5_ASSET_SPECIFIC),
+                "v5_asset_specific_score": _score_for(profile_rows, KEY_CANDIDATE_V5_ASSET_SPECIFIC),
+                "v5_asset_specific_is_best_td3": (
+                    best_td3 is not None and best_td3["strategy_name"] == KEY_CANDIDATE_V5_ASSET_SPECIFIC
+                ),
+                "v3_clean_asset_specific_rank": _rank_for(
+                    profile_rows,
+                    KEY_CANDIDATE_V3_CLEAN_ASSET_SPECIFIC,
+                ),
+                "v3_clean_asset_specific_score": _score_for(
+                    profile_rows,
+                    KEY_CANDIDATE_V3_CLEAN_ASSET_SPECIFIC,
+                ),
+                "v3_clean_asset_specific_is_best_td3": (
+                    best_td3 is not None
+                    and best_td3["strategy_name"] == KEY_CANDIDATE_V3_CLEAN_ASSET_SPECIFIC
+                ),
                 "aggressive_admits_higher_return_less_conservative": _aggressive_admission_note(profile_name, best_overall),
             }
         )
@@ -296,6 +420,8 @@ def build_summary_markdown(winners: pd.DataFrame, rankings: pd.DataFrame) -> str
 
     best_td3_by_profile = winners.set_index("profile")["best_td3_candidate"].to_dict()
     unique_best_td3 = {candidate for candidate in best_td3_by_profile.values() if pd.notna(candidate)}
+    overall_winners = winners.set_index("profile")["overall_winner"].to_dict()
+    benchmark_profile_wins = winners[winners["overall_winner_type"] == "benchmark"]
     lines.extend(["", "## Interpretation", ""])
     if len(unique_best_td3) == 1:
         candidate = next(iter(unique_best_td3))
@@ -303,17 +429,42 @@ def build_summary_markdown(winners: pd.DataFrame, rankings: pd.DataFrame) -> str
     else:
         lines.append("The preferred TD3 model changes by mandate profile, so model preference is mandate-dependent.")
 
+    if KEY_CANDIDATE_V5_ASSET_SPECIFIC in unique_best_td3:
+        if len(unique_best_td3) == 1:
+            lines.append("Under the asset-specific-cost universe, `V5_no_volatility_block_cap_0p50` remains the preferred TD3 candidate across mandate profiles.")
+        else:
+            lines.append("Under the asset-specific-cost universe, `V5_no_volatility_block_cap_0p50` is preferred in at least one mandate profile.")
+    elif KEY_CANDIDATE_V5_ASSET_SPECIFIC in set(rankings["strategy_name"].dropna()):
+        lines.append("`V5_no_volatility_block_cap_0p50` is included, but another TD3 candidate is preferred under these mandate-profile rankings.")
+
+    if KEY_CANDIDATE_V3_CLEAN_ASSET_SPECIFIC in unique_best_td3:
+        lines.append("`V3_real_macro_vintage_clean_no_dxy_cap_0p70` remains the best TD3 candidate in at least one asset-specific-cost mandate profile.")
+    elif KEY_CANDIDATE_V3_CLEAN_ASSET_SPECIFIC in set(rankings["strategy_name"].dropna()):
+        lines.append("`V3_real_macro_vintage_clean_no_dxy_cap_0p70` is included as the clean macro comparison candidate, but it does not lead every profile.")
+
     if KEY_CANDIDATE_V3_CLEAN in unique_best_td3:
         lines.append("`V3_real_macro_vintage_clean_no_dxy_cap_0.50` remains preferred in at least one profile.")
     if KEY_CANDIDATE_V7_CLEAN_GARCH in unique_best_td3:
         lines.append("`V7_real_macro_vintage_clean_no_dxy_garch_cap_0.50` becomes preferred in at least one profile.")
-    else:
+    elif KEY_CANDIDATE_V7_CLEAN_GARCH in set(rankings["strategy_name"].dropna()):
         lines.append("`V7_real_macro_vintage_clean_no_dxy_garch_cap_0.50` is evaluated but does not displace the preferred TD3 candidate in these profile rankings.")
+
+    if benchmark_profile_wins.empty:
+        lines.append("No benchmark wins outright in these mandate-profile rankings.")
+    else:
+        profiles = ", ".join(benchmark_profile_wins["profile"].astype(str).tolist())
+        lines.append(f"Benchmarks win outright in these profiles: {profiles}.")
 
     aggressive_winner = winners[winners["profile"] == "aggressive"]
     if not aggressive_winner.empty:
         lines.append(
             "The aggressive profile can admit higher-return or less conservative strategies because its drawdown, volatility, concentration, and turnover limits are looser."
+        )
+    if overall_winners:
+        lines.append(
+            "Profile winners are: "
+            + "; ".join(f"{profile} = `{winner}`" for profile, winner in overall_winners.items())
+            + "."
         )
 
     lines.extend(
@@ -429,11 +580,29 @@ def main() -> None:
         description="Build mandate profile comparison report from final constrained TD3 outputs.",
     )
     parser.add_argument("--final-report-dir", default=DEFAULT_FINAL_REPORT_DIR)
+    parser.add_argument(
+        "--combined-report-dir",
+        default=None,
+        help="Optional asset-specific TD3 + benchmark combined report directory.",
+    )
+    parser.add_argument(
+        "--benchmark-dir",
+        default=None,
+        help="Optional benchmark history directory used to validate asset-specific histories.",
+    )
+    parser.add_argument(
+        "--asset-specific-only",
+        action="store_true",
+        help="Fail if inputs are not asset-specific transaction-cost outputs.",
+    )
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     args = parser.parse_args()
 
     result = build_mandate_profile_comparison_report(
         final_report_dir=args.final_report_dir,
+        combined_report_dir=args.combined_report_dir,
+        benchmark_dir=args.benchmark_dir,
+        asset_specific_only=args.asset_specific_only,
         output_dir=args.output_dir,
     )
 

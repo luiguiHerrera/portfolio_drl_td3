@@ -26,6 +26,14 @@ class DummyAgent:
         return np.array([0.0, 1.0, 0.0, 0.0, 0.0])
 
 
+class ConstantAgent:
+    def __init__(self, action):
+        self.action = np.asarray(action, dtype=float)
+
+    def select_action(self, state):
+        return self.action.copy()
+
+
 class EvaluateAgentTests(unittest.TestCase):
     def setUp(self):
         self.returns = pd.DataFrame(
@@ -134,6 +142,16 @@ class EvaluateAgentTests(unittest.TestCase):
         expected_weight_columns = {f"weight_{asset}" for asset in self.returns.columns}
 
         self.assertTrue(expected_weight_columns.issubset(result["policy_history"].columns))
+
+    def test_evaluation_uses_deterministic_actions_without_exploration_noise(self):
+        action = np.array([0.40, 0.30, 0.10, 0.10, 0.10])
+        result = evaluate_agent(ConstantAgent(action), self.returns, self.features)
+
+        weights = result["policy_history"][
+            [f"weight_{asset}" for asset in self.returns.columns]
+        ]
+        for _, row in weights.iterrows():
+            np.testing.assert_allclose(row.to_numpy(dtype=float), action)
 
     def test_evaluate_agent_policy_history_includes_datetime_date_column(self):
         result = evaluate_agent(DummyAgent(), self.returns, self.features)

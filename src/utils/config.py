@@ -239,6 +239,21 @@ def _validate_training(config: dict) -> None:
 
     _validate_integer(training["seed"], "training.seed")
     _validate_integer_at_least_one(training["episodes"], "training.episodes")
+    if "exploration_noise" in training:
+        _validate_non_negative_number(
+            training["exploration_noise"],
+            "training.exploration_noise",
+        )
+    if "exploration_noise_clip" in training and training["exploration_noise_clip"] is not None:
+        _validate_non_negative_number(
+            training["exploration_noise_clip"],
+            "training.exploration_noise_clip",
+        )
+    if "exploration_warmup_steps" in training:
+        _validate_integer_at_least_zero(
+            training["exploration_warmup_steps"],
+            "training.exploration_warmup_steps",
+        )
 
     _validate_ratio_sum(config)
 
@@ -553,6 +568,14 @@ def _validate_integer_at_least_one(value, field_name: str) -> None:
     if value < 1:
         raise ValueError(
             f"Config field {field_name} must be an integer greater than or equal to 1."
+        )
+
+
+def _validate_integer_at_least_zero(value, field_name: str) -> None:
+    _validate_integer(value, field_name)
+    if value < 0:
+        raise ValueError(
+            f"Config field {field_name} must be an integer greater than or equal to 0."
         )
 
 

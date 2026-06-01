@@ -6,12 +6,15 @@ results, but intentionally does not save artifacts or produce empirical output
 files.
 """
 
+import numpy as np
+
 from src.backtest.evaluate_agent import evaluate_agent
 from src.backtest.compare_policies import compare_agent_to_basic_benchmarks
 from src.data.prepare_dataset import prepare_train_validation_test_datasets
 from src.env.portfolio_env import PortfolioEnv
 from src.memory.replay_buffer import ReplayBuffer
 from src.models.td3_agent import TD3Agent
+from src.train.exploration import apply_behavior_exploration_noise
 from src.utils.config import load_config
 from src.utils.seed import set_seed
 
@@ -34,6 +37,10 @@ def train_td3_on_datasets(
     td3_config = config["td3"]
 
     set_seed(training_config["seed"])
+    exploration_rng = np.random.default_rng(training_config["seed"])
+    exploration_noise = float(training_config.get("exploration_noise", 0.0))
+    exploration_noise_clip = training_config.get("exploration_noise_clip")
+    active_max_weight = _active_max_weight_cap(environment_config)
 
     env = PortfolioEnv(
         returns=datasets["train_returns"],
@@ -81,7 +88,14 @@ def train_td3_on_datasets(
         episode_weights = []
 
         while not done:
-            action = agent.select_action(state)
+            deterministic_action = agent.select_action(state)
+            action = apply_behavior_exploration_noise(
+                deterministic_action,
+                noise_std=exploration_noise,
+                rng=exploration_rng,
+                noise_clip=exploration_noise_clip,
+                max_weight=getattr(env, "max_weight_cap", active_max_weight),
+            )
             next_state, reward, done, info = env.step(action)
             replay_buffer.add(state, action, reward, next_state, done)
             episode_turnover.append(info["turnover"])
@@ -166,3 +180,13 @@ def train_td3_on_datasets(
         "validation_comparison": validation_comparison,
         "test_comparison": test_comparison,
     }
+
+
+def _active_max_weight_cap(environment_config: dict) -> float | None:
+    max_weight = environment_config.get("max_weight_per_asset")
+    if max_weight is None:
+        return None
+    max_weight = float(max_weight)
+    if max_weight >= 1.0:
+        return None
+    return max_weight

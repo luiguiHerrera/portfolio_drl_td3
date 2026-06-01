@@ -5,8 +5,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 
+from src.env.portfolio_env import PortfolioEnv
 from src.memory.replay_buffer import ReplayBuffer
 from src.train.train_td3 import train_td3
 
@@ -77,6 +79,44 @@ class TrainTD3Tests(unittest.TestCase):
                 train_td3(config_path)
 
         self.assertEqual(replay_buffer.call_args.kwargs["seed"], 42)
+
+    def test_zero_exploration_noise_passes_deterministic_action_to_env(self):
+        deterministic_action = np.array([0.40, 0.30, 0.10, 0.10, 0.10])
+
+        result = self._run_train_with_action_recording(
+            deterministic_action=deterministic_action,
+            exploration_noise=0.0,
+        )
+
+        first_action = result["actions"][0]
+        np.testing.assert_allclose(first_action, deterministic_action)
+
+    def test_positive_exploration_noise_changes_training_action(self):
+        deterministic_action = np.array([0.40, 0.30, 0.10, 0.10, 0.10])
+
+        result = self._run_train_with_action_recording(
+            deterministic_action=deterministic_action,
+            exploration_noise=0.05,
+        )
+
+        first_action = result["actions"][0]
+        self.assertFalse(np.allclose(first_action, deterministic_action))
+        self.assertAlmostEqual(float(first_action.sum()), 1.0)
+        self.assertTrue((first_action >= 0.0).all())
+
+    def test_positive_exploration_noise_respects_active_max_weight_cap(self):
+        deterministic_action = np.array([0.80, 0.05, 0.05, 0.05, 0.05])
+
+        result = self._run_train_with_action_recording(
+            deterministic_action=deterministic_action,
+            exploration_noise=0.20,
+            max_weight_per_asset=0.40,
+        )
+
+        first_action = result["actions"][0]
+        self.assertAlmostEqual(float(first_action.sum()), 1.0)
+        self.assertTrue((first_action >= 0.0).all())
+        self.assertLessEqual(float(first_action.max()), 0.40 + 1e-12)
 
     def test_each_episode_log_contains_required_summary_fields(self):
         result, _ = self._run_train_td3()
@@ -211,12 +251,60 @@ class TrainTD3Tests(unittest.TestCase):
 
         return result, temp_dir
 
-    def _temporary_config(self):
+    def _run_train_with_action_recording(
+        self,
+        *,
+        deterministic_action: np.ndarray,
+        exploration_noise: float,
+        max_weight_per_asset: float = 1.0,
+    ):
+        class FakeAgent:
+            def __init__(self, *args, **kwargs):
+                self.action = deterministic_action
+
+            def select_action(self, state):
+                return self.action.copy()
+
+            def train_step(self, batch):
+                return {
+                    "critic_1_loss": 0.0,
+                    "critic_2_loss": 0.0,
+                    "actor_loss": 0.0,
+                }
+
+        class RecordingPortfolioEnv(PortfolioEnv):
+            actions = []
+
+            def step(self, action):
+                self.__class__.actions.append(np.asarray(action, dtype=float).copy())
+                return super().step(action)
+
+        with self._temporary_config(
+            exploration_noise=exploration_noise,
+            max_weight_per_asset=max_weight_per_asset,
+        ) as (config_path, _):
+            with (
+                patch(
+                    "src.train.train_td3.prepare_train_validation_test_datasets",
+                    return_value=self.datasets,
+                ),
+                patch("src.train.train_td3.TD3Agent", side_effect=FakeAgent),
+                patch("src.train.train_td3.PortfolioEnv", RecordingPortfolioEnv),
+            ):
+                train_td3(config_path)
+
+        return {"actions": RecordingPortfolioEnv.actions}
+
+    def _temporary_config(
+        self,
+        exploration_noise: float | None = None,
+        max_weight_per_asset: float = 1.0,
+    ):
         temp_dir = tempfile.TemporaryDirectory()
         temp_path = Path(temp_dir.name)
         config_path = temp_path / "config.yaml"
         config_path.write_text(
-            """
+            f"""
 project:
   name: portfolio_drl_td3_test
   description: Temporary test config for TD3 training loop
@@ -236,7 +324,7 @@ environment:
   initial_cash: 100000
   transaction_cost: 0.001
   allow_short: false
-  max_weight_per_asset: 1.0
+  max_weight_per_asset: {max_weight_per_asset}
 
 reward:
   lambda_return: 1.0
@@ -258,6 +346,7 @@ td3:
 training:
   seed: 42
   episodes: 2
+  exploration_noise: {0.0 if exploration_noise is None else exploration_noise}
   train_ratio: 0.7
   validation_ratio: 0.15
   test_ratio: 0.15

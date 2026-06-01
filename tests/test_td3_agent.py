@@ -26,6 +26,13 @@ class TD3AgentTests(unittest.TestCase):
         self.assertIsNotNone(agent.critic_1_optimizer)
         self.assertIsNotNone(agent.critic_2_optimizer)
 
+    def test_target_policy_smoothing_config_is_separate_from_behavior_exploration(self):
+        agent = self._agent(policy_noise=0.11, noise_clip=0.22)
+
+        self.assertEqual(agent.policy_noise, 0.11)
+        self.assertEqual(agent.noise_clip, 0.22)
+        self.assertFalse(hasattr(agent, "exploration_noise"))
+
     def test_target_networks_initially_match_online_networks(self):
         agent = self._agent()
 

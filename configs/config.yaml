@@ -40,6 +40,8 @@ td3:
 training:
   seed: 42
   episodes: 500
+  exploration_noise: 0.0
+  exploration_noise_clip: null
   train_ratio: 0.7
   validation_ratio: 0.15
   test_ratio: 0.15

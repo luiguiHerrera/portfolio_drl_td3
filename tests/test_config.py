@@ -216,6 +216,26 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "training.seed must be an integer"):
                 load_config(str(config_path))
 
+    def test_load_config_accepts_non_negative_exploration_noise(self):
+        config = _valid_config()
+        config["training"]["exploration_noise"] = 0.05
+        config["training"]["exploration_noise_clip"] = 0.10
+        config["training"]["exploration_warmup_steps"] = 0
+
+        with self._temporary_config(config) as config_path:
+            loaded = load_config(str(config_path))
+
+        self.assertEqual(loaded["training"]["exploration_noise"], 0.05)
+        self.assertEqual(loaded["training"]["exploration_noise_clip"], 0.10)
+
+    def test_load_config_rejects_negative_exploration_noise(self):
+        config = _valid_config()
+        config["training"]["exploration_noise"] = -0.01
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "training.exploration_noise"):
+                load_config(str(config_path))
+
     def test_load_config_rejects_td3_batch_size_less_than_one(self):
         config = _valid_config()
         config["td3"]["batch_size"] = 0

@@ -845,6 +845,15 @@ class PortfolioEnvTests(unittest.TestCase):
         self.assertTrue((info["weights"] >= 0.0).all())
         self.assertAlmostEqual(info["weights"].sum(), 1.0)
 
+    def test_step_returns_executed_action_matching_weights(self):
+        env = PortfolioEnv(self.returns)
+        env.reset()
+
+        _, _, _, info = env.step(np.array([1.0, -1.0, 2.0, 0.0, 1.0]))
+
+        self.assertIn("executed_action", info)
+        np.testing.assert_allclose(info["executed_action"], info["weights"])
+
     def test_zero_action_falls_back_to_equal_weights(self):
         env = PortfolioEnv(self.returns)
         env.reset()

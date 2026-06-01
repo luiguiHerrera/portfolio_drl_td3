@@ -63,6 +63,7 @@ def train_td3_on_datasets(
         policy_noise=td3_config["policy_noise"],
         noise_clip=td3_config["noise_clip"],
         policy_delay=td3_config["policy_delay"],
+        max_weight_cap=getattr(env, "max_weight_cap", active_max_weight),
     )
     replay_buffer = ReplayBuffer(
         state_dim=state_dim,
@@ -97,7 +98,8 @@ def train_td3_on_datasets(
                 max_weight=getattr(env, "max_weight_cap", active_max_weight),
             )
             next_state, reward, done, info = env.step(action)
-            replay_buffer.add(state, action, reward, next_state, done)
+            executed_action = info.get("executed_action", info["weights"])
+            replay_buffer.add(state, executed_action, reward, next_state, done)
             episode_turnover.append(info["turnover"])
             episode_transaction_costs.append(info["transaction_cost"])
             episode_weights.append(info["weights"])

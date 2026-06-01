@@ -12,6 +12,7 @@ from src.backtest.evaluate_agent import (
     summarize_episode_diagnostics,
 )
 from src.backtest.evaluate_policy import cumulative_return
+from src.utils.action_projection import project_portfolio_action
 
 
 class DummyAgent:
@@ -152,6 +153,17 @@ class EvaluateAgentTests(unittest.TestCase):
         ]
         for _, row in weights.iterrows():
             np.testing.assert_allclose(row.to_numpy(dtype=float), action)
+
+    def test_evaluation_history_records_executed_weights(self):
+        action = np.array([1.0, -1.0, 2.0, 0.0, 1.0])
+        result = evaluate_agent(ConstantAgent(action), self.returns, self.features)
+        expected = project_portfolio_action(action)
+
+        weights = result["policy_history"][
+            [f"weight_{asset}" for asset in self.returns.columns]
+        ]
+        for _, row in weights.iterrows():
+            np.testing.assert_allclose(row.to_numpy(dtype=float), expected)
 
     def test_evaluate_agent_policy_history_includes_datetime_date_column(self):
         result = evaluate_agent(DummyAgent(), self.returns, self.features)

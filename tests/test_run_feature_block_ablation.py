@@ -9,6 +9,7 @@ import pandas as pd
 
 from src.data.features_v2 import build_features_v2
 from src.data.features_v5 import build_features_v5, build_v5_regime_auxiliary_features
+from src.env.portfolio_env import PortfolioEnv
 from src.memory.replay_buffer import ReplayBuffer
 from src.experiments.run_feature_block_ablation import (
     FEATURE_VARIANTS,
@@ -18,6 +19,7 @@ from src.experiments.run_feature_block_ablation import (
     select_feature_columns,
     train_td3_ablation_on_datasets,
 )
+from src.utils.action_projection import project_portfolio_action
 
 
 class FeatureBlockAblationTests(unittest.TestCase):
@@ -161,6 +163,87 @@ class FeatureBlockAblationTests(unittest.TestCase):
             train_td3_ablation_on_datasets(datasets, config)
 
         self.assertEqual(replay_buffer.call_args.kwargs["seed"], 123)
+
+    def test_ablation_replay_buffer_stores_env_executed_action(self):
+        deterministic_action = np.array([0.80, 0.05, 0.05, 0.05, 0.05])
+        datasets = {
+            "train_returns": self.returns.iloc[:3],
+            "validation_returns": self.returns.iloc[3:5],
+            "test_returns": self.returns.iloc[5:7],
+            "train_features": pd.DataFrame({"feature": [0.0, 1.0, 2.0]}, index=self.returns.index[:3]),
+            "validation_features": pd.DataFrame({"feature": [3.0, 4.0]}, index=self.returns.index[3:5]),
+            "test_features": pd.DataFrame({"feature": [5.0, 6.0]}, index=self.returns.index[5:7]),
+        }
+        config = {
+            "environment": {"initial_cash": 100000, "transaction_cost": 0.001},
+            "reward": {"lambda_return": 1.0, "lambda_transaction_cost": 1.0},
+            "training": {"seed": 123, "episodes": 1},
+            "td3": {
+                "actor_learning_rate": 0.0003,
+                "critic_learning_rate": 0.0003,
+                "gamma": 0.99,
+                "tau": 0.005,
+                "policy_noise": 0.2,
+                "noise_clip": 0.5,
+                "policy_delay": 2,
+                "batch_size": 10,
+                "replay_buffer_size": 50,
+            },
+        }
+
+        class FakeAgent:
+            def __init__(self, *args, **kwargs):
+                self.action = deterministic_action
+
+            def select_action(self, state):
+                return self.action.copy()
+
+            def train_step(self, batch):
+                return {
+                    "critic_1_loss": 0.0,
+                    "critic_2_loss": 0.0,
+                    "actor_loss": 0.0,
+                }
+
+        class InternallyCappedEnv(PortfolioEnv):
+            executed_actions = []
+
+            def _normalize_action(self, action):
+                return project_portfolio_action(action, max_weight=0.40)
+
+            def step(self, action):
+                result = super().step(action)
+                self.__class__.executed_actions.append(result[3]["executed_action"].copy())
+                return result
+
+        class RecordingReplayBuffer(ReplayBuffer):
+            added_actions = []
+
+            def add(self, state, action, reward, next_state, done):
+                self.__class__.added_actions.append(np.asarray(action, dtype=float).copy())
+                super().add(state, action, reward, next_state, done)
+
+        with (
+            unittest.mock.patch(
+                "src.experiments.run_feature_block_ablation.TD3Agent",
+                side_effect=FakeAgent,
+            ),
+            unittest.mock.patch(
+                "src.experiments.run_feature_block_ablation.PortfolioEnv",
+                InternallyCappedEnv,
+            ),
+            unittest.mock.patch(
+                "src.experiments.run_feature_block_ablation.ReplayBuffer",
+                side_effect=RecordingReplayBuffer,
+            ),
+        ):
+            train_td3_ablation_on_datasets(datasets, config)
+
+        first_replay_action = RecordingReplayBuffer.added_actions[0]
+        first_executed_action = InternallyCappedEnv.executed_actions[0]
+        self.assertFalse(np.allclose(first_replay_action, deterministic_action))
+        np.testing.assert_allclose(first_replay_action, first_executed_action)
+        self.assertLessEqual(float(first_replay_action.max()), 0.40 + 1e-12)
 
 
 def _variant(name: str) -> dict:

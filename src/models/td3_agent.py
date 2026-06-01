@@ -12,6 +12,7 @@ from torch import nn
 
 from src.models.actor import ActorNetwork
 from src.models.critic import CriticNetwork
+from src.utils.action_projection import project_torch_portfolio_actions
 
 
 class TD3Agent:
@@ -30,6 +31,7 @@ class TD3Agent:
         noise_clip: float = 0.5,
         policy_delay: int = 2,
         device: str | None = None,
+        max_weight_cap: float | None = None,
     ):
         self._validate_init_args(
             state_dim,
@@ -42,6 +44,7 @@ class TD3Agent:
             policy_noise,
             noise_clip,
             policy_delay,
+            max_weight_cap,
         )
 
         self.state_dim = state_dim
@@ -52,6 +55,7 @@ class TD3Agent:
         self.policy_noise = policy_noise
         self.noise_clip = noise_clip
         self.policy_delay = policy_delay
+        self.max_weight_cap = None if max_weight_cap is None else float(max_weight_cap)
         self.device = torch.device(
             device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
         )
@@ -121,10 +125,7 @@ class TD3Agent:
         self.total_it += 1
 
         with torch.no_grad():
-            target_actions = self.actor_target(next_states)
-            noise = torch.randn_like(target_actions) * self.policy_noise
-            noise = noise.clamp(-self.noise_clip, self.noise_clip)
-            target_actions = self._project_to_simplex_like_weights(target_actions + noise)
+            target_actions = self._target_policy_actions(next_states)
 
             target_q1 = self.critic_1_target(next_states, target_actions)
             target_q2 = self.critic_2_target(next_states, target_actions)
@@ -145,7 +146,8 @@ class TD3Agent:
 
         actor_loss_value = None
         if self.total_it % self.policy_delay == 0:
-            actor_loss = -self.critic_1(states, self.actor(states)).mean()
+            actor_actions = self._actor_policy_actions(states)
+            actor_loss = -self.critic_1(states, actor_actions).mean()
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
             self.actor_optimizer.step()
@@ -183,14 +185,22 @@ class TD3Agent:
 
     def _project_to_simplex_like_weights(self, actions: torch.Tensor) -> torch.Tensor:
         """Clamp actions non-negative and normalize each row to sum to one."""
-        single_action = actions.dim() == 1
-        projected = actions.unsqueeze(0) if single_action else actions
-        projected = projected.clamp(min=0.0)
-        row_sums = projected.sum(dim=-1, keepdim=True)
-        equal_weights = torch.full_like(projected, 1.0 / self.action_dim)
-        normalized = torch.where(row_sums > 0.0, projected / row_sums.clamp(min=1e-12), equal_weights)
+        return project_torch_portfolio_actions(actions)
 
-        return normalized.squeeze(0) if single_action else normalized
+    def _project_to_feasible_actions(self, actions: torch.Tensor) -> torch.Tensor:
+        """Project actions to the simplex and active max-weight cap, if any."""
+        return project_torch_portfolio_actions(actions, max_weight=self.max_weight_cap)
+
+    def _target_policy_actions(self, next_states: torch.Tensor) -> torch.Tensor:
+        """Return target actions after TD3 smoothing and feasible-set projection."""
+        target_actions = self.actor_target(next_states)
+        noise = torch.randn_like(target_actions) * self.policy_noise
+        noise = noise.clamp(-self.noise_clip, self.noise_clip)
+        return self._project_to_feasible_actions(target_actions + noise)
+
+    def _actor_policy_actions(self, states: torch.Tensor) -> torch.Tensor:
+        """Return actor actions projected to the feasible action set."""
+        return self._project_to_feasible_actions(self.actor(states))
 
     @staticmethod
     def _validate_init_args(
@@ -204,6 +214,7 @@ class TD3Agent:
         policy_noise: float,
         noise_clip: float,
         policy_delay: int,
+        max_weight_cap: float | None,
     ) -> None:
         if state_dim <= 0:
             raise ValueError("state_dim must be positive.")
@@ -225,3 +236,9 @@ class TD3Agent:
             raise ValueError("noise_clip must be non-negative.")
         if policy_delay <= 0:
             raise ValueError("policy_delay must be positive.")
+        if max_weight_cap is not None:
+            cap = float(max_weight_cap)
+            if cap <= 0.0 or cap > 1.0:
+                raise ValueError("max_weight_cap must be in (0, 1].")
+            if cap * action_dim < 1.0:
+                raise ValueError("max_weight_cap is infeasible for the action dimension.")

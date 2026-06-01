@@ -12,6 +12,7 @@ import pandas as pd
 
 from src.risk.mandate_penalties import compute_cash_breach, compute_mandate_penalty
 from src.risk.mandate_profiles import get_mandate_limits
+from src.utils.action_projection import project_portfolio_action
 from src.rewards.reward import (
     compute_turnover_penalty,
     compute_risk_aware_reward,
@@ -152,6 +153,7 @@ class PortfolioEnv:
             "turnover_free_band": turnover_penalty_result["turnover_free_band"],
             "turnover_excess": turnover_penalty_result["turnover_excess"],
             "weights": weights,
+            "executed_action": weights,
             "drawdown": drawdown,
             "concentration": concentration,
             "reward": reward,
@@ -184,17 +186,9 @@ class PortfolioEnv:
         return np.full(self.n_assets, 1.0 / self.n_assets, dtype=float)
 
     def _normalize_action(self, action: np.ndarray) -> np.ndarray:
-        action_array = np.asarray(action, dtype=float)
-        if action_array.shape != (self.n_assets,):
+        if np.asarray(action, dtype=float).shape != (self.n_assets,):
             raise ValueError(f"action must have shape ({self.n_assets},).")
-
-        clipped_action = np.clip(action_array, a_min=0.0, a_max=None)
-        action_sum = float(clipped_action.sum())
-
-        if action_sum == 0.0:
-            return self._equal_weights()
-
-        return clipped_action / action_sum
+        return project_portfolio_action(action)
 
     def _validate_transaction_cost_config(self) -> np.ndarray | None:
         if self.transaction_cost_mode not in {"scalar", "asset_specific"}:

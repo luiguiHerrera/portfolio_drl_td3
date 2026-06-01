@@ -7,6 +7,7 @@ from src.train.exploration import (
     project_to_capped_simplex,
     project_to_simplex,
 )
+from src.utils.action_projection import project_portfolio_action
 
 
 class ExplorationTests(unittest.TestCase):
@@ -39,6 +40,16 @@ class ExplorationTests(unittest.TestCase):
         )
 
         self.assertAlmostEqual(projected.sum(), 1.0)
+        self.assertTrue((projected >= 0.0).all())
+        self.assertLessEqual(float(projected.max()), 0.40 + 1e-12)
+
+    def test_central_portfolio_action_projection_respects_max_weight(self):
+        projected = project_portfolio_action(
+            np.array([0.90, 0.05, 0.05, 0.0]),
+            max_weight=0.40,
+        )
+
+        self.assertAlmostEqual(float(projected.sum()), 1.0)
         self.assertTrue((projected >= 0.0).all())
         self.assertLessEqual(float(projected.max()), 0.40 + 1e-12)
 

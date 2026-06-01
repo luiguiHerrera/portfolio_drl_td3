@@ -54,6 +54,7 @@ from src.experiments.run_protocol_pure_td3_revalidation import (
     _write_yaml,
 )
 from src.experiments.save_experiment_outputs import save_basic_experiment_outputs
+from src.utils.action_projection import project_portfolio_action
 
 
 DEFAULT_OUTPUT_DIR = "outputs/tables/max_weight_cap_experiment_v5_60ep_5seeds"
@@ -261,53 +262,7 @@ def project_weights_to_max_cap(
     tolerance: float = 1e-12,
 ) -> np.ndarray:
     """Project long-only weights onto the capped simplex."""
-    weights_array = np.asarray(weights, dtype=float)
-    if max_weight is None:
-        return weights_array.copy()
-    if weights_array.ndim != 1:
-        raise ValueError("weights must be one-dimensional.")
-    if not np.isfinite(weights_array).all():
-        raise ValueError("weights must be finite.")
-    if np.any(weights_array < -tolerance):
-        raise ValueError("weights must be non-negative.")
-    n_assets = len(weights_array)
-    if n_assets == 0:
-        raise ValueError("weights must not be empty.")
-    cap = float(max_weight)
-    if cap <= 0.0 or cap > 1.0:
-        raise ValueError("max_weight must be in (0, 1].")
-    if cap * n_assets < 1.0 - tolerance:
-        raise ValueError("max_weight cap is infeasible for the number of assets.")
-
-    clipped = np.clip(weights_array, 0.0, None)
-    total = float(clipped.sum())
-    if total <= tolerance:
-        clipped = np.full(n_assets, 1.0 / n_assets)
-    else:
-        clipped = clipped / total
-
-    capped = np.minimum(clipped, cap)
-    for _ in range(n_assets * 2):
-        deficit = 1.0 - float(capped.sum())
-        if abs(deficit) <= tolerance:
-            break
-        room = np.maximum(cap - capped, 0.0)
-        room_total = float(room.sum())
-        if room_total <= tolerance:
-            break
-        capped += room / room_total * deficit
-        capped = np.minimum(capped, cap)
-
-    capped = np.clip(capped, 0.0, cap)
-    total = float(capped.sum())
-    if abs(total - 1.0) > 1e-9:
-        room = np.maximum(cap - capped, 0.0)
-        room_total = float(room.sum())
-        if room_total <= tolerance:
-            capped = capped / total
-        else:
-            capped += room / room_total * (1.0 - total)
-    return capped / capped.sum()
+    return project_portfolio_action(weights, max_weight=max_weight)
 
 
 def apply_max_weight_cap_to_action(weights, max_weight: float | None) -> np.ndarray:

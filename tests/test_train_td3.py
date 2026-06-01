@@ -11,6 +11,7 @@ import pandas as pd
 from src.env.portfolio_env import PortfolioEnv
 from src.memory.replay_buffer import ReplayBuffer
 from src.train.train_td3 import train_td3
+from src.utils.action_projection import project_portfolio_action
 
 
 class TrainTD3Tests(unittest.TestCase):
@@ -117,6 +118,102 @@ class TrainTD3Tests(unittest.TestCase):
         self.assertAlmostEqual(float(first_action.sum()), 1.0)
         self.assertTrue((first_action >= 0.0).all())
         self.assertLessEqual(float(first_action.max()), 0.40 + 1e-12)
+
+    def test_replay_buffer_stores_env_executed_action_not_pre_env_action(self):
+        deterministic_action = np.array([0.80, 0.05, 0.05, 0.05, 0.05])
+
+        class FakeAgent:
+            def __init__(self, *args, **kwargs):
+                self.action = deterministic_action
+
+            def select_action(self, state):
+                return self.action.copy()
+
+            def train_step(self, batch):
+                return {
+                    "critic_1_loss": 0.0,
+                    "critic_2_loss": 0.0,
+                    "actor_loss": 0.0,
+                }
+
+        class InternallyCappedEnv(PortfolioEnv):
+            executed_actions = []
+
+            def _normalize_action(self, action):
+                return project_portfolio_action(action, max_weight=0.40)
+
+            def step(self, action):
+                result = super().step(action)
+                self.__class__.executed_actions.append(result[3]["executed_action"].copy())
+                return result
+
+        class RecordingReplayBuffer(ReplayBuffer):
+            added_actions = []
+
+            def add(self, state, action, reward, next_state, done):
+                self.__class__.added_actions.append(np.asarray(action, dtype=float).copy())
+                super().add(state, action, reward, next_state, done)
+
+        with self._temporary_config(exploration_noise=0.0) as (config_path, _):
+            with (
+                patch(
+                    "src.train.train_td3.prepare_train_validation_test_datasets",
+                    return_value=self.datasets,
+                ),
+                patch("src.train.train_td3.TD3Agent", side_effect=FakeAgent),
+                patch("src.train.train_td3.PortfolioEnv", InternallyCappedEnv),
+                patch("src.train.train_td3.ReplayBuffer", side_effect=RecordingReplayBuffer),
+            ):
+                train_td3(config_path)
+
+        first_replay_action = RecordingReplayBuffer.added_actions[0]
+        first_executed_action = InternallyCappedEnv.executed_actions[0]
+        self.assertFalse(np.allclose(first_replay_action, deterministic_action))
+        np.testing.assert_allclose(first_replay_action, first_executed_action)
+        self.assertLessEqual(float(first_replay_action.max()), 0.40 + 1e-12)
+
+    def test_exploration_noise_with_cap_stores_capped_replay_action(self):
+        deterministic_action = np.array([0.80, 0.05, 0.05, 0.05, 0.05])
+
+        class FakeAgent:
+            def __init__(self, *args, **kwargs):
+                self.action = deterministic_action
+
+            def select_action(self, state):
+                return self.action.copy()
+
+            def train_step(self, batch):
+                return {
+                    "critic_1_loss": 0.0,
+                    "critic_2_loss": 0.0,
+                    "actor_loss": 0.0,
+                }
+
+        class RecordingReplayBuffer(ReplayBuffer):
+            added_actions = []
+
+            def add(self, state, action, reward, next_state, done):
+                self.__class__.added_actions.append(np.asarray(action, dtype=float).copy())
+                super().add(state, action, reward, next_state, done)
+
+        with self._temporary_config(
+            exploration_noise=0.20,
+            max_weight_per_asset=0.40,
+        ) as (config_path, _):
+            with (
+                patch(
+                    "src.train.train_td3.prepare_train_validation_test_datasets",
+                    return_value=self.datasets,
+                ),
+                patch("src.train.train_td3.TD3Agent", side_effect=FakeAgent),
+                patch("src.train.train_td3.ReplayBuffer", side_effect=RecordingReplayBuffer),
+            ):
+                train_td3(config_path)
+
+        first_replay_action = RecordingReplayBuffer.added_actions[0]
+        self.assertAlmostEqual(float(first_replay_action.sum()), 1.0)
+        self.assertTrue((first_replay_action >= 0.0).all())
+        self.assertLessEqual(float(first_replay_action.max()), 0.40 + 1e-12)
 
     def test_each_episode_log_contains_required_summary_fields(self):
         result, _ = self._run_train_td3()

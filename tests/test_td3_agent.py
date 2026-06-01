@@ -123,6 +123,41 @@ class TD3AgentTests(unittest.TestCase):
         self.assertTrue(torch.all(projected >= 0.0))
         self.assertTrue(torch.allclose(projected.sum(dim=1), torch.ones(2)))
 
+    def test_feasible_projection_respects_max_weight_cap(self):
+        agent = self._agent(max_weight_cap=0.40)
+        actions = torch.tensor([[0.90, 0.05, 0.05, 0.0, 0.0]])
+
+        projected = agent._project_to_feasible_actions(actions)
+
+        self.assertTrue(torch.all(projected >= 0.0))
+        self.assertTrue(torch.all(projected <= 0.40 + 1e-6))
+        self.assertTrue(torch.allclose(projected.sum(dim=1), torch.ones(1)))
+
+    def test_target_policy_smoothing_respects_max_weight_cap(self):
+        torch.manual_seed(7)
+        agent = self._agent(max_weight_cap=0.40, policy_noise=0.50, noise_clip=0.50)
+        next_states = torch.randn(8, self.state_dim)
+
+        target_actions = agent._target_policy_actions(next_states)
+
+        self.assertTrue(torch.all(target_actions >= 0.0))
+        self.assertTrue(torch.all(target_actions <= 0.40 + 1e-6))
+        self.assertTrue(torch.allclose(target_actions.sum(dim=1), torch.ones(8)))
+
+    def test_actor_loss_actions_respect_max_weight_cap(self):
+        agent = self._agent(max_weight_cap=0.40)
+        states = torch.randn(8, self.state_dim)
+
+        actor_actions = agent._actor_policy_actions(states)
+
+        self.assertTrue(torch.all(actor_actions >= 0.0))
+        self.assertTrue(torch.all(actor_actions <= 0.40 + 1e-6))
+        self.assertTrue(torch.allclose(actor_actions.sum(dim=1), torch.ones(8)))
+
+    def test_invalid_max_weight_cap_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "max_weight_cap"):
+            self._agent(max_weight_cap=0.10)
+
     def _agent(self, **kwargs) -> TD3Agent:
         return TD3Agent(
             self.state_dim,

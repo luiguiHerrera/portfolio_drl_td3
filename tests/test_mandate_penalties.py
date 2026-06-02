@@ -97,14 +97,14 @@ class MandatePenaltyTests(unittest.TestCase):
         breaches = {
             "drawdown_breach": 0.05,
             "volatility_breach": 0.05,
-            "max_weight_breach": 0.15,
+            "max_weight_breach": 0.0,
             "effective_assets_breach": 0.15,
             "turnover_breach": 0.15,
         }
 
         result = compute_weighted_mandate_penalty(breaches)
 
-        self.assertAlmostEqual(result, 0.55)
+        self.assertAlmostEqual(result, 0.40)
 
     def test_compute_weighted_mandate_penalty_applies_custom_weights(self):
         breaches = {
@@ -159,17 +159,17 @@ class MandatePenaltyTests(unittest.TestCase):
 
         self.assertEqual(result["max_weight_breach"], 0.0)
 
-    def test_moderate_profile_flags_high_max_weight_as_breach(self):
+    def test_moderate_profile_does_not_flag_high_max_weight_as_breach(self):
         result = compute_mandate_breaches(
             current_drawdown=-0.10,
             current_volatility=0.20,
             max_weight=0.95,
-            effective_assets=1.25,
-            turnover=0.50,
+            effective_assets=2.30,
+            turnover=0.10,
             mandate_limits=get_mandate_limits("moderate"),
         )
 
-        self.assertAlmostEqual(result["max_weight_breach"], 0.15)
+        self.assertEqual(result["max_weight_breach"], 0.0)
 
     def test_bool_inputs_are_rejected(self):
         calls = [

@@ -90,14 +90,14 @@ class ShadowMandatePenaltyReportTests(unittest.TestCase):
 
         self.assertEqual(len(result), len(history) - 2)
 
-    def test_moderate_mandate_flags_high_max_weight_breach(self):
+    def test_moderate_mandate_does_not_flag_high_max_weight_breach(self):
         result = build_shadow_mandate_penalty_observations(
             self._history(max_weight=0.95),
             mandate_profile="moderate",
             volatility_window=3,
         )
 
-        self.assertTrue((result["max_weight_breach"] > 0.0).all())
+        self.assertTrue((result["max_weight_breach"] == 0.0).all())
 
     def test_aggressive_mandate_does_not_flag_max_weight_one(self):
         result = build_shadow_mandate_penalty_observations(

@@ -24,8 +24,9 @@ class MandateProfileComparisonReportTests(unittest.TestCase):
         profiles = get_default_mandate_profiles()
 
         self.assertEqual(profiles["conservative"].max_drawdown_limit, -0.10)
-        self.assertEqual(profiles["moderate"].max_weight_limit, 0.80)
-        self.assertEqual(profiles["aggressive"].max_turnover_limit, 1.50)
+        self.assertEqual(profiles["moderate"].max_annualized_volatility, 0.15)
+        self.assertEqual(profiles["aggressive"].max_average_turnover, 0.20)
+        self.assertNotIn("max_weight_limit", profiles["moderate"].to_dict())
 
     def test_conservative_penalizes_risk_more_than_aggressive(self):
         strategies = pd.DataFrame(
@@ -34,11 +35,11 @@ class MandateProfileComparisonReportTests(unittest.TestCase):
                     "strategy_name": "risky",
                     "strategy_type": "td3",
                     "robust_score": 0.9,
-                    "max_drawdown": -0.30,
-                    "annualized_volatility": 0.30,
+                    "max_drawdown": -0.22,
+                    "annualized_volatility": 0.22,
                     "average_max_weight": 1.0,
-                    "average_effective_number_of_assets": 1.0,
-                    "average_turnover": 1.0,
+                    "average_effective_number_of_assets": 1.5,
+                    "average_turnover": 0.20,
                 }
             ]
         )
@@ -50,6 +51,7 @@ class MandateProfileComparisonReportTests(unittest.TestCase):
         self.assertLess(conservative["profile_score"], aggressive["profile_score"])
         self.assertFalse(bool(conservative["profile_eligible"]))
         self.assertTrue(bool(aggressive["profile_eligible"]))
+        self.assertNotIn("max_weight_pass", scores.columns)
 
     def test_ranking_changes_when_thresholds_differ(self):
         strategies = pd.DataFrame(
@@ -59,20 +61,20 @@ class MandateProfileComparisonReportTests(unittest.TestCase):
                     "strategy_type": "td3",
                     "robust_score": 0.5,
                     "max_drawdown": -0.08,
-                    "annualized_volatility": 0.10,
-                    "average_max_weight": 0.50,
-                    "average_effective_number_of_assets": 2.0,
-                    "average_turnover": 0.20,
+                    "annualized_volatility": 0.09,
+                    "average_max_weight": 0.95,
+                    "average_effective_number_of_assets": 3.2,
+                    "average_turnover": 0.03,
                 },
                 {
                     "strategy_name": "risky_higher_score",
                     "strategy_type": "benchmark",
                     "robust_score": 0.9,
-                    "max_drawdown": -0.30,
-                    "annualized_volatility": 0.30,
+                    "max_drawdown": -0.22,
+                    "annualized_volatility": 0.22,
                     "average_max_weight": 1.00,
-                    "average_effective_number_of_assets": 1.0,
-                    "average_turnover": 1.00,
+                    "average_effective_number_of_assets": 1.5,
+                    "average_turnover": 0.20,
                 },
             ]
         )
@@ -92,10 +94,10 @@ class MandateProfileComparisonReportTests(unittest.TestCase):
                     "strategy_type": "td3",
                     "robust_score": 0.7,
                     "max_drawdown": -0.09,
-                    "annualized_volatility": 0.12,
+                    "annualized_volatility": 0.09,
                     "average_max_weight": 0.50,
                     "average_effective_number_of_assets": 3.0,
-                    "average_turnover": 0.20,
+                    "average_turnover": 0.05,
                 },
                 {
                     "strategy_name": "BuyHold_GLD",
@@ -171,6 +173,9 @@ class MandateProfileComparisonReportTests(unittest.TestCase):
             metadata = json.loads((output_dir / "mandate_profile_metadata.json").read_text())
             self.assertTrue(metadata["reporting_only"])
             self.assertIn("conservative", metadata["profile_thresholds"])
+            self.assertEqual(metadata["mandate_profile_source"], "src/risk/mandate_profiles.py")
+            self.assertNotIn("max_weight_limit", metadata["profile_thresholds"]["conservative"])
+            self.assertIn("not official", metadata["max_weight_mandate_note"])
 
     def test_asset_specific_combined_report_includes_v5_and_v3_clean_ranks(self):
         with tempfile.TemporaryDirectory() as temp_dir:

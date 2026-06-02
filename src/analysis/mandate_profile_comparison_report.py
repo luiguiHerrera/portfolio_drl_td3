@@ -31,6 +31,12 @@ ASSET_SPECIFIC_COMBINED_RANKING_FILE = "asset_specific_cost_combined_ranking.csv
 ASSET_SPECIFIC_COMBINED_METADATA_FILE = (
     "asset_specific_cost_benchmark_comparison_metadata.json"
 )
+MANDATE_PROFILE_SOURCE = "src/risk/mandate_profiles.py"
+MANDATE_MAX_WEIGHT_NOTE = (
+    "Max-weight caps are structural TD3 training/evaluation experiments, not official "
+    "investor mandate constraints. The official mandate controls concentration through "
+    "min_effective_assets; average_max_weight is reported only as a diagnostic."
+)
 
 PROFILE_ORDER = ["conservative", "moderate", "aggressive"]
 KEY_CANDIDATE_V3_CLEAN = "V3_real_macro_vintage_clean_no_dxy_cap_0.50"
@@ -93,10 +99,12 @@ def build_mandate_profile_comparison_report(
         "does_not_replace_main_result": True,
         "asset_specific_only": asset_specific_only,
         "source_metadata": source_metadata,
+        "mandate_profile_source": MANDATE_PROFILE_SOURCE,
         "profile_thresholds": {
             name: limits.to_dict()
             for name, limits in profiles.items()
         },
+        "max_weight_mandate_note": MANDATE_MAX_WEIGHT_NOTE,
         "scoring_note": (
             "Profile scores multiply robust_score by reporting-only penalties for "
             "violating available profile limits. Hard eligibility is reported "
@@ -247,11 +255,7 @@ def score_strategy_for_profile(
     )
     volatility_result = _score_upper_bound(
         strategy.get("annualized_volatility"),
-        limits.max_volatility_limit,
-    )
-    max_weight_result = _score_upper_bound(
-        strategy.get("average_max_weight"),
-        limits.max_weight_limit,
+        limits.max_annualized_volatility,
     )
     effective_assets_result = _score_lower_bound(
         strategy.get("average_effective_number_of_assets"),
@@ -260,13 +264,12 @@ def score_strategy_for_profile(
     )
     turnover_result = _score_upper_bound(
         strategy.get("average_turnover"),
-        limits.max_turnover_limit,
+        limits.max_average_turnover,
     )
 
     checks = {
         "drawdown": drawdown_result,
         "volatility": volatility_result,
-        "max_weight": max_weight_result,
         "effective_assets": effective_assets_result,
         "turnover": turnover_result,
     }
@@ -305,19 +308,16 @@ def score_strategy_for_profile(
             default=np.nan,
         ),
         "average_max_weight": _numeric(strategy.get("average_max_weight"), default=np.nan),
-        "max_drawdown_limit": limits.max_drawdown_limit,
-        "max_volatility_limit": limits.max_volatility_limit,
-        "max_weight_limit": limits.max_weight_limit,
+        "max_drawdown_limit": limits.max_drawdown,
+        "max_annualized_volatility_limit": limits.max_annualized_volatility,
         "min_effective_assets": limits.min_effective_assets,
-        "max_turnover_limit": limits.max_turnover_limit,
+        "max_average_turnover_limit": limits.max_average_turnover,
         "drawdown_pass": drawdown_result["passes"],
         "volatility_pass": volatility_result["passes"],
-        "max_weight_pass": max_weight_result["passes"],
         "effective_assets_pass": effective_assets_result["passes"],
         "turnover_pass": turnover_result["passes"],
         "drawdown_multiplier": drawdown_result["multiplier"],
         "volatility_multiplier": volatility_result["multiplier"],
-        "max_weight_multiplier": max_weight_result["multiplier"],
         "effective_assets_multiplier": effective_assets_result["multiplier"],
         "turnover_multiplier": turnover_result["multiplier"],
     }
@@ -408,6 +408,7 @@ def build_summary_markdown(winners: pd.DataFrame, rankings: pd.DataFrame) -> str
         "This is a reporting-only evaluation layer. It does not retrain models, does not modify scoring logic, and does not replace the current main result.",
         "",
         "The report applies the mandate profiles from `src/risk/mandate_profiles.py` to already-generated final strategy metrics.",
+        MANDATE_MAX_WEIGHT_NOTE,
         "",
         "## Winners by Profile",
         "",
@@ -458,7 +459,7 @@ def build_summary_markdown(winners: pd.DataFrame, rankings: pd.DataFrame) -> str
     aggressive_winner = winners[winners["profile"] == "aggressive"]
     if not aggressive_winner.empty:
         lines.append(
-            "The aggressive profile can admit higher-return or less conservative strategies because its drawdown, volatility, concentration, and turnover limits are looser."
+            "The aggressive profile can admit higher-return or less conservative strategies because its drawdown, volatility, diversification, and turnover limits are looser."
         )
     if overall_winners:
         lines.append(

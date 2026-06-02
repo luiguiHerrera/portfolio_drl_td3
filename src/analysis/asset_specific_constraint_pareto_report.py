@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+from src.risk.mandate_profiles import get_default_mandate_profiles
 
 
 DEFAULT_COMBINED_RANKING_PATH = (
@@ -29,6 +30,13 @@ DEFAULT_WRC_DIR = "outputs/tables/asset_specific_cost_white_reality_check"
 DEFAULT_REGIME_ANALYSIS_DIR = "outputs/tables/asset_specific_cost_regime_analysis"
 DEFAULT_MANDATE_PROFILE_DIR = "outputs/tables/asset_specific_cost_mandate_profile_comparison"
 DEFAULT_OUTPUT_DIR = "outputs/tables/asset_specific_cost_constraint_pareto"
+MANDATE_PROFILE_SOURCE = "src/risk/mandate_profiles.py"
+MANDATE_MAX_WEIGHT_NOTE = (
+    "Max-weight caps are structural TD3 training/evaluation experiments, not official "
+    "investor mandate constraints. The official mandate controls concentration through "
+    "min_effective_assets; average_max_weight is reported only as a diagnostic."
+)
+PROFILE_ORDER = ["conservative", "moderate", "aggressive"]
 
 KEY_STRATEGIES = [
     "V5_no_volatility_block_cap_0p50",
@@ -67,34 +75,10 @@ PARETO_REDUCED_OBJECTIVES = {
 }
 
 
-@dataclass(frozen=True)
-class MandateFilter:
-    max_drawdown: float
-    average_max_weight: float
-    average_effective_number_of_assets: float
-    average_turnover: float
-
-
-MANDATE_FILTERS = {
-    "conservative": MandateFilter(
-        max_drawdown=-0.10,
-        average_max_weight=0.50,
-        average_effective_number_of_assets=3.0,
-        average_turnover=0.15,
-    ),
-    "moderate": MandateFilter(
-        max_drawdown=-0.15,
-        average_max_weight=0.60,
-        average_effective_number_of_assets=2.3,
-        average_turnover=0.20,
-    ),
-    "aggressive": MandateFilter(
-        max_drawdown=-0.20,
-        average_max_weight=0.80,
-        average_effective_number_of_assets=1.5,
-        average_turnover=0.30,
-    ),
-}
+def canonical_mandate_profiles() -> dict[str, Any]:
+    """Return the official project mandate profiles in reporting order."""
+    profiles = get_default_mandate_profiles()
+    return {name: profiles[name] for name in PROFILE_ORDER}
 
 
 def build_constraint_pareto_report(
@@ -144,6 +128,7 @@ def build_constraint_pareto_report(
     pareto_dominated.to_csv(paths["pareto_dominated_strategies"], index=False)
     paths["summary"].write_text(summary, encoding="utf-8")
 
+    profiles = canonical_mandate_profiles()
     metadata = {
         "runner": "src.analysis.asset_specific_constraint_pareto_report",
         "combined_ranking_path": str(combined_path),
@@ -154,7 +139,12 @@ def build_constraint_pareto_report(
         "regime_analysis_dir": regime_analysis_dir,
         "mandate_profile_dir": mandate_profile_dir,
         "output_dir": str(output_path),
-        "mandate_filters": {name: asdict(filters) for name, filters in MANDATE_FILTERS.items()},
+        "mandate_profile_source": MANDATE_PROFILE_SOURCE,
+        "canonical_mandate_profiles": {
+            name: profile.to_dict()
+            for name, profile in profiles.items()
+        },
+        "max_weight_mandate_note": MANDATE_MAX_WEIGHT_NOTE,
         "primary_evidence_note": (
             "Hard mandate filters, standard metric rankings, and Pareto dominance are primary here; "
             "custom robust_score and mandate_aware_score are not used for primary ranking."
@@ -197,6 +187,7 @@ def load_and_prepare_universe(
         "calmar",
         "sortino",
         "annualized_return",
+        "annualized_volatility",
         "max_drawdown",
         "average_turnover",
         "mean_transaction_cost",
@@ -281,6 +272,7 @@ def validate_required_diagnostics(data: pd.DataFrame) -> None:
         "calmar",
         "sortino",
         "annualized_return",
+        "annualized_volatility",
         "max_drawdown",
         "average_turnover",
         "mean_transaction_cost",
@@ -298,16 +290,18 @@ def validate_required_diagnostics(data: pd.DataFrame) -> None:
 def build_constraint_pass_fail_matrix(strategies: pd.DataFrame) -> pd.DataFrame:
     """Return one pass/fail row per profile and strategy."""
     rows: list[dict[str, Any]] = []
-    for profile, limits in MANDATE_FILTERS.items():
+    for profile, limits in canonical_mandate_profiles().items():
         for _, strategy in strategies.iterrows():
             checks = {
                 "max_drawdown_pass": strategy["max_drawdown"] >= limits.max_drawdown,
-                "average_max_weight_pass": strategy["average_max_weight"] <= limits.average_max_weight,
+                "annualized_volatility_pass": (
+                    strategy["annualized_volatility"] <= limits.max_annualized_volatility
+                ),
                 "average_effective_number_of_assets_pass": (
                     strategy["average_effective_number_of_assets"]
-                    >= limits.average_effective_number_of_assets
+                    >= limits.min_effective_assets
                 ),
-                "average_turnover_pass": strategy["average_turnover"] <= limits.average_turnover,
+                "average_turnover_pass": strategy["average_turnover"] <= limits.max_average_turnover,
             }
             failed = [name.replace("_pass", "") for name, passed in checks.items() if not bool(passed)]
             rows.append(
@@ -321,12 +315,13 @@ def build_constraint_pass_fail_matrix(strategies: pd.DataFrame) -> pd.DataFrame:
                     **checks,
                     "max_drawdown": strategy["max_drawdown"],
                     "max_drawdown_limit": limits.max_drawdown,
+                    "annualized_volatility": strategy["annualized_volatility"],
+                    "max_annualized_volatility_limit": limits.max_annualized_volatility,
                     "average_max_weight": strategy["average_max_weight"],
-                    "average_max_weight_limit": limits.average_max_weight,
                     "average_effective_number_of_assets": strategy["average_effective_number_of_assets"],
-                    "average_effective_number_of_assets_limit": limits.average_effective_number_of_assets,
+                    "min_effective_assets_limit": limits.min_effective_assets,
                     "average_turnover": strategy["average_turnover"],
-                    "average_turnover_limit": limits.average_turnover,
+                    "max_average_turnover_limit": limits.max_average_turnover,
                     "sharpe": strategy["sharpe"],
                     "calmar": strategy["calmar"],
                     "sortino": strategy["sortino"],
@@ -465,7 +460,14 @@ def build_summary_markdown(
         "## Feasible Winners",
         "",
     ]
-    for profile in MANDATE_FILTERS:
+    lines.extend(
+        [
+            "The official hard filters are drawdown, annualized volatility, effective-assets minimum, and average turnover.",
+            MANDATE_MAX_WEIGHT_NOTE,
+            "",
+        ]
+    )
+    for profile in PROFILE_ORDER:
         row = winners.get(profile)
         if row is None:
             lines.append(f"- {profile}: no feasible strategies.")
@@ -532,7 +534,7 @@ def build_summary_markdown(
 
 def summarize_feasible_winners(feasible_rankings: pd.DataFrame) -> dict[str, dict[str, Any]]:
     summary: dict[str, dict[str, Any]] = {}
-    for profile in MANDATE_FILTERS:
+    for profile in PROFILE_ORDER:
         rows = feasible_rankings[feasible_rankings["profile"] == profile].sort_values("profile_rank")
         if rows.empty:
             continue

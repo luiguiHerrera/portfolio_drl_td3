@@ -31,6 +31,32 @@ class AssetSpecificConstraintParetoReportTest(unittest.TestCase):
         ].iloc[0]
         self.assertFalse(bool(v5_conservative["feasible"]))
         self.assertIn("max_drawdown", v5_conservative["failed_constraints"])
+        self.assertNotIn("average_max_weight", v5_conservative["failed_constraints"])
+
+    def test_hard_filter_does_not_fail_on_average_max_weight(self):
+        strategy = pd.DataFrame(
+            [
+                _row(
+                    "high_weight_but_diversified",
+                    "td3",
+                    sharpe=0.7,
+                    calmar=2.0,
+                    sortino=1.4,
+                    annualized_return=0.07,
+                    annualized_volatility=0.09,
+                    max_drawdown=-0.08,
+                    average_turnover=0.04,
+                    mean_transaction_cost=0.00001,
+                    average_effective_number_of_assets=3.2,
+                    average_max_weight=0.95,
+                )
+            ]
+        )
+        matrix = build_constraint_pass_fail_matrix(strategy)
+        conservative = matrix[matrix["profile"] == "conservative"].iloc[0]
+
+        self.assertTrue(bool(conservative["feasible"]))
+        self.assertNotIn("average_max_weight_pass", matrix.columns)
 
     def test_pareto_frontier_logic(self):
         data = pd.DataFrame(
@@ -120,7 +146,10 @@ class AssetSpecificConstraintParetoReportTest(unittest.TestCase):
                 self.assertTrue((output_dir / filename).exists(), filename)
             self.assertIn("does not use custom", result["summary"])
             metadata = json.loads((output_dir / "constraint_pareto_metadata.json").read_text())
-            self.assertIn("mandate_filters", metadata)
+            self.assertEqual(metadata["mandate_profile_source"], "src/risk/mandate_profiles.py")
+            self.assertIn("canonical_mandate_profiles", metadata)
+            self.assertIn("not official", metadata["max_weight_mandate_note"])
+            self.assertNotIn("max_weight_limit", metadata["canonical_mandate_profiles"]["conservative"])
 
 
 def _strategy_frame() -> pd.DataFrame:
@@ -132,11 +161,12 @@ def _strategy_frame() -> pd.DataFrame:
             calmar=3.1,
             sortino=2.7,
             annualized_return=0.12,
+            annualized_volatility=0.14,
             max_drawdown=-0.11,
-            average_turnover=0.13,
+            average_turnover=0.08,
             mean_transaction_cost=0.00003,
             average_effective_number_of_assets=3.16,
-            average_max_weight=0.50,
+            average_max_weight=0.95,
         ),
         _row(
             "V4_real_garch_current_cap_0p50",
@@ -145,11 +175,12 @@ def _strategy_frame() -> pd.DataFrame:
             calmar=3.0,
             sortino=2.6,
             annualized_return=0.11,
+            annualized_volatility=0.09,
             max_drawdown=-0.09,
-            average_turnover=0.12,
+            average_turnover=0.04,
             mean_transaction_cost=0.00003,
             average_effective_number_of_assets=3.16,
-            average_max_weight=0.50,
+            average_max_weight=0.90,
         ),
         _row(
             "V3_real_macro_vintage_clean_no_dxy_cap_0p70",
@@ -158,8 +189,9 @@ def _strategy_frame() -> pd.DataFrame:
             calmar=2.8,
             sortino=2.5,
             annualized_return=0.09,
+            annualized_volatility=0.10,
             max_drawdown=-0.08,
-            average_turnover=0.10,
+            average_turnover=0.06,
             mean_transaction_cost=0.00002,
             average_effective_number_of_assets=1.95,
             average_max_weight=0.70,
@@ -171,8 +203,9 @@ def _strategy_frame() -> pd.DataFrame:
             calmar=0.55,
             sortino=1.2,
             annualized_return=0.10,
+            annualized_volatility=0.18,
             max_drawdown=-0.18,
-            average_turnover=0.18,
+            average_turnover=0.12,
             mean_transaction_cost=0.00002,
             average_effective_number_of_assets=1.0,
             average_max_weight=1.0,
@@ -191,6 +224,7 @@ def _row(
     calmar,
     sortino,
     annualized_return,
+    annualized_volatility,
     max_drawdown,
     average_turnover,
     mean_transaction_cost,
@@ -206,6 +240,7 @@ def _row(
         "calmar": calmar,
         "sortino": sortino,
         "annualized_return": annualized_return,
+        "annualized_volatility": annualized_volatility,
         "max_drawdown": max_drawdown,
         "average_turnover": average_turnover,
         "mean_transaction_cost": mean_transaction_cost,

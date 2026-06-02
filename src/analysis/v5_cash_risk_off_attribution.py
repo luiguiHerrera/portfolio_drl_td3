@@ -14,8 +14,6 @@ from src.data.features_v5 import build_features_v5
 
 
 REQUIRED_V5_REGIME_COLUMNS = (
-    "regime_market_trend_positive",
-    "regime_market_trend_negative",
     "regime_market_drawdown_stress",
     "regime_market_high_vol",
     "correlation_stress",
@@ -202,10 +200,6 @@ def summarize_by_risk_off_state(data: pd.DataFrame) -> pd.DataFrame:
             high_cash_rate=("high_cash", "mean"),
             mean_cash_excess_normal=("cash_excess_normal", "mean"),
             mean_risk_off_score=("risk_off_score", "mean"),
-            mean_regime_market_trend_negative=(
-                "regime_market_trend_negative",
-                "mean",
-            ),
             mean_regime_market_drawdown_stress=(
                 "regime_market_drawdown_stress",
                 "mean",

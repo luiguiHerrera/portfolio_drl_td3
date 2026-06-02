@@ -41,13 +41,24 @@ class FeatureSetV2Tests(unittest.TestCase):
                     f"{asset}_vol_4p",
                     f"{asset}_vol_12p",
                     f"{asset}_ewma_vol_12p",
-                    f"{asset}_beta_vs_SPY_12p",
-                    f"{asset}_corr_vs_SPY_12p",
                     f"{asset}_rolling_drawdown_12p",
                 }
             )
+            if asset != "SPY":
+                expected_columns.update(
+                    {
+                        f"{asset}_beta_vs_SPY_12p",
+                        f"{asset}_corr_vs_SPY_12p",
+                    }
+                )
 
         self.assertTrue(expected_columns.issubset(set(features.columns)))
+
+    def test_output_excludes_market_asset_self_reference_columns(self):
+        features = build_features_v2(self.returns)
+
+        self.assertNotIn("SPY_beta_vs_SPY_12p", features.columns)
+        self.assertNotIn("SPY_corr_vs_SPY_12p", features.columns)
 
     def test_output_does_not_contain_duplicate_distance_from_high_columns(self):
         features = build_features_v2(self.returns)

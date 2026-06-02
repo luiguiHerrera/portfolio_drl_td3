@@ -50,14 +50,15 @@ def build_features_v2(
             asset_returns,
             ewma_span,
         )
-        asset_features[f"{asset}_beta_vs_{market_asset}_{long_window}p"] = rolling_beta(
-            asset_returns,
-            market_returns,
-            long_window,
-        )
-        asset_features[f"{asset}_corr_vs_{market_asset}_{long_window}p"] = (
-            rolling_correlation(asset_returns, market_returns, long_window)
-        )
+        if asset != market_asset:
+            asset_features[f"{asset}_beta_vs_{market_asset}_{long_window}p"] = rolling_beta(
+                asset_returns,
+                market_returns,
+                long_window,
+            )
+            asset_features[f"{asset}_corr_vs_{market_asset}_{long_window}p"] = (
+                rolling_correlation(asset_returns, market_returns, long_window)
+            )
         asset_features[f"{asset}_rolling_drawdown_{long_window}p"] = rolling_drawdown(
             asset_returns,
             long_window,
@@ -209,14 +210,20 @@ def _fill_static_asset_market_exposure(
     market_variance = market_returns.rolling(long_window).var()
     asset_variance = asset_returns.rolling(long_window).var()
     static_asset_mask = (asset_variance == 0.0) & (market_variance > 0.0)
-    beta_column = [
-        column for column in asset_features.columns if column.endswith(f"_beta_vs_{market_asset}_{long_window}p")
-    ][0]
-    corr_column = [
-        column for column in asset_features.columns if column.endswith(f"_corr_vs_{market_asset}_{long_window}p")
-    ][0]
-    asset_features.loc[static_asset_mask, beta_column] = 0.0
-    asset_features.loc[static_asset_mask, corr_column] = 0.0
+    beta_columns = [
+        column
+        for column in asset_features.columns
+        if column.endswith(f"_beta_vs_{market_asset}_{long_window}p")
+    ]
+    corr_columns = [
+        column
+        for column in asset_features.columns
+        if column.endswith(f"_corr_vs_{market_asset}_{long_window}p")
+    ]
+    if beta_columns:
+        asset_features.loc[static_asset_mask, beta_columns[0]] = 0.0
+    if corr_columns:
+        asset_features.loc[static_asset_mask, corr_columns[0]] = 0.0
 
     return asset_features
 

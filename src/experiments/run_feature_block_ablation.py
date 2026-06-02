@@ -354,37 +354,29 @@ def build_feature_block_map(asset_names: list[str]) -> dict[str, list[str]]:
         blocks["volatility"].extend(
             [f"{asset}_vol_4p", f"{asset}_vol_12p", f"{asset}_ewma_vol_12p"]
         )
-        blocks["correlation"].extend(
-            [f"{asset}_beta_vs_SPY_12p", f"{asset}_corr_vs_SPY_12p"]
-        )
+        if asset != "SPY":
+            blocks["correlation"].extend(
+                [f"{asset}_beta_vs_SPY_12p", f"{asset}_corr_vs_SPY_12p"]
+            )
         blocks["drawdown"].append(f"{asset}_rolling_drawdown_12p")
 
     blocks["momentum"].extend(
         [
             "market_trend_regime",
             "market_defensive_regime",
-            "regime_market_momentum_12p",
-            "regime_market_trend_positive",
-            "regime_market_trend_negative",
         ]
     )
     blocks["volatility"].extend(
         [
             "market_high_vol_regime",
-            "regime_market_vol_4p",
-            "regime_market_vol_12p",
             "regime_market_high_vol",
         ]
     )
     blocks["drawdown"].extend(
         [
-            "regime_market_rolling_drawdown_12p",
             "regime_market_drawdown_stress",
         ]
     )
-    for asset in risky_assets:
-        if asset != "SPY":
-            blocks["correlation"].append(f"corr_{asset}_vs_SPY_12p")
     blocks["correlation"].extend(
         [
             "avg_pairwise_corr_12p",
@@ -400,8 +392,6 @@ def build_feature_block_map(asset_names: list[str]) -> dict[str, list[str]]:
             "market_risk_off_regime",
             "market_trend_regime",
             "market_defensive_regime",
-            "regime_market_trend_positive",
-            "regime_market_trend_negative",
             "regime_market_drawdown_stress",
             "regime_market_high_vol",
             "correlation_stress",

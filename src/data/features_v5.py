@@ -92,8 +92,6 @@ def build_v5_regime_auxiliary_features(
         risk_off_threshold=risk_off_threshold,
     )
     auxiliary_columns = [
-        "regime_market_trend_positive",
-        "regime_market_trend_negative",
         "regime_market_drawdown_stress",
         "regime_market_high_vol",
         "correlation_stress",
@@ -125,22 +123,14 @@ def _build_regime_correlation_features(
     short_volatility = market_returns.rolling(short_window).std()
     long_volatility = market_returns.rolling(long_window).std()
 
-    features[f"regime_market_momentum_{long_window}p"] = market_momentum
-    features["regime_market_trend_positive"] = _float_indicator(
-        market_momentum > 0.0,
-        market_momentum,
-    )
-    features["regime_market_trend_negative"] = _float_indicator(
+    market_trend_negative = _float_indicator(
         market_momentum < 0.0,
         market_momentum,
     )
-    features[f"regime_market_rolling_drawdown_{drawdown_window}p"] = market_drawdown
     features["regime_market_drawdown_stress"] = _float_indicator(
         market_drawdown <= -0.10,
         market_drawdown,
     )
-    features[f"regime_market_vol_{short_window}p"] = short_volatility
-    features[f"regime_market_vol_{long_window}p"] = long_volatility
     volatility_availability = short_volatility.mask(long_volatility.isna())
     features["regime_market_high_vol"] = _float_indicator(
         short_volatility > long_volatility,
@@ -152,13 +142,11 @@ def _build_regime_correlation_features(
     for asset in risky_assets:
         if asset == market_asset:
             continue
-        column = f"corr_{asset}_vs_{market_asset}_{correlation_window}p"
         asset_market_correlations[asset] = rolling_correlation(
             returns[asset],
             market_returns,
             correlation_window,
         )
-        features[column] = asset_market_correlations[asset]
 
     pairwise_correlations = []
     for first_asset, second_asset in combinations(risky_assets, 2):
@@ -189,9 +177,12 @@ def _build_regime_correlation_features(
             "regime_market_drawdown_stress",
             "regime_market_high_vol",
             "correlation_stress",
-            "regime_market_trend_negative",
         ]
     ]
+    risk_off_components = pd.concat(
+        [risk_off_components, market_trend_negative.rename("market_trend_negative")],
+        axis=1,
+    )
     features["risk_off_score"] = risk_off_components.sum(axis=1)
     features["risk_off_score"] = features["risk_off_score"].mask(
         risk_off_components.isna().any(axis=1)

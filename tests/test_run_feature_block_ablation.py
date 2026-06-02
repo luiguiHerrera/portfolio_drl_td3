@@ -93,8 +93,6 @@ class FeatureBlockAblationTests(unittest.TestCase):
         self.assertEqual(
             list(datasets["train_auxiliary_features"].columns),
             [
-                "regime_market_trend_positive",
-                "regime_market_trend_negative",
                 "regime_market_drawdown_stress",
                 "regime_market_high_vol",
                 "correlation_stress",

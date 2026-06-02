@@ -32,7 +32,7 @@ DEFAULT_REGIME_COLUMNS = (
     "risk_off_state",
     "correlation_stress",
     "regime_market_high_vol",
-    "regime_market_trend_positive",
+    "market_trend_regime",
 )
 
 

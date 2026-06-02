@@ -36,8 +36,6 @@ class V5CashRiskOffAttributionTests(unittest.TestCase):
         merged = merge_policy_with_v5_regime(self._policy_history(), self._raw_v5_features())
 
         for column in (
-            "regime_market_trend_positive",
-            "regime_market_trend_negative",
             "regime_market_drawdown_stress",
             "regime_market_high_vol",
             "correlation_stress",
@@ -167,8 +165,6 @@ class V5CashRiskOffAttributionTests(unittest.TestCase):
 
         return pd.DataFrame(
             {
-                "regime_market_trend_positive": [0.0, 1.0, 1.0],
-                "regime_market_trend_negative": [1.0, 0.0, 0.0],
                 "regime_market_drawdown_stress": [1.0, 0.0, 0.0],
                 "regime_market_high_vol": [0.0, 0.0, 1.0],
                 "correlation_stress": [0.0, 0.0, 1.0],

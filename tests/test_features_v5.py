@@ -29,31 +29,37 @@ class FeatureSetV5Tests(unittest.TestCase):
     def test_v5_includes_market_trend_and_drawdown_regime_columns(self):
         features = build_features_v5(self.returns)
         expected_columns = {
-            "regime_market_momentum_12p",
-            "regime_market_trend_positive",
-            "regime_market_trend_negative",
-            "regime_market_rolling_drawdown_12p",
             "regime_market_drawdown_stress",
         }
 
         self.assertTrue(expected_columns.issubset(features.columns))
+        removed_aliases = {
+            "regime_market_momentum_12p",
+            "regime_market_trend_positive",
+            "regime_market_trend_negative",
+            "regime_market_rolling_drawdown_12p",
+        }
+        self.assertTrue(removed_aliases.isdisjoint(features.columns))
 
     def test_v5_includes_market_volatility_regime_columns(self):
         features = build_features_v5(self.returns)
         expected_columns = {
-            "regime_market_vol_4p",
-            "regime_market_vol_12p",
             "regime_market_high_vol",
         }
 
         self.assertTrue(expected_columns.issubset(features.columns))
+        self.assertNotIn("regime_market_vol_4p", features.columns)
+        self.assertNotIn("regime_market_vol_12p", features.columns)
 
     def test_v5_includes_asset_vs_market_correlation_columns(self):
         features = build_features_v5(self.returns)
 
-        self.assertIn("corr_TLT_vs_SPY_12p", features.columns)
-        self.assertIn("corr_GLD_vs_SPY_12p", features.columns)
-        self.assertIn("corr_BTC-USD_vs_SPY_12p", features.columns)
+        self.assertIn("TLT_corr_vs_SPY_12p", features.columns)
+        self.assertIn("GLD_corr_vs_SPY_12p", features.columns)
+        self.assertIn("BTC-USD_corr_vs_SPY_12p", features.columns)
+        self.assertNotIn("corr_TLT_vs_SPY_12p", features.columns)
+        self.assertNotIn("corr_GLD_vs_SPY_12p", features.columns)
+        self.assertNotIn("corr_BTC-USD_vs_SPY_12p", features.columns)
 
     def test_v5_excludes_cash_from_risky_correlation_features(self):
         features = build_features_v5(self.returns)
@@ -98,11 +104,25 @@ class FeatureSetV5Tests(unittest.TestCase):
 
         self.assertEqual(int(features.isna().sum().sum()), 0)
 
+    def test_v5_final_feature_matrix_has_no_constructed_alias_columns(self):
+        features = build_features_v5(self.returns)
+        removed_aliases = {
+            "regime_market_momentum_12p",
+            "regime_market_trend_positive",
+            "regime_market_trend_negative",
+            "regime_market_rolling_drawdown_12p",
+            "regime_market_vol_4p",
+            "regime_market_vol_12p",
+            "corr_TLT_vs_SPY_12p",
+            "corr_GLD_vs_SPY_12p",
+            "corr_BTC-USD_vs_SPY_12p",
+        }
+
+        self.assertTrue(removed_aliases.isdisjoint(features.columns))
+
     def test_build_v5_regime_auxiliary_features_returns_raw_regime_columns(self):
         auxiliary_features = build_v5_regime_auxiliary_features(self.returns)
         expected_columns = [
-            "regime_market_trend_positive",
-            "regime_market_trend_negative",
             "regime_market_drawdown_stress",
             "regime_market_high_vol",
             "correlation_stress",

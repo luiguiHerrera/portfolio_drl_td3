@@ -39,8 +39,8 @@ class RegimeAttributionTests(unittest.TestCase):
             "macro_dollar_momentum_12p",
             "SPY_vol_12p",
             "SPY_rolling_drawdown_12p",
-            "SPY_beta_vs_SPY_12p",
-            "SPY_corr_vs_SPY_12p",
+            "TLT_beta_vs_SPY_12p",
+            "TLT_corr_vs_SPY_12p",
         ]:
             self.assertIn(column, result)
 
@@ -223,8 +223,8 @@ class RegimeAttributionTests(unittest.TestCase):
                 "macro_dollar_momentum_12p": [0.01, 0.02, -0.01, 0.00],
                 "SPY_vol_12p": [0.10, 0.12, 0.20, 0.15],
                 "SPY_rolling_drawdown_12p": [0.0, -0.02, -0.05, -0.01],
-                "SPY_beta_vs_SPY_12p": [1.0, 1.0, 1.0, 1.0],
-                "SPY_corr_vs_SPY_12p": [1.0, 1.0, 1.0, 1.0],
+                "TLT_beta_vs_SPY_12p": [0.2, 0.1, -0.1, 0.0],
+                "TLT_corr_vs_SPY_12p": [0.4, 0.2, -0.2, 0.1],
                 "SPY_ret_1p": [0.01, -0.01, 0.02, 0.00],
             },
             index=index,

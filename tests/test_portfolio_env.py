@@ -681,7 +681,7 @@ class PortfolioEnvTests(unittest.TestCase):
 
         self.assertEqual(info["mandate_max_weight_breach"], 0.0)
 
-    def test_moderate_profile_penalizes_high_max_weight(self):
+    def test_moderate_profile_does_not_penalize_high_max_weight_directly(self):
         env = PortfolioEnv(
             self.returns,
             transaction_cost=0.0,
@@ -697,7 +697,7 @@ class PortfolioEnvTests(unittest.TestCase):
 
         _, _, _, info = env.step(np.array([0.95, 0.05, 0.0, 0.0, 0.0]))
 
-        self.assertAlmostEqual(info["mandate_max_weight_breach"], 0.15)
+        self.assertEqual(info["mandate_max_weight_breach"], 0.0)
 
     def test_volatility_penalty_uses_only_observed_returns(self):
         returns = pd.DataFrame(

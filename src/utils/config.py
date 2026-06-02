@@ -33,6 +33,7 @@ REQUIRED_FIELDS = (
     ("training", "episodes"),
 )
 SUPPORTED_FREQUENCIES = {"daily", "weekly"}
+CASH_RETURN_MODELS = {"zero", "bil_proxy"}
 RATIO_SUM_TOLERANCE = 1e-8
 OPTIONAL_REWARD_LAMBDAS = (
     "lambda_return",
@@ -127,6 +128,18 @@ def _validate_data(config: dict) -> None:
     if frequency not in SUPPORTED_FREQUENCIES:
         valid_values = ", ".join(sorted(SUPPORTED_FREQUENCIES))
         raise ValueError(f"Config field data.frequency must be one of: {valid_values}.")
+
+    cash_return_model = config["data"].get("cash_return_model", "zero")
+    if cash_return_model not in CASH_RETURN_MODELS:
+        valid_values = ", ".join(sorted(CASH_RETURN_MODELS))
+        raise ValueError(
+            f"Config field data.cash_return_model must be one of: {valid_values}."
+        )
+    cash_proxy_asset = config["data"].get("cash_proxy_asset")
+    if cash_proxy_asset is not None and (
+        not isinstance(cash_proxy_asset, str) or not cash_proxy_asset.strip()
+    ):
+        raise ValueError("Config field data.cash_proxy_asset must be a non-empty string.")
 
     returns_path = config["data"].get("returns_path")
     returns_date_column = config["data"].get("returns_date_column")

@@ -260,6 +260,31 @@ class EvaluateAgentTests(unittest.TestCase):
             (policy_history["asset_transaction_cost_contribution_CASH"] == 0.0).all()
         )
 
+    def test_policy_history_allows_costed_cash_proxy_contribution(self):
+        result = evaluate_agent(
+            DummyAgent(),
+            self.returns,
+            self.features,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps={
+                "SPY": 2.0,
+                "TLT": 2.0,
+                "GLD": 2.0,
+                "BTC-USD": 10.0,
+                "CASH": 2.0,
+            },
+        )
+        policy_history = result["policy_history"]
+
+        self.assertGreater(
+            policy_history["asset_turnover_CASH"].sum(),
+            0.0,
+        )
+        self.assertGreater(
+            policy_history["asset_transaction_cost_contribution_CASH"].sum(),
+            0.0,
+        )
+
     def test_build_policy_history_does_not_require_turnover_reward_fields(self):
         episode = run_policy_episode(DummyAgent(), self.returns, self.features)
         episode.pop("turnover_reward_info", None)
@@ -320,12 +345,44 @@ class EvaluateAgentTests(unittest.TestCase):
             "final_turnover",
             "average_transaction_cost",
             "final_transaction_cost",
+            "transaction_cost_mode",
             "final_weights",
             "max_weight",
             "cash_weight",
         }
 
         self.assertEqual(set(diagnostics.keys()), expected_keys)
+
+    def test_summarize_episode_diagnostics_includes_asset_specific_cost_fields(self):
+        episode = run_policy_episode(
+            DummyAgent(),
+            self.returns,
+            self.features,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps={
+                "SPY": 2.0,
+                "TLT": 2.0,
+                "GLD": 2.0,
+                "BTC-USD": 10.0,
+                "CASH": 0.0,
+            },
+        )
+        diagnostics = summarize_episode_diagnostics(episode)
+
+        self.assertEqual(diagnostics["transaction_cost_mode"], "asset_specific")
+        self.assertIn("average_asset_turnover_BTC-USD", diagnostics)
+        self.assertIn(
+            "average_asset_transaction_cost_contribution_BTC-USD",
+            diagnostics,
+        )
+        self.assertIn(
+            "average_asset_transaction_cost_contribution_CASH",
+            diagnostics,
+        )
+        self.assertEqual(
+            diagnostics["average_asset_transaction_cost_contribution_CASH"],
+            0.0,
+        )
 
     def test_diagnostics_final_weights_and_cash_weight_are_well_formed(self):
         result = evaluate_agent(DummyAgent(), self.returns, self.features)

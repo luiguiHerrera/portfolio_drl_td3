@@ -226,11 +226,46 @@ def summarize_episode_diagnostics(episode: dict) -> dict:
         turnover=episode["turnover"],
         transaction_costs=episode["transaction_costs"],
     )
+    transaction_cost_summary = _summarize_transaction_cost_info(
+        episode.get("transaction_cost_info")
+    )
 
     return {
         "final_portfolio_value": float(episode["final_portfolio_value"]),
         **allocation_summary,
+        **transaction_cost_summary,
         "final_weights": final_weights,
         "max_weight": allocation_summary["final_max_weight"],
         "cash_weight": allocation_summary["final_cash_weight"],
     }
+
+
+def _summarize_transaction_cost_info(
+    transaction_cost_info: pd.DataFrame | None,
+) -> dict:
+    """Aggregate per-step transaction-cost diagnostics for experiment summaries."""
+    if transaction_cost_info is None or transaction_cost_info.empty:
+        return {}
+
+    summary: dict = {}
+    if "transaction_cost_mode" in transaction_cost_info.columns:
+        modes = transaction_cost_info["transaction_cost_mode"].dropna().unique()
+        if len(modes) == 1:
+            summary["transaction_cost_mode"] = modes[0]
+        elif len(modes) > 1:
+            summary["transaction_cost_mode"] = "mixed"
+
+    diagnostic_prefixes = (
+        "asset_turnover_",
+        "asset_transaction_cost_contribution_",
+    )
+    for column in transaction_cost_info.columns:
+        if not column.startswith(diagnostic_prefixes):
+            continue
+        values = pd.to_numeric(transaction_cost_info[column], errors="coerce")
+        if values.isna().all():
+            continue
+        summary[f"average_{column}"] = float(values.mean())
+        summary[f"final_{column}"] = float(values.iloc[-1])
+
+    return summary

@@ -9,7 +9,11 @@ import pandas as pd
 from pathlib import Path
 
 from src.data.download import download_prices
-from src.data.preprocess import compute_returns
+from src.data.preprocess import (
+    CASH_RETURN_MODEL_BIL_PROXY,
+    CASH_RETURN_MODEL_ZERO,
+    compute_returns,
+)
 from src.utils.config import load_config
 
 
@@ -31,8 +35,19 @@ def build_returns_dataset(config_path: str) -> pd.DataFrame:
         )
         return _apply_date_boundaries(returns, start_date, end_date)
 
-    prices = download_prices(assets, start_date, end_date)
-    returns = compute_returns(prices, assets, frequency)
+    cash_return_model = data_config.get("cash_return_model", CASH_RETURN_MODEL_ZERO)
+    cash_proxy_asset = data_config.get("cash_proxy_asset")
+    extra_assets = []
+    if cash_return_model == CASH_RETURN_MODEL_BIL_PROXY:
+        extra_assets.append(cash_proxy_asset or "BIL")
+    prices = download_prices(assets, start_date, end_date, extra_assets=extra_assets)
+    returns = compute_returns(
+        prices,
+        assets,
+        frequency,
+        cash_return_model=cash_return_model,
+        cash_proxy_asset=cash_proxy_asset,
+    )
 
     return _apply_date_boundaries(returns, start_date, end_date)
 

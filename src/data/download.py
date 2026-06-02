@@ -16,9 +16,15 @@ def download_prices(
     assets: list[str],
     start_date: str | None,
     end_date: str | None,
+    extra_assets: list[str] | tuple[str, ...] | None = None,
 ) -> pd.DataFrame:
     """Download adjusted close prices for non-synthetic assets."""
-    market_assets = [asset for asset in assets if asset not in SYNTHETIC_ASSETS]
+    requested_assets = [*assets, *(extra_assets or [])]
+    market_assets = []
+    for asset in requested_assets:
+        if asset in SYNTHETIC_ASSETS or asset in market_assets:
+            continue
+        market_assets.append(asset)
 
     if not market_assets:
         return pd.DataFrame()

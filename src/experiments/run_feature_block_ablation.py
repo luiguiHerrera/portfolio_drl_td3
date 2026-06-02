@@ -27,7 +27,11 @@ from src.backtest.benchmarks import (
     equal_weight_returns,
     individual_buy_and_hold_returns,
 )
-from src.backtest.evaluate_agent import build_policy_history, flatten_transaction_cost_info
+from src.backtest.evaluate_agent import (
+    _summarize_transaction_cost_info,
+    build_policy_history,
+    flatten_transaction_cost_info,
+)
 from src.backtest.evaluate_policy import summary_metrics
 from src.backtest.performance_metrics import extended_summary_metrics
 from src.data.build_dataset import build_returns_dataset
@@ -746,9 +750,13 @@ def summarize_episode_diagnostics_ablation(episode: dict) -> dict:
         turnover=episode["turnover"],
         transaction_costs=episode["transaction_costs"],
     )
+    transaction_cost_summary = _summarize_transaction_cost_info(
+        episode.get("transaction_cost_info")
+    )
     return {
         "final_portfolio_value": float(episode["final_portfolio_value"]),
         **allocation_summary,
+        **transaction_cost_summary,
         "final_weights": final_weights,
         "max_weight": allocation_summary["final_max_weight"],
         "cash_weight": allocation_summary["final_cash_weight"],

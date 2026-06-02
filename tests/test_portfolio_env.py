@@ -403,6 +403,28 @@ class PortfolioEnvTests(unittest.TestCase):
         self.assertGreater(info["asset_turnover"]["CASH"], 0.0)
         self.assertEqual(info["asset_transaction_cost_contribution"]["CASH"], 0.0)
 
+    def test_asset_specific_bil_proxy_cash_has_etf_like_cost(self):
+        costs = self._asset_cost_bps()
+        costs["CASH"] = 2.0
+        env = PortfolioEnv(
+            self.returns,
+            transaction_cost_mode="asset_specific",
+            asset_transaction_cost_bps=costs,
+        )
+        env.reset()
+
+        _, _, _, info = env.step(np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+
+        self.assertGreater(info["asset_turnover"]["CASH"], 0.0)
+        self.assertGreater(
+            info["asset_transaction_cost_contribution"]["CASH"],
+            0.0,
+        )
+        self.assertAlmostEqual(
+            info["asset_transaction_cost_contribution"]["CASH"],
+            info["asset_turnover"]["CASH"] * 2.0 / 10000.0,
+        )
+
     def test_asset_specific_btc_cost_exceeds_etf_for_higher_bps(self):
         spy_env = PortfolioEnv(
             self.returns,
@@ -945,7 +967,7 @@ class PortfolioEnvTests(unittest.TestCase):
             "SPY": 2.0,
             "TLT": 2.0,
             "GLD": 2.0,
-            "BTC-USD": 18.0,
+            "BTC-USD": 10.0,
             "CASH": 0.0,
         }
 

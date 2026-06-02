@@ -45,8 +45,10 @@ def build_macro_features(
 ) -> pd.DataFrame:
     """Align external macro data and build simple macro regime features.
 
-    DXY and CPI momentum use 12-period percentage change on the aligned macro
-    series.
+    DXY momentum uses 12-period percentage change on the aligned macro series.
+    Clean realtime CPI specifications should provide ``cpi_yoy_asof`` computed
+    before weekly alignment; when that column is present, the legacy weekly CPI
+    momentum feature is not created.
     """
     _validate_macro_inputs(macro_data, target_index)
     sorted_macro_data = macro_data.sort_index()
@@ -74,7 +76,12 @@ def build_macro_features(
         strong_dollar_regime = strong_dollar_regime.mask(dollar_momentum.isna())
         macro_features["macro_strong_dollar_regime"] = strong_dollar_regime
 
-    if "CPI" in aligned_macro_data.columns:
+    if "cpi_yoy_asof" in aligned_macro_data.columns:
+        cpi_yoy = aligned_macro_data["cpi_yoy_asof"]
+        inflation_pressure_regime = (cpi_yoy > 0.0).astype(float)
+        inflation_pressure_regime = inflation_pressure_regime.mask(cpi_yoy.isna())
+        macro_features["macro_inflation_pressure_regime"] = inflation_pressure_regime
+    elif "CPI" in aligned_macro_data.columns:
         cpi_momentum = aligned_macro_data["CPI"].pct_change(12)
         macro_features["macro_cpi_momentum_12p"] = cpi_momentum
         inflation_pressure_regime = (cpi_momentum > 0.0).astype(float)

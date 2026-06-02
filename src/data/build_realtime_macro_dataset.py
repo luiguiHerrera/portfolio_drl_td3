@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,8 @@ DEFAULT_METADATA_OUTPUT = (
 )
 DEFAULT_RAW_VINTAGE_DIR = "data/raw/macro_realtime"
 FRED_OPEN_END_DATE = "9999-12-31"
+FRED_REQUEST_RETRIES = 5
+FRED_RATE_LIMIT_SLEEP_SECONDS = 20.0
 
 
 @dataclass(frozen=True)
@@ -152,13 +155,14 @@ def build_realtime_macro_dataset(
                     "observation_date/date, value, realtime_start, and "
                     "realtime_end columns in the raw vintage directory."
                 )
-            selected = fetch_fred_weekly_asof_values(
+            selected, records = fetch_fred_weekly_asof_values(
                 config=config,
                 api_key=api_key,
                 weekly_dates=weekly_dates,
                 observation_start=observation_start,
                 vintage_chunk_size=vintage_chunk_size,
                 verbose=verbose,
+                return_records=True,
             )
         validate_asof_endpoint_usability(
             selected=selected,
@@ -168,6 +172,15 @@ def build_realtime_macro_dataset(
         )
         macro_columns[config.output_name] = selected.set_index("date")["value"]
         provenance_frames.append(selected)
+        if config.output_name == "CPI":
+            cpi_yoy = build_cpi_yoy_asof_metadata(
+                selected=selected,
+                records=records,
+                config=config,
+                source=selected["vintage_method"].dropna().astype(str).iloc[0],
+            )
+            macro_columns["cpi_yoy_asof"] = cpi_yoy.set_index("date")["value"]
+            provenance_frames.append(cpi_yoy)
 
     macro = pd.DataFrame(macro_columns, index=weekly_dates).sort_index()
     if macro.isna().any().any():
@@ -381,7 +394,8 @@ def fetch_fred_weekly_asof_values(
     session: requests.Session | None = None,
     vintage_chunk_size: int = 50,
     verbose: bool = False,
-) -> pd.DataFrame:
+    return_records: bool = False,
+) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
     """Fetch latest observation known as of each weekly date using FRED realtime."""
     if vintage_chunk_size < 1:
         raise ValueError("vintage_chunk_size must be >= 1.")
@@ -450,7 +464,103 @@ def fetch_fred_weekly_asof_values(
             f"  {config.output_name} ({config.series_id}) selected weekly rows: {len(selected)}",
             flush=True,
         )
+    if return_records:
+        return selected, records
     return selected
+
+
+def build_cpi_yoy_asof_metadata(
+    selected: pd.DataFrame,
+    records: pd.DataFrame,
+    config: MacroSeriesConfig,
+    source: str,
+) -> pd.DataFrame:
+    """Compute monthly CPI YoY from same-vintage observations before weekly use."""
+    if config.output_name != "CPI":
+        raise ValueError("build_cpi_yoy_asof_metadata only supports CPI.")
+    normalized_records = records.copy()
+    normalized_records["observation_date"] = pd.to_datetime(
+        normalized_records["observation_date"],
+        errors="coerce",
+    )
+    normalized_records["realtime_start"] = pd.to_datetime(
+        normalized_records["realtime_start"],
+        errors="coerce",
+    )
+    normalized_records["realtime_end"] = pd.to_datetime(
+        normalized_records["realtime_end"],
+        errors="coerce",
+    )
+    normalized_records["value"] = pd.to_numeric(normalized_records["value"], errors="coerce")
+    common_metadata = {
+        **_common_series_metadata(
+            MacroSeriesConfig(
+                output_name="cpi_yoy_asof",
+                series_id=config.series_id,
+                title="CPI year-over-year change computed from as-of monthly CPI observations",
+                data_source=config.data_source,
+                conceptual_role="inflation_yoy_asof",
+                frequency="monthly",
+                note=(
+                    "Computed as CPI_t / CPI_{t-12 months} - 1 using same-as-of "
+                    "FRED vintage observations before weekly alignment. This is "
+                    "FRED realtime/as-of safe, not explicit BLS release-calendar audited."
+                ),
+            )
+        ),
+        "transformation_applied": "monthly_yoy_before_weekly_alignment",
+    }
+    rows: list[dict[str, Any]] = []
+    for _, row in selected.iterrows():
+        date = pd.Timestamp(row["date"]).normalize()
+        current_observation_date = pd.Timestamp(row["observation_date_used"]).normalize()
+        lagged_observation_date = current_observation_date - pd.DateOffset(years=1)
+        lagged = normalized_records[
+            (normalized_records["observation_date"].dt.normalize() == lagged_observation_date)
+            & (normalized_records["realtime_start"] <= date)
+            & (normalized_records["realtime_end"] >= date)
+        ].sort_values(["observation_date", "realtime_start"])
+        if lagged.empty:
+            value = pd.NA
+            lagged_value = pd.NA
+            lagged_realtime_start = pd.NaT
+            lagged_realtime_end = pd.NaT
+        else:
+            lagged_row = lagged.iloc[-1]
+            lagged_value = float(lagged_row["value"])
+            value = float(row["value"]) / lagged_value - 1.0 if lagged_value != 0.0 else pd.NA
+            lagged_realtime_start = lagged_row["realtime_start"]
+            lagged_realtime_end = lagged_row.get("realtime_end_raw", lagged_row["realtime_end"])
+        rows.append(
+            {
+                **common_metadata,
+                "date": date,
+                "value": value,
+                "observation_date_used": current_observation_date,
+                "as_of_date": date,
+                "realtime_start_used": row["realtime_start_used"],
+                "realtime_end_used": row["realtime_end_used"],
+                "vintage_method": source,
+                "true_vintage_data_available": bool(row["true_vintage_data_available"]),
+                "fallback_method": "",
+                "fallback_used": False,
+                "current_cpi_observation_date_used": current_observation_date,
+                "current_cpi_as_of_date": date,
+                "current_cpi_realtime_start_used": row["realtime_start_used"],
+                "lagged_12m_cpi_observation_date_used": lagged_observation_date,
+                "lagged_12m_cpi_as_of_date": date,
+                "lagged_12m_cpi_realtime_start_used": lagged_realtime_start,
+                "lagged_12m_cpi_realtime_end_used": lagged_realtime_end,
+            }
+        )
+    frame = pd.DataFrame(rows)
+    if frame["value"].isna().any():
+        missing_dates = frame.loc[frame["value"].isna(), "date"].dt.strftime("%Y-%m-%d").tolist()
+        raise ValueError(
+            "Unable to compute as-of CPI YoY for weekly dates because same-vintage "
+            f"12-month lagged CPI observations are missing: {missing_dates[:10]}"
+        )
+    return frame
 
 
 def validate_vintage_coverage(
@@ -466,7 +576,6 @@ def validate_vintage_coverage(
     if parsed.empty:
         raise ValueError(f"FRED returned no parseable vintage dates for {series_id}.")
     first_vintage = parsed.min()
-    last_vintage = parsed.max()
     if first_vintage > pd.Timestamp(required_start):
         raise ValueError(
             f"FRED true-vintage coverage for {series_id} starts on "
@@ -534,12 +643,6 @@ def freshness_tolerance_days(frequency: str) -> int:
     if normalized == "monthly":
         return 90
     raise ValueError(f"Unsupported macro series frequency: {frequency}")
-    if last_vintage < pd.Timestamp(required_end):
-        raise ValueError(
-            f"FRED true-vintage coverage for {series_id} ends on "
-            f"{last_vintage.date()}, before required end "
-            f"{pd.Timestamp(required_end).date()}. No fallback is allowed."
-        )
 
 
 def fetch_fred_vintage_dates(
@@ -564,18 +667,14 @@ def fetch_fred_vintage_dates(
             "limit": page_limit,
             "offset": offset,
         }
-        try:
-            response = client.get(FRED_VINTAGE_DATES_URL, params=params, timeout=60)
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            detail = _sanitize_request_error(exc, api_key)
-            raise RuntimeError(
-                "FRED vintage-date request failed for "
-                f"{series_id}: {exc.__class__.__name__}. "
-                "The request URL and API key are intentionally omitted."
-                f"{detail}"
-            ) from None
-        payload = response.json()
+        payload = _fred_get_json_with_retry(
+            client=client,
+            url=FRED_VINTAGE_DATES_URL,
+            params=params,
+            api_key=api_key,
+            series_id=series_id,
+            request_name="vintage-date",
+        )
         dates = payload.get("vintage_dates", [])
         vintage_dates.extend(str(date) for date in dates)
         offset += len(dates)
@@ -609,18 +708,14 @@ def _fetch_observation_chunk(
             "limit": page_limit,
             "offset": offset,
         }
-        try:
-            response = client.get(FRED_OBSERVATIONS_URL, params=params, timeout=60)
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            detail = _sanitize_request_error(exc, api_key)
-            raise RuntimeError(
-                "FRED API request failed for "
-                f"{series_id}: {exc.__class__.__name__}. "
-                "The request URL and API key are intentionally omitted."
-                f"{detail}"
-            ) from None
-        payload = response.json()
+        payload = _fred_get_json_with_retry(
+            client=client,
+            url=FRED_OBSERVATIONS_URL,
+            params=params,
+            api_key=api_key,
+            series_id=series_id,
+            request_name="observation",
+        )
         observations = payload.get("observations", [])
         if not observations:
             break
@@ -634,6 +729,54 @@ def _fetch_observation_chunk(
 
 def _chunks(values: list[str], chunk_size: int) -> list[list[str]]:
     return [values[index : index + chunk_size] for index in range(0, len(values), chunk_size)]
+
+
+def _fred_get_json_with_retry(
+    client: requests.Session,
+    url: str,
+    params: dict[str, Any],
+    api_key: str,
+    series_id: str,
+    request_name: str,
+    retries: int = FRED_REQUEST_RETRIES,
+    rate_limit_sleep_seconds: float = FRED_RATE_LIMIT_SLEEP_SECONDS,
+) -> dict[str, Any]:
+    """Fetch FRED JSON with conservative rate-limit retry handling."""
+    last_exc: requests.RequestException | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            response = client.get(url, params=params, timeout=60)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as exc:
+            last_exc = exc
+            response = getattr(exc, "response", None)
+            status = getattr(response, "status_code", None)
+            if status == 429 and attempt < retries:
+                sleep_seconds = rate_limit_sleep_seconds * attempt
+                print(
+                    f"FRED {request_name} request for {series_id} hit rate limit; "
+                    f"retrying in {sleep_seconds:.0f}s "
+                    f"({attempt}/{retries}).",
+                    flush=True,
+                )
+                time.sleep(sleep_seconds)
+                continue
+            detail = _sanitize_request_error(exc, api_key)
+            raise RuntimeError(
+                f"FRED {request_name} request failed for "
+                f"{series_id}: {exc.__class__.__name__}. "
+                "The request URL and API key are intentionally omitted."
+                f"{detail}"
+            ) from None
+    if last_exc is not None:
+        detail = _sanitize_request_error(last_exc, api_key)
+        raise RuntimeError(
+            f"FRED {request_name} request failed for {series_id} after "
+            f"{retries} attempts. The request URL and API key are intentionally "
+            f"omitted.{detail}"
+        ) from None
+    raise RuntimeError(f"FRED {request_name} request failed for {series_id}.")
 
 
 def normalize_vintage_records(raw: pd.DataFrame, series_id: str) -> pd.DataFrame:
@@ -837,6 +980,7 @@ def _common_series_metadata(config: MacroSeriesConfig) -> dict[str, str]:
         "conceptual_role": config.conceptual_role,
         "frequency": config.frequency,
         "note": config.note,
+        "transformation_applied": "asof_level",
     }
 
 

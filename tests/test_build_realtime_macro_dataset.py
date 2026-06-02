@@ -9,6 +9,7 @@ import requests
 
 from src.data.build_realtime_macro_dataset import (
     SERIES_CONFIGS,
+    build_cpi_yoy_asof_metadata,
     build_realtime_macro_dataset,
     fetch_fred_vintage_observations,
     fetch_fred_weekly_asof_values,
@@ -76,11 +77,16 @@ class BuildRealtimeMacroDatasetTests(unittest.TestCase):
 
             self.assertTrue(output_path.exists())
             self.assertTrue(metadata_path.exists())
-            self.assertEqual(list(result["macro"].columns), ["DGS10", "DGS2", "VIX", "DXY", "CPI"])
+            self.assertEqual(
+                list(result["macro"].columns),
+                ["DGS10", "DGS2", "VIX", "DXY", "CPI", "cpi_yoy_asof"],
+            )
             self.assertEqual(int(result["macro"].isna().sum().sum()), 0)
             self.assertEqual(set(result["metadata"]["vintage_method"]), {"local_raw_vintage"})
             self.assertTrue(result["metadata"]["true_vintage_data_available"].astype(bool).all())
             self.assertFalse(result["metadata"]["fallback_used"].astype(bool).any())
+            self.assertIn("transformation_applied", result["metadata"].columns)
+            self.assertIn("cpi_yoy_asof", set(result["metadata"]["output_name"]))
 
     def test_build_can_exclude_dollar_series_for_clean_no_dxy_dataset(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -103,8 +109,12 @@ class BuildRealtimeMacroDatasetTests(unittest.TestCase):
                 require_no_fallback=True,
             )
 
-            self.assertEqual(list(result["macro"].columns), ["DGS10", "DGS2", "VIX", "CPI"])
+            self.assertEqual(
+                list(result["macro"].columns),
+                ["DGS10", "DGS2", "VIX", "CPI", "cpi_yoy_asof"],
+            )
             self.assertNotIn("DXY", set(result["metadata"]["output_name"]))
+            self.assertIn("cpi_yoy_asof", set(result["metadata"]["output_name"]))
 
     def test_missing_api_key_without_raw_vintage_fails_clearly(self):
         with patch.dict(os.environ, {"FRED_API_KEY": ""}, clear=False):
@@ -225,6 +235,42 @@ class BuildRealtimeMacroDatasetTests(unittest.TestCase):
         self.assertTrue(bool(result.loc[0, "true_vintage_data_available"]))
         self.assertFalse(bool(result.loc[0, "fallback_used"]))
 
+    def test_cpi_yoy_is_computed_from_monthly_same_vintage_pair(self):
+        dates = pd.DatetimeIndex([pd.Timestamp("2015-01-16")])
+        records = pd.DataFrame(
+            {
+                "observation_date": pd.to_datetime(["2014-01-01", "2015-01-01"]),
+                "value": [100.0, 110.0],
+                "realtime_start": pd.to_datetime(["2015-01-16", "2015-01-16"]),
+                "realtime_end": pd.to_datetime(["2262-04-11", "2262-04-11"]),
+                "realtime_end_raw": ["9999-12-31", "9999-12-31"],
+            }
+        )
+        selected = select_asof_weekly_values(
+            records,
+            dates,
+            next(config for config in SERIES_CONFIGS if config.output_name == "CPI"),
+            "local_raw_vintage",
+        )
+
+        yoy = build_cpi_yoy_asof_metadata(
+            selected=selected,
+            records=records,
+            config=next(config for config in SERIES_CONFIGS if config.output_name == "CPI"),
+            source="local_raw_vintage",
+        )
+
+        self.assertEqual(yoy.loc[0, "output_name"], "cpi_yoy_asof")
+        self.assertAlmostEqual(yoy.loc[0, "value"], 0.10)
+        self.assertEqual(
+            yoy.loc[0, "transformation_applied"],
+            "monthly_yoy_before_weekly_alignment",
+        )
+        self.assertEqual(
+            pd.Timestamp(yoy.loc[0, "lagged_12m_cpi_observation_date_used"]),
+            pd.Timestamp("2014-01-01"),
+        )
+
     def test_dxy_uses_dtwexbgs_true_vintage_proxy_metadata(self):
         dxy = next(config for config in SERIES_CONFIGS if config.output_name == "DXY")
 
@@ -288,25 +334,27 @@ class BuildRealtimeMacroDatasetTests(unittest.TestCase):
 
 
 def _write_returns(path: Path) -> None:
+    dates = pd.date_range("2015-01-09", periods=60, freq="W-FRI")
     pd.DataFrame(
         {
-            "date": pd.to_datetime(["2015-01-09", "2015-01-16", "2015-01-23"]),
-            "SPY": [0.01, 0.02, -0.01],
-            "TLT": [0.0, 0.01, 0.0],
-            "GLD": [0.0, 0.0, 0.01],
-            "BTC-USD": [0.03, -0.02, 0.01],
-            "CASH": [0.0, 0.0, 0.0],
+            "date": dates,
+            "SPY": ([0.01, 0.02, -0.01] * 20)[: len(dates)],
+            "TLT": ([0.0, 0.01, 0.0] * 20)[: len(dates)],
+            "GLD": ([0.0, 0.0, 0.01] * 20)[: len(dates)],
+            "BTC-USD": ([0.03, -0.02, 0.01] * 20)[: len(dates)],
+            "CASH": [0.0] * len(dates),
         }
     ).to_csv(path, index=False)
 
 
 def _write_vintage_file(path: Path) -> None:
+    observation_dates = pd.date_range("2013-01-01", "2016-03-01", freq="MS")
     pd.DataFrame(
         {
-            "observation_date": ["2015-01-02", "2015-01-09"],
-            "value": [1.0, 2.0],
-            "realtime_start": ["2015-01-02", "2015-01-10"],
-            "realtime_end": ["9999-12-31", "9999-12-31"],
+            "observation_date": observation_dates,
+            "value": [100.0 + i for i in range(len(observation_dates))],
+            "realtime_start": observation_dates,
+            "realtime_end": ["9999-12-31"] * len(observation_dates),
         }
     ).to_csv(path, index=False)
 

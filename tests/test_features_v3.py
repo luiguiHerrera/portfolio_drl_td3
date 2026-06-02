@@ -115,6 +115,23 @@ class FeatureSetV3Tests(unittest.TestCase):
         self.assertGreater(features["macro_cpi_momentum_12p"].iloc[-1], 0.0)
         self.assertEqual(features["macro_inflation_pressure_regime"].iloc[-1], 1.0)
 
+    def test_clean_cpi_yoy_suppresses_legacy_weekly_cpi_momentum(self):
+        target_index = pd.date_range("2024-01-05", periods=14, freq="W-FRI")
+        macro_data = pd.DataFrame(
+            {
+                "CPI": [300.0 + value for value in range(14)],
+                "cpi_yoy_asof": [0.02 + value * 0.001 for value in range(14)],
+            },
+            index=target_index,
+        )
+
+        features = build_macro_features(macro_data, target_index)
+
+        self.assertIn("macro_cpi_yoy_asof", features.columns)
+        self.assertIn("macro_inflation_pressure_regime", features.columns)
+        self.assertNotIn("macro_cpi_momentum_12p", features.columns)
+        self.assertEqual(features["macro_inflation_pressure_regime"].iloc[-1], 1.0)
+
     def test_empty_macro_data_raises_value_error(self):
         macro_data = pd.DataFrame(index=pd.DatetimeIndex([]))
 

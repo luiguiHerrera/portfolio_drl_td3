@@ -64,6 +64,7 @@ class ValidateV3MacroRealtimeTests(unittest.TestCase):
                 "realtime_end_parsed": pd.to_datetime(["2262-04-11"]),
                 "vintage_method": ["local_raw_vintage"],
                 "true_vintage_data_available": [True],
+                "transformation_applied": ["asof_level"],
                 "fallback_used": [False],
             }
         )
@@ -106,6 +107,7 @@ class ValidateV3MacroRealtimeTests(unittest.TestCase):
                 "realtime_end_used": ["9999-12-31", "9999-12-31"],
                 "vintage_method": ["fred_api_asof", "fred_api_asof"],
                 "true_vintage_data_available": [True, True],
+                "transformation_applied": ["asof_level", "asof_level"],
                 "fallback_method": ["", ""],
                 "fallback_used": [False, False],
             }
@@ -145,6 +147,7 @@ def _write_macro(path: Path, dates: pd.DatetimeIndex, offset: float) -> None:
             "VIX": [20.0 + offset + (i % 5) for i in range(n)],
             "DXY": [100.0 + offset + i * 0.01 for i in range(n)],
             "CPI": [300.0 + offset + i * 0.02 for i in range(n)],
+            "cpi_yoy_asof": [0.02 + offset * 0.001 + i * 0.0001 for i in range(n)],
         }
     ).to_csv(path, index=False)
 
@@ -185,6 +188,14 @@ def _write_metadata(path: Path, dates: pd.DatetimeIndex) -> None:
             "This is not ICE DXY/USDX; it is the Fed nominal broad trade-weighted U.S. dollar index.",
         ),
         (
+            "cpi_yoy_asof",
+            "CPIAUCSL",
+            "CPI year-over-year change computed from as-of monthly CPI observations",
+            "FRED/Bureau of Labor Statistics",
+            "inflation_yoy_asof",
+            "Computed before weekly alignment.",
+        ),
+        (
             "CPI",
             "CPIAUCSL",
             "Consumer Price Index for All Urban Consumers: All Items in U.S. City Average",
@@ -204,7 +215,7 @@ def _write_metadata(path: Path, dates: pd.DatetimeIndex) -> None:
                     "title": title,
                     "source": source,
                     "conceptual_role": role,
-                    "frequency": "monthly" if output_name == "CPI" else "daily",
+                    "frequency": "monthly" if output_name in {"CPI", "cpi_yoy_asof"} else "daily",
                     "note": note,
                     "value": 1.0,
                     "observation_date_used": date,
@@ -213,8 +224,21 @@ def _write_metadata(path: Path, dates: pd.DatetimeIndex) -> None:
                     "realtime_end_used": "9999-12-31",
                     "vintage_method": "local_raw_vintage",
                     "true_vintage_data_available": True,
+                    "transformation_applied": (
+                        "monthly_yoy_before_weekly_alignment"
+                        if output_name == "cpi_yoy_asof"
+                        else "asof_level"
+                    ),
                     "fallback_method": "",
                     "fallback_used": False,
+                    "current_cpi_observation_date_used": date if output_name == "cpi_yoy_asof" else pd.NaT,
+                    "current_cpi_as_of_date": date if output_name == "cpi_yoy_asof" else pd.NaT,
+                    "current_cpi_realtime_start_used": date if output_name == "cpi_yoy_asof" else pd.NaT,
+                    "lagged_12m_cpi_observation_date_used": (
+                        date - pd.DateOffset(years=1) if output_name == "cpi_yoy_asof" else pd.NaT
+                    ),
+                    "lagged_12m_cpi_as_of_date": date if output_name == "cpi_yoy_asof" else pd.NaT,
+                    "lagged_12m_cpi_realtime_start_used": date if output_name == "cpi_yoy_asof" else pd.NaT,
                 }
             )
     pd.DataFrame(rows).to_csv(path, index=False)

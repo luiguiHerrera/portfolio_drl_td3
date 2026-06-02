@@ -9,6 +9,7 @@ import pandas as pd
 
 from src.experiments.run_protocol_pure_td3_revalidation import (
     DEFAULT_V3_MACRO_PATH,
+    DEFAULT_V3_REALTIME_CLEAN_NO_DXY_METADATA_PATH,
     DEFAULT_V3_REALTIME_CLEAN_NO_DXY_MACRO_PATH,
     DEFAULT_V3_REALTIME_MACRO_PATH,
     PROTOCOL_CANDIDATES,
@@ -280,6 +281,10 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
             config["features"]["macro_path"],
             DEFAULT_V3_REALTIME_CLEAN_NO_DXY_MACRO_PATH,
         )
+        self.assertEqual(
+            config["features"]["macro_metadata_path"],
+            DEFAULT_V3_REALTIME_CLEAN_NO_DXY_METADATA_PATH,
+        )
         self.assertEqual(config["features"]["macro_date_column"], "date")
         self.assertEqual(config["features"]["garch_mode"], "rolling_fitted")
         self.assertTrue(config["features"]["garch_exclude_cash"])
@@ -359,10 +364,11 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
 
     def test_v7_clean_no_dxy_garch_features_include_macro_and_garch_without_dxy_or_cash(self):
         returns = self._long_returns()
-        macro_path = self._write_macro_csv_for_returns(returns, include_dxy=False)
+        macro_path, metadata_path = self._write_clean_macro_csv_for_returns(returns)
         candidate = {
             **_candidate("V7_real_macro_vintage_clean_no_dxy_garch"),
             "macro_path": macro_path,
+            "macro_metadata_path": metadata_path,
             "garch_min_history": 5,
             "garch_window": 8,
         }
@@ -377,6 +383,8 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
 
         self.assertTrue(any(column.startswith("macro_") for column in features.columns))
         self.assertIn("macro_CPI", features.columns)
+        self.assertIn("macro_cpi_yoy_asof", features.columns)
+        self.assertNotIn("macro_cpi_momentum_12p", features.columns)
         self.assertNotIn("macro_DXY", features.columns)
         self.assertNotIn("macro_dollar_momentum_12p", features.columns)
         self.assertIn("garch_vol_SPY", features.columns)
@@ -386,10 +394,11 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
 
     def test_v7_clean_no_dxy_garch_feature_context_builds_without_missing_values(self):
         returns = self._long_returns()
-        macro_path = self._write_macro_csv_for_returns(returns, include_dxy=False)
+        macro_path, metadata_path = self._write_clean_macro_csv_for_returns(returns)
         candidate = {
             **_candidate("V7_real_macro_vintage_clean_no_dxy_garch"),
             "macro_path": macro_path,
+            "macro_metadata_path": metadata_path,
             "garch_min_history": 5,
             "garch_window": 8,
         }
@@ -406,6 +415,8 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
         self.assertFalse(aligned.empty)
         self.assertFalse(aligned.isna().any().any())
         self.assertNotIn("macro_DXY", features.columns)
+        self.assertIn("macro_cpi_yoy_asof", features.columns)
+        self.assertNotIn("macro_cpi_momentum_12p", features.columns)
         self.assertIn("garch_vol_SPY", features.columns)
 
     def test_v8_raw_feature_generation_includes_ewma_garch_and_comparison(self):
@@ -522,6 +533,10 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
             config["features"]["macro_path"],
             DEFAULT_V3_REALTIME_CLEAN_NO_DXY_MACRO_PATH,
         )
+        self.assertEqual(
+            config["features"]["macro_metadata_path"],
+            DEFAULT_V3_REALTIME_CLEAN_NO_DXY_METADATA_PATH,
+        )
         self.assertEqual(config["features"]["macro_date_column"], "date")
         self.assertEqual(candidate["macro_source"], "realtime_asof_no_dxy_no_fallback")
         self.assertEqual(candidate["dollar_proxy"], "excluded")
@@ -529,10 +544,11 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
 
     def test_v3_vintage_clean_no_dxy_features_build_without_missing_macro_values(self):
         returns = self._long_returns()
-        macro_path = self._write_macro_csv_for_returns(returns, include_dxy=False)
+        macro_path, metadata_path = self._write_clean_macro_csv_for_returns(returns)
         candidate = {
             **_candidate("V3_real_macro_vintage_clean_no_dxy"),
             "macro_path": macro_path,
+            "macro_metadata_path": metadata_path,
         }
 
         features = _build_v3_features(
@@ -547,8 +563,26 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
         self.assertTrue(macro_columns)
         self.assertFalse(aligned.loc[:, macro_columns].isna().any().any())
         self.assertIn("macro_CPI", features.columns)
+        self.assertIn("macro_cpi_yoy_asof", features.columns)
+        self.assertNotIn("macro_cpi_momentum_12p", features.columns)
         self.assertNotIn("macro_DXY", features.columns)
         self.assertNotIn("macro_dollar_momentum_12p", features.columns)
+
+    def test_v3_vintage_clean_no_dxy_requires_metadata_sidecar(self):
+        returns = self._long_returns()
+        macro_path = self._write_macro_csv_for_returns(returns, include_dxy=False)
+        candidate = {
+            **_candidate("V3_real_macro_vintage_clean_no_dxy"),
+            "macro_path": macro_path,
+            "macro_metadata_path": str(Path(macro_path).with_name("missing_metadata.csv")),
+        }
+
+        with self.assertRaises(FileNotFoundError):
+            _build_v3_features(
+                returns=returns,
+                base_config=self._base_config(),
+                candidate=candidate,
+            )
 
     def test_metadata_records_v3_vintage_clean_no_dxy_macro_metadata(self):
         candidate = _candidate("V3_real_macro_vintage_clean_no_dxy")
@@ -579,6 +613,10 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
         self.assertEqual(
             candidate_metadata["macro_source"],
             "realtime_asof_no_dxy_no_fallback",
+        )
+        self.assertEqual(
+            candidate_metadata["macro_metadata_path"],
+            DEFAULT_V3_REALTIME_CLEAN_NO_DXY_METADATA_PATH,
         )
         self.assertEqual(candidate_metadata["dollar_proxy"], "excluded")
         self.assertIn("fallback/discontinuation", candidate_metadata["reason"])
@@ -612,6 +650,10 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
         self.assertEqual(
             candidate_metadata["macro_source"],
             "realtime_asof_no_dxy_no_fallback",
+        )
+        self.assertEqual(
+            candidate_metadata["macro_metadata_path"],
+            DEFAULT_V3_REALTIME_CLEAN_NO_DXY_METADATA_PATH,
         )
         self.assertEqual(candidate_metadata["dollar_proxy"], "excluded")
         self.assertIn("fallback/discontinuation", candidate_metadata["reason"])
@@ -826,6 +868,75 @@ class ProtocolPureTD3RevalidationTests(unittest.TestCase):
         macro = pd.DataFrame(data)
         macro.to_csv(path, index=False)
         return str(path)
+
+    def _write_clean_macro_csv_for_returns(self, returns: pd.DataFrame) -> tuple[str, str]:
+        temp_dir = tempfile.mkdtemp()
+        path = Path(temp_dir) / "macro.csv"
+        metadata_path = Path(temp_dir) / "macro_metadata.csv"
+        index = pd.date_range(
+            returns.index.min() - pd.offsets.Week(weekday=4),
+            returns.index.max(),
+            freq="W-FRI",
+        )
+        macro = pd.DataFrame(
+            {
+                "date": index,
+                "DGS10": [4.0 + i * 0.001 for i in range(len(index))],
+                "DGS2": [3.0 + i * 0.001 for i in range(len(index))],
+                "VIX": [20.0 + (i % 5) for i in range(len(index))],
+                "CPI": [300.0 + i * 0.02 for i in range(len(index))],
+                "cpi_yoy_asof": [0.02 + i * 0.0001 for i in range(len(index))],
+            }
+        )
+        macro.to_csv(path, index=False)
+        rows = []
+        for date in index:
+            for output_name, series_id, source, role in [
+                ("DGS10", "DGS10", "FRED/Federal Reserve H.15", "long_rate"),
+                ("DGS2", "DGS2", "FRED/Federal Reserve H.15", "short_rate"),
+                ("VIX", "VIXCLS", "FRED/CBOE", "equity_volatility_proxy"),
+                ("CPI", "CPIAUCSL", "FRED/Bureau of Labor Statistics", "inflation_proxy"),
+                (
+                    "cpi_yoy_asof",
+                    "CPIAUCSL",
+                    "FRED/Bureau of Labor Statistics",
+                    "inflation_yoy_asof",
+                ),
+            ]:
+                is_cpi_yoy = output_name == "cpi_yoy_asof"
+                rows.append(
+                    {
+                        "date": date,
+                        "series_id": series_id,
+                        "feature_name": output_name,
+                        "output_name": output_name,
+                        "source": source,
+                        "conceptual_role": role,
+                        "frequency": "monthly" if output_name in {"CPI", "cpi_yoy_asof"} else "daily",
+                        "observation_date_used": date,
+                        "as_of_date": date,
+                        "realtime_start_used": date,
+                        "realtime_end_used": "9999-12-31",
+                        "vintage_method": "local_raw_vintage",
+                        "true_vintage_data_available": True,
+                        "fallback_used": False,
+                        "transformation_applied": (
+                            "monthly_yoy_before_weekly_alignment"
+                            if is_cpi_yoy
+                            else "asof_level"
+                        ),
+                        "current_cpi_observation_date_used": date if is_cpi_yoy else pd.NaT,
+                        "current_cpi_as_of_date": date if is_cpi_yoy else pd.NaT,
+                        "current_cpi_realtime_start_used": date if is_cpi_yoy else pd.NaT,
+                        "lagged_12m_cpi_observation_date_used": (
+                            date - pd.DateOffset(years=1) if is_cpi_yoy else pd.NaT
+                        ),
+                        "lagged_12m_cpi_as_of_date": date if is_cpi_yoy else pd.NaT,
+                        "lagged_12m_cpi_realtime_start_used": date if is_cpi_yoy else pd.NaT,
+                    }
+                )
+        pd.DataFrame(rows).to_csv(metadata_path, index=False)
+        return str(path), str(metadata_path)
 
 
 def _candidate(name):

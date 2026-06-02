@@ -10,7 +10,10 @@ from src.data.features_v5 import build_features_v5
 from src.data.features_v6 import build_features_v6
 from src.data.features_v7 import build_features_v7
 from src.data.features_v8 import build_features_v8
-from src.data.macro_loader import load_macro_data_from_csv
+from src.data.macro_loader import (
+    load_clean_realtime_macro_data_from_csv,
+    load_macro_data_from_csv,
+)
 
 
 def build_configured_features(
@@ -33,10 +36,17 @@ def build_configured_features(
     if feature_version == "v3":
         macro_data = None
         if "macro_path" in features_config:
-            macro_data = load_macro_data_from_csv(
-                features_config["macro_path"],
-                date_column=features_config.get("macro_date_column", "date"),
-            )
+            if features_config.get("macro_source") == "realtime_asof_no_dxy_no_fallback":
+                macro_data, _ = load_clean_realtime_macro_data_from_csv(
+                    features_config["macro_path"],
+                    metadata_path=features_config.get("macro_metadata_path"),
+                    date_column=features_config.get("macro_date_column", "date"),
+                )
+            else:
+                macro_data = load_macro_data_from_csv(
+                    features_config["macro_path"],
+                    date_column=features_config.get("macro_date_column", "date"),
+                )
 
         return build_features_v3(
             returns,
@@ -95,10 +105,17 @@ def build_configured_features(
     if feature_version == "v7":
         macro_data = None
         if "macro_path" in features_config:
-            macro_data = load_macro_data_from_csv(
-                features_config["macro_path"],
-                date_column=features_config.get("macro_date_column", "date"),
-            )
+            if features_config.get("macro_source") == "realtime_asof_no_dxy_no_fallback":
+                macro_data, _ = load_clean_realtime_macro_data_from_csv(
+                    features_config["macro_path"],
+                    metadata_path=features_config.get("macro_metadata_path"),
+                    date_column=features_config.get("macro_date_column", "date"),
+                )
+            else:
+                macro_data = load_macro_data_from_csv(
+                    features_config["macro_path"],
+                    date_column=features_config.get("macro_date_column", "date"),
+                )
 
         return build_features_v7(
             returns,

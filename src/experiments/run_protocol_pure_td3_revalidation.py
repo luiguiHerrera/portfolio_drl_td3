@@ -39,6 +39,7 @@ from src.data.garch_features import (
     build_garch_feature_set_by_mode,
 )
 from src.data.macro_loader import load_macro_data_from_csv
+from src.data.macro_loader import load_clean_realtime_macro_data_from_csv
 from src.experiments.run_feature_block_ablation import (
     ACTOR_LR,
     BASE_CONFIG_PATH,
@@ -69,6 +70,10 @@ DEFAULT_V3_MACRO_PATH = "data/processed/macro_weekly_latest.csv"
 DEFAULT_V3_REALTIME_MACRO_PATH = "data/processed/macro_weekly_realtime_latest.csv"
 DEFAULT_V3_REALTIME_CLEAN_NO_DXY_MACRO_PATH = (
     "data/processed/macro_weekly_realtime_clean_latest.csv"
+)
+DEFAULT_V3_REALTIME_CLEAN_NO_DXY_METADATA_PATH = (
+    "outputs/tables/v3_macro_realtime_clean_validation/"
+    "v3_macro_realtime_series_metadata.csv"
 )
 
 PROTOCOL_CANDIDATES = [
@@ -120,6 +125,7 @@ PROTOCOL_CANDIDATES = [
         ),
         "default_enabled": False,
         "macro_path": DEFAULT_V3_REALTIME_CLEAN_NO_DXY_MACRO_PATH,
+        "macro_metadata_path": DEFAULT_V3_REALTIME_CLEAN_NO_DXY_METADATA_PATH,
         "macro_date_column": "date",
         "macro_source": "realtime_asof_no_dxy_no_fallback",
         "dollar_proxy": "excluded",
@@ -178,6 +184,7 @@ PROTOCOL_CANDIDATES = [
         ),
         "default_enabled": False,
         "macro_path": DEFAULT_V3_REALTIME_CLEAN_NO_DXY_MACRO_PATH,
+        "macro_metadata_path": DEFAULT_V3_REALTIME_CLEAN_NO_DXY_METADATA_PATH,
         "macro_date_column": "date",
         "macro_source": "realtime_asof_no_dxy_no_fallback",
         "dollar_proxy": "excluded",
@@ -481,10 +488,17 @@ def _build_v3_features(
     if not Path(macro_path).exists():
         raise FileNotFoundError(f"V3 macro path does not exist: {macro_path}")
 
-    macro_data = load_macro_data_from_csv(
-        macro_path,
-        date_column=features_config.get("macro_date_column", "date"),
-    )
+    if features_config.get("macro_source") == "realtime_asof_no_dxy_no_fallback":
+        macro_data, _ = load_clean_realtime_macro_data_from_csv(
+            macro_path,
+            metadata_path=features_config.get("macro_metadata_path"),
+            date_column=features_config.get("macro_date_column", "date"),
+        )
+    else:
+        macro_data = load_macro_data_from_csv(
+            macro_path,
+            date_column=features_config.get("macro_date_column", "date"),
+        )
     coverage = build_macro_coverage_table(
         returns,
         macro_data,
@@ -590,10 +604,17 @@ def _build_v7_features(
         raise ValueError("V7_real_macro_garch_current requires features.macro_path.")
     if not Path(macro_path).exists():
         raise FileNotFoundError(f"V7 macro path does not exist: {macro_path}")
-    macro_data = load_macro_data_from_csv(
-        macro_path,
-        date_column=features_config.get("macro_date_column", "date"),
-    )
+    if features_config.get("macro_source") == "realtime_asof_no_dxy_no_fallback":
+        macro_data, _ = load_clean_realtime_macro_data_from_csv(
+            macro_path,
+            metadata_path=features_config.get("macro_metadata_path"),
+            date_column=features_config.get("macro_date_column", "date"),
+        )
+    else:
+        macro_data = load_macro_data_from_csv(
+            macro_path,
+            date_column=features_config.get("macro_date_column", "date"),
+        )
     coverage = build_macro_coverage_table(
         returns,
         macro_data,
@@ -891,6 +912,8 @@ def _feature_config(version: str, candidate: dict | None = None) -> dict:
             "long_window": 12,
             "ewma_span": 12,
             "macro_path": candidate.get("macro_path", DEFAULT_V3_MACRO_PATH),
+            "macro_source": candidate.get("macro_source"),
+            "macro_metadata_path": candidate.get("macro_metadata_path"),
             "macro_date_column": candidate.get("macro_date_column", "date"),
         }
     if version == "v4":
@@ -923,6 +946,8 @@ def _feature_config(version: str, candidate: dict | None = None) -> dict:
             "long_window": 12,
             "ewma_span": 12,
             "macro_path": candidate.get("macro_path", DEFAULT_V3_MACRO_PATH),
+            "macro_source": candidate.get("macro_source"),
+            "macro_metadata_path": candidate.get("macro_metadata_path"),
             "macro_date_column": candidate.get("macro_date_column", "date"),
             "garch_include_relative": True,
             "garch_mode": candidate.get("garch_mode", GARCH_MODE_ROLLING_FITTED),
@@ -1035,6 +1060,7 @@ def _build_metadata(
                 key: candidate[key]
                 for key in (
                     "macro_path",
+                    "macro_metadata_path",
                     "macro_date_column",
                     "macro_source",
                     "dollar_proxy",

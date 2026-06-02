@@ -152,6 +152,7 @@ def load_realtime_metadata(path: str) -> pd.DataFrame:
         "vintage_method",
         "true_vintage_data_available",
         "fallback_used",
+        "transformation_applied",
     }
     missing = required.difference(frame.columns)
     if missing:
@@ -159,7 +160,20 @@ def load_realtime_metadata(path: str) -> pd.DataFrame:
             "Real-time macro metadata is missing columns: "
             f"{', '.join(sorted(missing))}"
         )
-    for column in ("date", "observation_date_used", "as_of_date", "realtime_start_used"):
+    for column in (
+        "date",
+        "observation_date_used",
+        "as_of_date",
+        "realtime_start_used",
+        "current_cpi_observation_date_used",
+        "current_cpi_as_of_date",
+        "current_cpi_realtime_start_used",
+        "lagged_12m_cpi_observation_date_used",
+        "lagged_12m_cpi_as_of_date",
+        "lagged_12m_cpi_realtime_start_used",
+    ):
+        if column not in frame.columns:
+            continue
         frame[column] = pd.to_datetime(frame[column], errors="coerce")
     frame["realtime_end_parsed"] = frame["realtime_end_used"].map(_parse_realtime_end)
     return frame
@@ -203,6 +217,48 @@ def build_leakage_checks(metadata: pd.DataFrame) -> pd.DataFrame:
             "n_rows": len(cpi),
         }
     )
+    cpi_yoy = metadata[metadata["output_name"] == "cpi_yoy_asof"]
+    required_cpi_yoy = {
+        "current_cpi_observation_date_used",
+        "current_cpi_as_of_date",
+        "current_cpi_realtime_start_used",
+        "lagged_12m_cpi_observation_date_used",
+        "lagged_12m_cpi_as_of_date",
+        "lagged_12m_cpi_realtime_start_used",
+    }
+    missing_cpi_yoy = required_cpi_yoy.difference(metadata.columns)
+    if cpi_yoy.empty or missing_cpi_yoy:
+        rows.append(
+            {
+                "check_name": "cpi_yoy_asof_traceability_present",
+                "status": "fail",
+                "failure_count": 1,
+                "n_rows": len(cpi_yoy),
+            }
+        )
+    else:
+        cpi_yoy_failures = int(
+            (
+                (cpi_yoy["current_cpi_as_of_date"] > cpi_yoy["date"])
+                | (cpi_yoy["current_cpi_observation_date_used"] > cpi_yoy["date"])
+                | (cpi_yoy["current_cpi_realtime_start_used"] > cpi_yoy["date"])
+                | (cpi_yoy["lagged_12m_cpi_as_of_date"] > cpi_yoy["date"])
+                | (cpi_yoy["lagged_12m_cpi_observation_date_used"] > cpi_yoy["date"])
+                | (cpi_yoy["lagged_12m_cpi_realtime_start_used"] > cpi_yoy["date"])
+                | (
+                    cpi_yoy["transformation_applied"].astype(str)
+                    != "monthly_yoy_before_weekly_alignment"
+                )
+            ).sum()
+        )
+        rows.append(
+            {
+                "check_name": "cpi_yoy_asof_monthly_traceability_respected",
+                "status": "pass" if cpi_yoy_failures == 0 else "fail",
+                "failure_count": cpi_yoy_failures,
+                "n_rows": len(cpi_yoy),
+            }
+        )
     return pd.DataFrame(rows)
 
 

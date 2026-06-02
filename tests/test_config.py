@@ -130,7 +130,7 @@ class ConfigTests(unittest.TestCase):
             "SPY": 2.0,
             "TLT": 2.0,
             "GLD": 2.0,
-            "BTC-USD": 18.0,
+            "BTC-USD": 10.0,
             "CASH": 0.0,
         }
 
@@ -914,6 +914,34 @@ class ConfigTests(unittest.TestCase):
                 with self._temporary_config(config) as config_path:
                     with self.assertRaises(ValueError):
                         load_config(str(config_path))
+
+    def test_load_config_accepts_cash_return_model_bil_proxy(self):
+        config = _valid_config()
+        config["data"]["cash_return_model"] = "bil_proxy"
+        config["data"]["cash_proxy_asset"] = "BIL"
+
+        with self._temporary_config(config) as config_path:
+            loaded_config = load_config(str(config_path))
+
+        self.assertEqual(loaded_config["data"]["cash_return_model"], "bil_proxy")
+        self.assertEqual(loaded_config["data"]["cash_proxy_asset"], "BIL")
+
+    def test_load_config_rejects_invalid_cash_return_model(self):
+        config = _valid_config()
+        config["data"]["cash_return_model"] = "money_market_magic"
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "cash_return_model"):
+                load_config(str(config_path))
+
+    def test_load_config_rejects_blank_cash_proxy_asset(self):
+        config = _valid_config()
+        config["data"]["cash_return_model"] = "bil_proxy"
+        config["data"]["cash_proxy_asset"] = ""
+
+        with self._temporary_config(config) as config_path:
+            with self.assertRaisesRegex(ValueError, "cash_proxy_asset"):
+                load_config(str(config_path))
 
     def _temporary_config(self, config: dict):
         temp_dir = tempfile.TemporaryDirectory()

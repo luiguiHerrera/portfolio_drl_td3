@@ -41,7 +41,7 @@ class TransactionCostSensitivityReportTests(unittest.TestCase):
                 "turnover": [0.0, 0.0],
             }
         )
-        scenario = CostScenario("ibkr_proxy", etf_stock_bps=2.0, btc_bps=18.0, blended_bps=5.0)
+        scenario = CostScenario("ibkr_proxy", etf_stock_bps=2.0, btc_bps=10.0, blended_bps=5.0)
 
         adjusted = apply_cost_scenario(frame, scenario)
 
@@ -68,7 +68,7 @@ class TransactionCostSensitivityReportTests(unittest.TestCase):
                 "weight_CASH": [0.0, 1.0],
             }
         )
-        scenario = CostScenario("ibkr_proxy", etf_stock_bps=2.0, btc_bps=18.0, blended_bps=5.0)
+        scenario = CostScenario("ibkr_proxy", etf_stock_bps=2.0, btc_bps=10.0, blended_bps=5.0)
 
         etf_drag, *_ = estimate_cost_drag(etf_frame, scenario)
         btc_drag, *_ = estimate_cost_drag(btc_frame, scenario)
@@ -83,7 +83,7 @@ class TransactionCostSensitivityReportTests(unittest.TestCase):
                 "turnover": [2.0],
             }
         )
-        scenario = CostScenario("ibkr_proxy", etf_stock_bps=2.0, btc_bps=18.0, blended_bps=5.0)
+        scenario = CostScenario("ibkr_proxy", etf_stock_bps=2.0, btc_bps=10.0, blended_bps=5.0)
 
         drag, method, asset_level_available, blended_used = estimate_cost_drag(frame, scenario)
 

@@ -71,7 +71,7 @@ cost_decimal_i = cost_bps_i / 10,000
 Example:
 
 - 2 bps = `0.0002`
-- 18 bps = `0.0018`
+- 10 bps = `0.0010`
 - CASH = `0.0`
 
 This preserves the same turnover-based structure as the current model, but replaces one scalar cost with an asset-specific vector.
@@ -83,7 +83,7 @@ The proposed defaults should be broker-inspired approximations, not exact execut
 Suggested baseline proxy:
 
 - ETF assets (`SPY`, `TLT`, `GLD`): 2 bps per one-way traded notional
-- `BTC-USD`: 18 bps per one-way traded notional
+- `BTC-USD`: 10 bps per one-way traded notional
 - `CASH`: 0 bps
 
 Suggested stress proxy:
@@ -166,7 +166,7 @@ environment:
     SPY: 2.0
     TLT: 2.0
     GLD: 2.0
-    BTC-USD: 18.0
+    BTC-USD: 10.0
     CASH: 0.0
 ```
 
@@ -323,3 +323,5 @@ If implemented and rerun, the paper must clearly separate:
 - reporting-only transaction cost sensitivity.
 
 No paper claim should imply exact broker execution.
+
+Final protocol note: the corrected asset-specific cost protocol uses broker-proxy transaction costs of 2 bps for ETF-like assets, 10 bps for BTC-USD, and 0 bps for CASH. Earlier draft assumptions with 18 bps for BTC-USD are superseded and are not used in the final corrected experiments.

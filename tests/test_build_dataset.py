@@ -52,6 +52,7 @@ class BuildDatasetTests(unittest.TestCase):
             self.assets,
             self.start_date,
             self.end_date,
+            extra_assets=[],
         )
 
     def test_build_returns_dataset_calls_compute_returns_with_config_values(self):
@@ -63,6 +64,31 @@ class BuildDatasetTests(unittest.TestCase):
             self.prices,
             self.assets,
             self.frequency,
+            cash_return_model="zero",
+            cash_proxy_asset=None,
+        )
+
+    def test_build_returns_dataset_requests_bil_when_cash_model_is_bil_proxy(self):
+        with self._temporary_config(
+            extra_data_lines="""
+  cash_return_model: bil_proxy
+"""
+        ) as config_path:
+            with self._patched_pipeline() as mocks:
+                build_returns_dataset(config_path)
+
+        mocks["download_prices"].assert_called_once_with(
+            self.assets,
+            self.start_date,
+            self.end_date,
+            extra_assets=["BIL"],
+        )
+        mocks["compute_returns"].assert_called_once_with(
+            self.prices,
+            self.assets,
+            self.frequency,
+            cash_return_model="bil_proxy",
+            cash_proxy_asset=None,
         )
 
     def test_build_returns_dataset_preserves_cash_in_final_dataframe(self):
@@ -132,8 +158,8 @@ class BuildDatasetTests(unittest.TestCase):
             with self.assertRaisesRegex(FileNotFoundError, "Returns snapshot not found"):
                 build_returns_dataset(str(config_path))
 
-    def _temporary_config(self):
-        config_text = self._config_text()
+    def _temporary_config(self, extra_data_lines: str = ""):
+        config_text = self._config_text(extra_data_lines=extra_data_lines)
         temp_dir = tempfile.TemporaryDirectory()
         config_path = Path(temp_dir.name) / "config.yaml"
         config_path.write_text(config_text, encoding="utf-8")

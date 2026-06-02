@@ -9,6 +9,7 @@ data:
   - BTC-USD
   - CASH
   frequency: weekly
+  cash_return_model: zero
   start_date: null
   end_date: null
 environment:

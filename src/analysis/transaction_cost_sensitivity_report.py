@@ -66,7 +66,7 @@ class CostScenario:
 
 SCENARIOS = [
     CostScenario("existing", 0.0, 0.0, 0.0, use_existing_net_returns=True),
-    CostScenario("ibkr_proxy", 2.0, 18.0, 5.0),
+    CostScenario("ibkr_proxy", 2.0, 10.0, 5.0),
     CostScenario("stress", 5.0, 30.0, 10.0),
 ]
 

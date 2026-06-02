@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from src.data.feature_factory import build_configured_features
-from src.data.features_v6 import PROBABILITY_COLUMNS, build_features_v6
+from src.data.features_v6 import SCORE_COLUMNS, build_features_v6
 from src.data.prepare_dataset import prepare_train_validation_test_datasets
 
 
@@ -45,12 +45,12 @@ class FeatureSetV6Tests(unittest.TestCase):
             )
         )
 
-    def test_v6_probability_columns_are_within_zero_one(self):
+    def test_v6_score_columns_are_within_zero_one(self):
         features = build_features_v6(self.returns)
-        probability_columns = [column for column in PROBABILITY_COLUMNS if column in features]
+        score_columns = [column for column in SCORE_COLUMNS if column in features]
 
-        self.assertTrue(probability_columns)
-        for column in probability_columns:
+        self.assertTrue(score_columns)
+        for column in score_columns:
             self.assertGreaterEqual(features[column].min(), 0.0)
             self.assertLessEqual(features[column].max(), 1.0)
 
@@ -83,17 +83,48 @@ class FeatureSetV6Tests(unittest.TestCase):
 
         self.assertTrue(expected_columns.issubset(features.columns))
 
-    def test_v6_includes_risk_regime_probability_columns(self):
+    def test_v6_includes_risk_regime_score_columns(self):
         features = build_features_v6(self.returns)
         expected_columns = {
-            "p_market_trend_positive",
-            "p_market_drawdown_stress",
-            "p_market_high_vol",
-            "p_correlation_stress",
-            "p_risk_off",
+            "market_trend_positive_score",
+            "market_drawdown_stress_score",
+            "market_high_vol_score",
+            "correlation_stress_score",
+            "risk_off_score",
         }
 
         self.assertTrue(expected_columns.issubset(features.columns))
+        self.assertFalse(
+            any(
+                "probability" in column.lower()
+                or "prob_" in column.lower()
+                or "_prob" in column.lower()
+                or column.startswith("p_")
+                for column in features.columns
+            )
+        )
+
+    def test_v6_score_values_match_legacy_heuristic_formula(self):
+        features = build_features_v6(self.returns)
+        expected_risk_off = (
+            0.35 * (1.0 - features["market_trend_positive_score"])
+            + 0.25 * features["market_drawdown_stress_score"]
+            + 0.25 * features["market_high_vol_score"]
+            + 0.15 * features["correlation_stress_score"]
+        )
+        expected_cash_permission = (
+            0.65 * features["risk_off_score"]
+            + 0.35 * features["market_drawdown_stress_score"]
+        )
+
+        pd.testing.assert_series_equal(
+            features["risk_off_score"],
+            expected_risk_off.rename("risk_off_score"),
+        )
+        pd.testing.assert_series_equal(
+            features["cash_permission_score"],
+            expected_cash_permission.rename("cash_permission_score"),
+        )
 
     def test_v6_includes_volatility_proxy_columns(self):
         features = build_features_v6(self.returns)
@@ -169,7 +200,7 @@ class FeatureSetV6Tests(unittest.TestCase):
         for split_name in ("train_features", "validation_features", "test_features"):
             split_features = datasets[split_name]
             self.assertFalse(split_features.empty)
-            self.assertIn("p_risk_off", split_features.columns)
+            self.assertIn("risk_off_score", split_features.columns)
             self.assertIn("GLD_vs_SPY_momentum_12w", split_features.columns)
             self.assertFalse(split_features.isna().any().any())
 

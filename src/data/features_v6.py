@@ -1,7 +1,7 @@
 """Feature Set V6 for parsimonious financial state construction.
 
 V6 is an opt-in return-derived state representation. It emphasizes
-momentum/trend, interpretable risk-regime probabilities, volatility proxies,
+momentum/trend, interpretable risk-regime scores, volatility proxies,
 and defensive-asset attractiveness. It uses only information contained in
 returns observed through the feature date; dataset preparation remains
 responsible for the external one-period anti-leakage shift.
@@ -13,12 +13,12 @@ import numpy as np
 import pandas as pd
 
 
-PROBABILITY_COLUMNS = (
-    "p_market_trend_positive",
-    "p_market_drawdown_stress",
-    "p_market_high_vol",
-    "p_correlation_stress",
-    "p_risk_off",
+SCORE_COLUMNS = (
+    "market_trend_positive_score",
+    "market_drawdown_stress_score",
+    "market_high_vol_score",
+    "correlation_stress_score",
+    "risk_off_score",
     "cash_permission_score",
 )
 
@@ -58,7 +58,7 @@ def build_features_v6(
             ewma_long_span=ewma_long_span,
         )
     )
-    regime_features = _build_risk_regime_probability_block(
+    regime_features = _build_risk_regime_score_block(
         returns=returns,
         risky_assets=risky_assets,
         market_asset=market_asset,
@@ -100,8 +100,8 @@ def build_features_v6(
             "provide more return observations or shorter windows."
         )
 
-    probability_columns = [column for column in PROBABILITY_COLUMNS if column in features]
-    features.loc[:, probability_columns] = features.loc[:, probability_columns].clip(
+    score_columns = [column for column in SCORE_COLUMNS if column in features]
+    features.loc[:, score_columns] = features.loc[:, score_columns].clip(
         lower=0.0,
         upper=1.0,
     )
@@ -182,7 +182,7 @@ def _build_momentum_trend_block(
     return features, momentum_12w, risk_adjusted_momentum_12w
 
 
-def _build_risk_regime_probability_block(
+def _build_risk_regime_score_block(
     returns: pd.DataFrame,
     risky_assets: list[str],
     market_asset: str,
@@ -210,15 +210,15 @@ def _build_risk_regime_probability_block(
     volatility_zscore = _rolling_zscore(market_ewma_vol, zscore_window)
     correlation_zscore = _rolling_zscore(avg_pairwise_corr, zscore_window)
 
-    features["p_market_trend_positive"] = _sigmoid(trend_distance)
-    features["p_market_drawdown_stress"] = _sigmoid((-market_drawdown - 0.10) / 0.05)
-    features["p_market_high_vol"] = _sigmoid(volatility_zscore)
-    features["p_correlation_stress"] = _sigmoid(correlation_zscore)
-    features["p_risk_off"] = (
-        0.35 * (1.0 - features["p_market_trend_positive"])
-        + 0.25 * features["p_market_drawdown_stress"]
-        + 0.25 * features["p_market_high_vol"]
-        + 0.15 * features["p_correlation_stress"]
+    features["market_trend_positive_score"] = _sigmoid(trend_distance)
+    features["market_drawdown_stress_score"] = _sigmoid((-market_drawdown - 0.10) / 0.05)
+    features["market_high_vol_score"] = _sigmoid(volatility_zscore)
+    features["correlation_stress_score"] = _sigmoid(correlation_zscore)
+    features["risk_off_score"] = (
+        0.35 * (1.0 - features["market_trend_positive_score"])
+        + 0.25 * features["market_drawdown_stress_score"]
+        + 0.25 * features["market_high_vol_score"]
+        + 0.15 * features["correlation_stress_score"]
     )
 
     return features.clip(lower=0.0, upper=1.0)
@@ -276,12 +276,12 @@ def _build_defensive_attractiveness_block(
         features[f"defensive_asset_score_{defensive_asset}"] = (
             0.55 * _sigmoid(relative_risk_adjusted)
             + 0.25 * _sigmoid(relative_momentum)
-            + 0.20 * regime_features["p_risk_off"]
+            + 0.20 * regime_features["risk_off_score"]
         )
 
     features["cash_permission_score"] = (
-        0.65 * regime_features["p_risk_off"]
-        + 0.35 * regime_features["p_market_drawdown_stress"]
+        0.65 * regime_features["risk_off_score"]
+        + 0.35 * regime_features["market_drawdown_stress_score"]
     )
 
     return features

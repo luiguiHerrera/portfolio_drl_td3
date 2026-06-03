@@ -8,6 +8,7 @@ files without invoking TD3 training.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import signal
@@ -16,24 +17,16 @@ import time
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-from src.analysis.robust_score import (
-    POOLED_DSR_WARNING,
-    _rename_report_columns,
-    compute_composite_robust_score,
-)
-
 
 DEFAULT_OUTPUT_DIR = "outputs/tables/final_corrected_limited_td3_60ep_10seeds"
 EXPECTED_HISTORIES = 800
 EXPECTED_EPISODES = 60
 CAP_RE = re.compile(r"_cap_(?P<cap>uncapped|[0-9]+p[0-9]+)_seed_")
-ORIGINAL_PANDAS_READ_CSV = pd.read_csv
+pd = None
+ORIGINAL_PANDAS_READ_CSV = None
 DELTA_METRICS = [
     "annualized_return",
     "sharpe",
@@ -46,6 +39,16 @@ DELTA_METRICS = [
 ]
 
 
+def _ensure_pandas():
+    global pd, ORIGINAL_PANDAS_READ_CSV
+    if pd is None:
+        import pandas as _pd
+
+        pd = _pd
+        ORIGINAL_PANDAS_READ_CSV = _pd.read_csv
+    return pd
+
+
 def read_csv_with_retry(
     path: str | Path,
     retries: int = 3,
@@ -54,12 +57,13 @@ def read_csv_with_retry(
     **kwargs: Any,
 ) -> pd.DataFrame:
     """Read a CSV with retries for transient Desktop/iCloud I/O timeouts."""
+    pandas = _ensure_pandas()
     csv_path = Path(path)
     last_error: Exception | None = None
     for attempt in range(retries + 1):
         try:
             return _read_csv_with_timeout(csv_path, timeout_seconds, **kwargs)
-        except (TimeoutError, OSError, pd.errors.ParserError) as exc:
+        except (TimeoutError, OSError, pandas.errors.ParserError) as exc:
             last_error = exc
             if attempt >= retries:
                 break
@@ -74,6 +78,7 @@ def _read_csv_with_timeout(
     timeout_seconds: int,
     **kwargs: Any,
 ) -> pd.DataFrame:
+    _ensure_pandas()
     if timeout_seconds <= 0:
         return ORIGINAL_PANDAS_READ_CSV(path, **kwargs)
 
@@ -94,14 +99,17 @@ def _read_csv_with_timeout(
 def recover_reports(
     output_dir: str = DEFAULT_OUTPUT_DIR,
     expected_histories: int = EXPECTED_HISTORIES,
+    expected_candidates: list[str] | None = None,
     episodes: int = EXPECTED_EPISODES,
     retries: int = 3,
     sleep_seconds: float = 1.0,
 ) -> dict[str, Any]:
+    _ensure_pandas()
     root = Path(output_dir)
     per_candidate_dir = root / "per_candidate"
     if not per_candidate_dir.exists():
         raise FileNotFoundError(f"Missing per_candidate directory: {per_candidate_dir}")
+    print(f"Recovering experiment directory: {root}", flush=True)
 
     global_expected = [
         "cap_sensitivity_all_results.csv",
@@ -122,6 +130,16 @@ def recover_reports(
     ]
     if not candidates:
         raise ValueError(f"No candidate directories found under {per_candidate_dir}")
+    if expected_candidates is not None:
+        found_candidates = {candidate_dir.name for candidate_dir in candidates}
+        expected_candidate_set = set(expected_candidates)
+        missing = sorted(expected_candidate_set - found_candidates)
+        unexpected = sorted(found_candidates - expected_candidate_set)
+        if missing or unexpected:
+            raise ValueError(
+                "Candidate universe mismatch. "
+                f"missing={missing}; unexpected={unexpected}"
+            )
 
     history_paths = _history_paths_for_candidates(candidates)
     print(f"Found {len(history_paths)} test histories.", flush=True)
@@ -268,6 +286,8 @@ def recover_reports(
             "td3_training_called": False,
             "expected_histories": expected_histories,
             "found_histories": len(history_paths),
+            "expected_candidates": expected_candidates,
+            "found_candidates": [path.name for path in candidates],
             "bad_reads": len(read_failures),
             "missing_global_files_before": missing_global_before,
             "score_scope": "recovered_final_corrected_limited_universe",
@@ -320,6 +340,12 @@ def build_fast_recovered_robust_score_report(
     sleep_seconds: float,
 ) -> dict[str, Any]:
     """Build robust score files from aggregate metrics without history DSR reads."""
+    from src.analysis.robust_score import (
+        POOLED_DSR_WARNING,
+        _rename_report_columns,
+        compute_composite_robust_score,
+    )
+
     metrics_path = comparison_dir / "overall_aggregate_by_strategy_split.csv"
     metrics = read_csv_with_retry(
         metrics_path,
@@ -865,6 +891,337 @@ def _numeric(value: Any) -> float:
     return float(numeric)
 
 
+def recover_reports_no_pandas(
+    experiment_dir: str,
+    expected_histories: int,
+    expected_candidates: list[str] | None,
+    episodes: int,
+) -> dict[str, Any]:
+    """Recover global reports using only csv/json and existing ranking files."""
+    root = Path(experiment_dir)
+    per_candidate_dir = root / "per_candidate"
+    if not per_candidate_dir.exists():
+        raise FileNotFoundError(f"Missing per_candidate directory: {per_candidate_dir}")
+    print(f"Recovering experiment directory: {root}", flush=True)
+
+    candidate_dirs = [
+        path for path in sorted(per_candidate_dir.iterdir()) if path.is_dir()
+    ]
+    if expected_candidates is not None:
+        found = {path.name for path in candidate_dirs}
+        expected = set(expected_candidates)
+        missing = sorted(expected - found)
+        unexpected = sorted(found - expected)
+        if missing or unexpected:
+            raise ValueError(
+                f"Candidate universe mismatch. missing={missing}; unexpected={unexpected}"
+            )
+
+    history_paths = _history_paths_for_candidates(candidate_dirs)
+    print(f"Found {len(history_paths)} test histories.", flush=True)
+    if len(history_paths) != expected_histories:
+        raise ValueError(
+            f"Expected {expected_histories} test histories, found {len(history_paths)}."
+        )
+
+    all_rows: list[dict[str, str]] = []
+    for candidate_dir in candidate_dirs:
+        ranking_path = candidate_dir / "max_weight_cap_rankings.csv"
+        if not ranking_path.exists():
+            raise FileNotFoundError(f"Missing candidate rankings: {ranking_path}")
+        print(f"Loading rankings: {ranking_path}", flush=True)
+        rows = _read_csv_dicts(ranking_path)
+        for row in rows:
+            row["candidate_output_dir"] = str(candidate_dir)
+            row["cap_label"] = _format_cap_label_string(row.get("max_weight_cap"))
+            row["decision_label"] = _label_row_from_strings(row)
+        all_rows.extend(rows)
+
+    all_rows = sorted(
+        all_rows,
+        key=lambda row: (
+            row.get("base_candidate", ""),
+            _cap_sort_key(row.get("max_weight_cap")),
+        ),
+    )
+    pairwise_rows = _pairwise_deltas_no_pandas(all_rows)
+    best_rows = _best_caps_no_pandas(all_rows)
+    summary_rows = _summary_no_pandas(all_rows, best_rows)
+    markdown = _markdown_no_pandas(summary_rows, best_rows)
+    metadata = {
+        "runner": "scripts/recover_final_corrected_limited_reports.py",
+        "mode": "no_pandas_global_recovery",
+        "reporting_only": True,
+        "td3_training_called": False,
+        "experiment_dir": str(root),
+        "expected_histories": expected_histories,
+        "found_histories": len(history_paths),
+        "expected_candidates": expected_candidates,
+        "found_candidates": [path.name for path in candidate_dirs],
+        "bad_reads": 0,
+        "episodes": episodes,
+        "score_scope": "cash_bil_proxy_recovered_global_universe",
+        "note": (
+            "Global cap-sensitivity tables were rebuilt from existing "
+            "per-candidate max_weight_cap_rankings.csv files."
+        ),
+    }
+
+    paths = {
+        "all_results": root / "cap_sensitivity_all_results.csv",
+        "pairwise_deltas": root / "cap_sensitivity_pairwise_deltas.csv",
+        "best_caps": root / "cap_sensitivity_best_caps.csv",
+        "summary": root / "cap_sensitivity_summary.csv",
+        "markdown_summary": root / "cap_sensitivity_summary.md",
+        "metadata": root / "cap_sensitivity_metadata.json",
+    }
+    _write_csv_dicts(paths["all_results"], all_rows)
+    _write_csv_dicts(paths["pairwise_deltas"], pairwise_rows)
+    _write_csv_dicts(paths["best_caps"], best_rows)
+    _write_csv_dicts(paths["summary"], summary_rows)
+    paths["markdown_summary"].write_text(markdown, encoding="utf-8")
+    paths["metadata"].write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    top_mandate = max(
+        all_rows,
+        key=lambda row: (
+            _num_string(row.get("mandate_aware_score")),
+            _num_string(row.get("robust_score")),
+        ),
+    )
+    top_robust = max(
+        all_rows,
+        key=lambda row: (
+            _num_string(row.get("robust_score")),
+            _num_string(row.get("mandate_aware_score")),
+        ),
+    )
+    return {
+        "histories_found": len(history_paths),
+        "bad_reads": 0,
+        "regenerated_files": [str(path) for path in paths.values()],
+        "top_mandate": top_mandate,
+        "top_robust": top_robust,
+    }
+
+
+def _read_csv_dicts(path: Path) -> list[dict[str, str]]:
+    with path.open("r", newline="", encoding="utf-8") as handle:
+        return [dict(row) for row in csv.DictReader(handle)]
+
+
+def _write_csv_dicts(path: Path, rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
+    columns: list[str] = []
+    for row in rows:
+        for key in row:
+            if key not in columns:
+                columns.append(key)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def _pairwise_deltas_no_pandas(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    result = []
+    for base_candidate in sorted({row.get("base_candidate", "") for row in rows}):
+        group = [row for row in rows if row.get("base_candidate") == base_candidate]
+        baseline = next(
+            (row for row in group if _format_cap_label_string(row.get("max_weight_cap")) == "uncapped"),
+            None,
+        )
+        if baseline is None:
+            continue
+        for row in group:
+            out = {
+                "base_candidate": base_candidate,
+                "candidate_name": row.get("candidate_name", ""),
+                "max_weight_cap": row.get("max_weight_cap", ""),
+                "cap_label": row.get("cap_label", ""),
+                "decision_label": row.get("decision_label", ""),
+            }
+            for metric in DELTA_METRICS:
+                uncapped = _num_string(baseline.get(metric))
+                capped = _num_string(row.get(metric))
+                out[f"uncapped_{metric}"] = baseline.get(metric, "")
+                out[f"capped_{metric}"] = row.get(metric, "")
+                out[f"delta_{metric}"] = capped - uncapped
+            result.append(out)
+    return result
+
+
+def _best_caps_no_pandas(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    result = []
+    for base_candidate in sorted({row.get("base_candidate", "") for row in rows}):
+        group = [row for row in rows if row.get("base_candidate") == base_candidate]
+        best_mandate = _best_row_no_pandas(group, "mandate_aware_score")
+        best_robust = _best_row_no_pandas(group, "robust_score")
+        best_drawdown = _best_row_no_pandas(group, "max_drawdown")
+        best_turnover = _best_row_no_pandas(group, "average_turnover", reverse=False)
+        best_effective = _best_row_no_pandas(
+            group,
+            "average_effective_number_of_assets",
+        )
+        result.append(
+            {
+                "base_candidate": base_candidate,
+                "best_by_mandate_aware_score": best_mandate.get("cap_label", ""),
+                "best_mandate_aware_score": best_mandate.get("mandate_aware_score", ""),
+                "best_by_robust_score": best_robust.get("cap_label", ""),
+                "best_robust_score": best_robust.get("robust_score", ""),
+                "best_by_max_drawdown": best_drawdown.get("cap_label", ""),
+                "best_max_drawdown": best_drawdown.get("max_drawdown", ""),
+                "best_by_turnover": best_turnover.get("cap_label", ""),
+                "best_turnover": best_turnover.get("average_turnover", ""),
+                "best_by_effective_assets": best_effective.get("cap_label", ""),
+                "best_effective_assets": best_effective.get(
+                    "average_effective_number_of_assets",
+                    "",
+                ),
+                "overall_interpretation": _interpret_group_no_pandas(group),
+            }
+        )
+    return result
+
+
+def _summary_no_pandas(
+    rows: list[dict[str, str]],
+    best_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    best_lookup = {row["base_candidate"]: row for row in best_rows}
+    result = []
+    for base_candidate in sorted({row.get("base_candidate", "") for row in rows}):
+        group = [row for row in rows if row.get("base_candidate") == base_candidate]
+        baseline = next(
+            (row for row in group if row.get("cap_label") == "uncapped"),
+            None,
+        )
+        if baseline is None:
+            continue
+        best = best_lookup[base_candidate]
+        capped = [row for row in group if row.get("cap_label") != "uncapped"]
+        n_improved = sum(
+            _num_string(row.get("mandate_aware_score"))
+            > _num_string(baseline.get("mandate_aware_score"))
+            for row in capped
+        )
+        result.append(
+            {
+                "base_candidate": base_candidate,
+                "uncapped_mandate_aware_score": baseline.get("mandate_aware_score", ""),
+                "best_cap_by_mandate_aware_score": best[
+                    "best_by_mandate_aware_score"
+                ],
+                "best_cap_mandate_aware_score": best["best_mandate_aware_score"],
+                "best_cap_by_robust_score": best["best_by_robust_score"],
+                "best_cap_robust_score": best["best_robust_score"],
+                "n_caps_improve_mandate": n_improved,
+                "interpretation": _interpret_group_no_pandas(group),
+            }
+        )
+    return result
+
+
+def _markdown_no_pandas(
+    summary_rows: list[dict[str, Any]],
+    best_rows: list[dict[str, Any]],
+) -> str:
+    return "\n".join(
+        [
+            "# Recovered CASH-BIL Proxy Cap Sensitivity",
+            "",
+            "This report was rebuilt from completed per-candidate histories and rankings without TD3 retraining.",
+            "",
+            "## Summary",
+            "",
+            _markdown_table_no_pandas(summary_rows),
+            "",
+            "## Best Caps",
+            "",
+            _markdown_table_no_pandas(best_rows),
+            "",
+        ]
+    )
+
+
+def _markdown_table_no_pandas(rows: list[dict[str, Any]]) -> str:
+    if not rows:
+        return "(no rows)"
+    columns = list(rows[0].keys())
+    header = "| " + " | ".join(columns) + " |"
+    separator = "| " + " | ".join(["---"] * len(columns)) + " |"
+    body = [
+        "| " + " | ".join(str(row.get(column, "")) for column in columns) + " |"
+        for row in rows
+    ]
+    return "\n".join([header, separator, *body])
+
+
+def _best_row_no_pandas(
+    rows: list[dict[str, str]],
+    metric: str,
+    reverse: bool = True,
+) -> dict[str, str]:
+    return sorted(
+        rows,
+        key=lambda row: _num_string(row.get(metric)),
+        reverse=reverse,
+    )[0]
+
+
+def _interpret_group_no_pandas(rows: list[dict[str, str]]) -> str:
+    baseline = next((row for row in rows if row.get("cap_label") == "uncapped"), None)
+    if baseline is None:
+        return "No uncapped baseline available."
+    baseline_score = _num_string(baseline.get("mandate_aware_score"))
+    improves = any(
+        row.get("cap_label") != "uncapped"
+        and _num_string(row.get("mandate_aware_score")) > baseline_score
+        for row in rows
+    )
+    if improves:
+        return "At least one cap improves mandate-aware score versus uncapped."
+    return "Caps do not improve mandate-aware score versus uncapped."
+
+
+def _format_cap_label_string(value: Any) -> str:
+    text = "" if value is None else str(value).strip()
+    if text == "" or text.lower() == "nan":
+        return "uncapped"
+    return f"{float(text):.2f}"
+
+
+def _cap_sort_key(value: Any) -> tuple[int, float]:
+    label = _format_cap_label_string(value)
+    if label == "uncapped":
+        return (0, -1.0)
+    return (1, float(label))
+
+
+def _num_string(value: Any) -> float:
+    try:
+        text = "" if value is None else str(value).strip()
+        if text == "" or text.lower() in {"nan", "none"}:
+            return float("nan")
+        return float(text)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
+def _label_row_from_strings(row: dict[str, str]) -> str:
+    if row.get("cap_label") == "uncapped":
+        return "baseline"
+    existing = row.get("decision_label")
+    return existing if existing else "recovered"
+
+
 def _history_paths_for_candidates(candidate_dirs: list[Path]) -> list[Path]:
     paths: list[Path] = []
     for candidate_dir in candidate_dirs:
@@ -956,15 +1313,69 @@ def main() -> None:
         description="Recover final corrected limited TD3 reports from histories."
     )
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--experiment-dir",
+        default=None,
+        help="Alias for --output-dir; points at the experiment directory to recover.",
+    )
+    parser.add_argument(
+        "--expected-candidates",
+        default=None,
+        help="Comma-separated expected base candidate names.",
+    )
     parser.add_argument("--expected-histories", type=int, default=EXPECTED_HISTORIES)
     parser.add_argument("--episodes", type=int, default=EXPECTED_EPISODES)
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--sleep-seconds", type=float, default=1.0)
+    parser.add_argument(
+        "--no-pandas",
+        action="store_true",
+        help=(
+            "Use lightweight csv-module recovery from existing per-candidate "
+            "ranking files. Fails if per-candidate rankings are missing."
+        ),
+    )
     args = parser.parse_args()
+    experiment_dir = args.experiment_dir or args.output_dir
+    print(f"Starting recovery for: {experiment_dir}", flush=True)
+    expected_candidates = (
+        [candidate.strip() for candidate in args.expected_candidates.split(",") if candidate.strip()]
+        if args.expected_candidates
+        else None
+    )
+    if args.no_pandas:
+        report = recover_reports_no_pandas(
+            experiment_dir=experiment_dir,
+            expected_histories=args.expected_histories,
+            expected_candidates=expected_candidates,
+            episodes=args.episodes,
+        )
+        top_mandate = report["top_mandate"]
+        top_robust = report["top_robust"]
+        print("Recovery complete.")
+        print("histories_found:", report["histories_found"])
+        print("bad_reads:", report["bad_reads"])
+        print("regenerated_files:")
+        for path in report["regenerated_files"]:
+            print(path)
+        print(
+            "top_mandate:",
+            top_mandate["candidate_name"],
+            top_mandate["cap_label"],
+            top_mandate["mandate_aware_score"],
+        )
+        print(
+            "top_robust:",
+            top_robust["candidate_name"],
+            top_robust["cap_label"],
+            top_robust["robust_score"],
+        )
+        return
 
     report = recover_reports(
-        output_dir=args.output_dir,
+        output_dir=experiment_dir,
         expected_histories=args.expected_histories,
+        expected_candidates=expected_candidates,
         episodes=args.episodes,
         retries=args.retries,
         sleep_seconds=args.sleep_seconds,

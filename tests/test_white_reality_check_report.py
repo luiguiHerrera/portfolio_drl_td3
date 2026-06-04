@@ -249,6 +249,71 @@ class WhiteRealityCheckReportTests(unittest.TestCase):
             self.assertFalse(result["summary"].empty)
             self.assertEqual(result["history_records"].loc[0, "strategy_name"], "V5_no_volatility_block_cap_0p50")
 
+    def test_final_corrected_combined_ranking_resolves_for_wrc(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            final_dir = root / "corrected"
+            td3_dir = root / "td3_histories"
+            benchmark_dir = root / "benchmarks"
+            final_dir.mkdir()
+            (benchmark_dir / "histories").mkdir(parents=True)
+            history_dir = (
+                td3_dir
+                / "per_candidate"
+                / "V7_real_macro_vintage_clean_no_dxy_garch"
+                / "F1_V7_real_macro_vintage_clean_no_dxy_garch_cap_0p80_seed_7"
+            )
+            history_dir.mkdir(parents=True)
+            self._write_asset_specific_history(
+                history_dir / "test_policy_history.csv",
+                value=0.02,
+            )
+            self._write_asset_specific_history(
+                benchmark_dir / "histories" / "trend_spy_cash_12p_history.csv",
+                value=0.005,
+            )
+            pd.DataFrame(
+                [
+                    {
+                        "strategy_name": "V7_real_macro_vintage_clean_no_dxy_garch_cap_0p80",
+                        "strategy_type": "TD3",
+                        "base_candidate": "V7_real_macro_vintage_clean_no_dxy_garch",
+                        "cap_label": "0.80",
+                    },
+                    {
+                        "strategy_name": "trend_spy_cash_12p",
+                        "strategy_type": "benchmark",
+                    },
+                ]
+            ).to_csv(final_dir / "final_corrected_bil_cash_combined_ranking.csv", index=False)
+            (final_dir / "final_corrected_bil_cash_benchmark_comparison_metadata.json").write_text(
+                json.dumps(
+                    {
+                        "td3_dir": str(td3_dir),
+                        "benchmark_comparison_dir": str(benchmark_dir),
+                        "transaction_cost_mode": "asset_specific",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = build_white_reality_check_report(
+                final_report_dir=str(final_dir),
+                output_dir=str(root / "out"),
+                benchmark_dir=str(benchmark_dir),
+                td3_history_dir=str(td3_dir),
+                benchmarks=["trend_spy_cash_12p"],
+                n_bootstrap=20,
+                block_length=4,
+                seed=7,
+            )
+
+        records = result["history_records"].set_index("strategy_name")
+        self.assertTrue(
+            bool(records.loc["V7_real_macro_vintage_clean_no_dxy_garch_cap_0p80", "history_found"])
+        )
+        self.assertFalse(result["summary"].empty)
+
     def test_missing_candidate_histories_warn_without_crashing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

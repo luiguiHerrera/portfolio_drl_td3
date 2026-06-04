@@ -53,6 +53,7 @@ def build_white_reality_check_report(
     v7_clean_no_dxy_garch_cap_sensitivity_dir: str | None = None,
     v8_cap_sensitivity_dir: str | None = None,
     benchmark_dir: str | None = None,
+    td3_history_dir: str | None = None,
     asset_specific_only: bool | None = None,
 ) -> dict[str, Any]:
     """Build White Reality Check CSVs and markdown from existing histories."""
@@ -75,6 +76,8 @@ def build_white_reality_check_report(
     )
     if benchmark_dir is not None:
         metadata["benchmark_comparison_dir"] = str(Path(benchmark_dir))
+    if td3_history_dir is not None:
+        metadata["td3_history_dir"] = str(Path(td3_history_dir))
     require_asset_specific = (
         report_mode == "asset_specific" if asset_specific_only is None else asset_specific_only
     )
@@ -479,6 +482,7 @@ def main() -> None:
     parser.add_argument("--v7-clean-no-dxy-garch-cap-sensitivity-dir", default=None)
     parser.add_argument("--v8-cap-sensitivity-dir", default=None)
     parser.add_argument("--benchmark-dir", default=None)
+    parser.add_argument("--td3-history-dir", default=None)
     parser.add_argument("--asset-specific-only", action="store_true")
     args = parser.parse_args()
 
@@ -499,6 +503,7 @@ def main() -> None:
         ),
         v8_cap_sensitivity_dir=args.v8_cap_sensitivity_dir,
         benchmark_dir=args.benchmark_dir,
+        td3_history_dir=args.td3_history_dir,
         asset_specific_only=args.asset_specific_only or None,
     )
 

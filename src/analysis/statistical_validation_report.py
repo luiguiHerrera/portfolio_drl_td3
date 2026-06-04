@@ -22,6 +22,8 @@ METADATA_FILE = "final_constrained_td3_metadata.json"
 ASSET_SPECIFIC_SELECTED_FILE = "asset_specific_cost_selected_candidates.csv"
 ASSET_SPECIFIC_METADATA_FILE = "asset_specific_cost_metadata.json"
 ASSET_SPECIFIC_COMBINED_RANKING_FILE = "asset_specific_cost_combined_ranking.csv"
+FINAL_CORRECTED_COMBINED_PATTERN = "final_corrected_*_combined_ranking.csv"
+FINAL_CORRECTED_METADATA_PATTERN = "final_corrected_*_benchmark_comparison_metadata.json"
 BENCHMARK_HISTORY_DIR = "benchmarks/histories"
 
 DEFAULT_FINAL_REPORT_DIR = "outputs/tables/final_constrained_td3_report_with_v3_v4_60ep_10seeds"
@@ -60,6 +62,7 @@ def build_statistical_validation_report(
     v7_clean_no_dxy_garch_cap_sensitivity_dir: str | None = None,
     v8_cap_sensitivity_dir: str | None = None,
     benchmark_dir: str | None = None,
+    td3_history_dir: str | None = None,
     asset_specific_only: bool | None = None,
 ) -> dict[str, Any]:
     """Build statistical validation CSVs and markdown from existing histories."""
@@ -82,6 +85,8 @@ def build_statistical_validation_report(
     )
     if benchmark_dir is not None:
         metadata["benchmark_comparison_dir"] = str(Path(benchmark_dir))
+    if td3_history_dir is not None:
+        metadata["td3_history_dir"] = str(Path(td3_history_dir))
     require_asset_specific = (
         report_mode == "asset_specific" if asset_specific_only is None else asset_specific_only
     )
@@ -200,6 +205,25 @@ def locate_strategy_histories(
 
 def load_selected_candidates_and_metadata(final_dir: Path) -> tuple[pd.DataFrame, dict[str, Any], str]:
     """Load either legacy final report metadata or asset-specific official metadata."""
+    corrected_files = sorted(final_dir.glob(FINAL_CORRECTED_COMBINED_PATTERN))
+    if corrected_files:
+        ranking = pd.read_csv(corrected_files[0])
+        selected = ranking.loc[
+            ranking["strategy_type"].astype(str).str.upper() == "TD3"
+        ].copy()
+        if selected.empty:
+            raise ValueError(f"No selected TD3 rows found in {corrected_files[0]}")
+        selected["selected_cap"] = selected["cap_label"]
+        selected["source"] = "final_corrected_td3_benchmark_comparison"
+        metadata_files = sorted(final_dir.glob(FINAL_CORRECTED_METADATA_PATTERN))
+        metadata = (
+            json.loads(metadata_files[0].read_text(encoding="utf-8"))
+            if metadata_files
+            else {}
+        )
+        metadata["runner"] = "src.analysis.final_corrected_td3_benchmark_comparison_report"
+        return selected, metadata, "asset_specific"
+
     asset_selected = final_dir / ASSET_SPECIFIC_SELECTED_FILE
     asset_metadata = final_dir / ASSET_SPECIFIC_METADATA_FILE
     if asset_selected.exists() and asset_metadata.exists():
@@ -611,6 +635,9 @@ def _sample_blocks(values: np.ndarray, block_size: int, rng: np.random.Generator
 
 
 def _source_dir_for_row(row: pd.Series, metadata: dict[str, Any]) -> Path | None:
+    if metadata.get("runner") == "src.analysis.final_corrected_td3_benchmark_comparison_report":
+        path = metadata.get("td3_history_dir") or metadata.get("td3_dir")
+        return Path(path) if path else None
     if metadata.get("runner") == "src.analysis.asset_specific_cost_final_report":
         source_dirs = metadata.get("source_dirs", {})
         base_candidate = str(row.get("base_candidate", ""))
@@ -683,6 +710,15 @@ def _benchmark_history_dir(final_report_dir: Path, metadata: dict[str, Any]) -> 
 
 
 def _benchmark_names_for_report(final_report_dir: Path) -> list[str]:
+    corrected_files = sorted(final_report_dir.glob(FINAL_CORRECTED_COMBINED_PATTERN))
+    if corrected_files:
+        ranking = pd.read_csv(corrected_files[0])
+        benchmarks = ranking[ranking["strategy_type"].astype(str) == "benchmark"]
+        names = list(benchmarks["strategy_name"].dropna().astype(str).unique())
+        key_names = ["trend_spy_cash_12p", "BuyHold_GLD", "Equal_Weight"]
+        ordered = [name for name in key_names if name in names]
+        ordered.extend([name for name in names if name not in ordered])
+        return ordered
     combined_path = final_report_dir.parent / "asset_specific_cost_benchmark_comparison" / ASSET_SPECIFIC_COMBINED_RANKING_FILE
     if combined_path.exists():
         ranking = pd.read_csv(combined_path)
@@ -816,6 +852,7 @@ def main() -> None:
     parser.add_argument("--v7-clean-no-dxy-garch-cap-sensitivity-dir", default=None)
     parser.add_argument("--v8-cap-sensitivity-dir", default=None)
     parser.add_argument("--benchmark-dir", default=None)
+    parser.add_argument("--td3-history-dir", default=None)
     parser.add_argument("--asset-specific-only", action="store_true")
     args = parser.parse_args()
 
@@ -834,6 +871,7 @@ def main() -> None:
         ),
         v8_cap_sensitivity_dir=args.v8_cap_sensitivity_dir,
         benchmark_dir=args.benchmark_dir,
+        td3_history_dir=args.td3_history_dir,
         asset_specific_only=args.asset_specific_only or None,
     )
     print("Histories found:")

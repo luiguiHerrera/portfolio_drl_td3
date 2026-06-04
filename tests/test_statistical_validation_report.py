@@ -405,6 +405,78 @@ class StatisticalValidationReportTests(unittest.TestCase):
                     block_size=2,
                 )
 
+    def test_final_corrected_combined_ranking_resolves_selected_td3_histories(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            final_dir = root / "corrected"
+            td3_dir = root / "td3_histories"
+            benchmark_dir = root / "benchmarks"
+            output_dir = root / "out"
+            final_dir.mkdir()
+            (benchmark_dir / "histories").mkdir(parents=True)
+            history_dir = (
+                td3_dir
+                / "per_candidate"
+                / "V5_no_volatility_block"
+                / "F1_V5_no_volatility_block_cap_0p50_seed_7"
+            )
+            history_dir.mkdir(parents=True)
+            self._write_asset_specific_history(
+                history_dir / "test_policy_history.csv",
+                value=0.02,
+            )
+            for benchmark in ["trend_spy_cash_12p", "BuyHold_GLD", "Equal_Weight"]:
+                self._write_asset_specific_history(
+                    benchmark_dir / "histories" / f"{benchmark}_history.csv",
+                    value=0.005,
+                )
+            pd.DataFrame(
+                [
+                    {
+                        "strategy_name": "V5_no_volatility_block_cap_0p50",
+                        "strategy_type": "TD3",
+                        "base_candidate": "V5_no_volatility_block",
+                        "cap_label": "0.50",
+                    },
+                    {
+                        "strategy_name": "trend_spy_cash_12p",
+                        "strategy_type": "benchmark",
+                    },
+                    {
+                        "strategy_name": "BuyHold_GLD",
+                        "strategy_type": "benchmark",
+                    },
+                    {
+                        "strategy_name": "Equal_Weight",
+                        "strategy_type": "benchmark",
+                    },
+                ]
+            ).to_csv(final_dir / "final_corrected_zero_cash_combined_ranking.csv", index=False)
+            (final_dir / "final_corrected_zero_cash_benchmark_comparison_metadata.json").write_text(
+                json.dumps(
+                    {
+                        "td3_dir": str(td3_dir),
+                        "benchmark_comparison_dir": str(benchmark_dir),
+                        "transaction_cost_mode": "asset_specific",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = build_statistical_validation_report(
+                final_report_dir=str(final_dir),
+                output_dir=str(output_dir),
+                benchmark_dir=str(benchmark_dir),
+                td3_history_dir=str(td3_dir),
+                n_bootstrap=20,
+                block_size=2,
+            )
+
+        records = report["history_records"].set_index("strategy_name")
+        self.assertTrue(bool(records.loc["V5_no_volatility_block_cap_0p50", "history_found"]))
+        self.assertFalse(report["pairwise_bootstrap"].empty)
+        self.assertEqual(report["report_mode"], "asset_specific")
+
     @staticmethod
     def _write_history(path: Path, value: float = 0.01) -> None:
         dates = pd.date_range("2024-01-05", periods=20, freq="W-FRI")

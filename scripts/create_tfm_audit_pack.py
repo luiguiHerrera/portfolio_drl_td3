@@ -68,6 +68,7 @@ FINAL_CORRECTED_DIRS = [
     "final_corrected_zero_cash_mandate_profile_comparison",
     "final_corrected_bil_cash_mandate_profile_comparison",
     "final_corrected_cash_robustness_comparison",
+    "final_corrected_execution_spread_robustness",
 ]
 
 SUMMARY_NAME_HINTS = (
@@ -218,6 +219,14 @@ def read_json(path: Path) -> Any:
         return None
 
 
+def _float_or_zero(value: Any) -> float:
+    try:
+        numeric = float(value)
+        return numeric if math.isfinite(numeric) else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def collect_repo_files() -> list[tuple[str, int, Path]]:
     files = []
     for p in ROOT.rglob("*"):
@@ -338,6 +347,13 @@ def find_metadata_files(exp_dir: Path | None) -> list[Path]:
     return sorted(p for p in exp_dir.rglob("*.json") if "metadata" in p.name.lower())
 
 
+def spread_metadata_path(spread_dir: Path | None) -> Path | None:
+    if spread_dir is None:
+        return None
+    path = spread_dir / "execution_spread_metadata.json"
+    return path if path.exists() else None
+
+
 def contains_cost_value(metadata_files: list[Path], asset: str, expected: float) -> bool | None:
     found_cost_field = False
     for path in metadata_files:
@@ -378,6 +394,9 @@ def build_audit_checks(found: dict[str, Path]) -> list[dict[str, Any]]:
     bil_td3 = found.get("final_corrected_limited_td3_cash_bil_proxy_60ep_10seeds")
     zero_bench = found.get("final_corrected_zero_cash_benchmark_comparison")
     bil_bench = found.get("final_corrected_bil_cash_benchmark_comparison")
+    spread_dir = found.get("final_corrected_execution_spread_robustness")
+    spread_metadata_file = spread_metadata_path(spread_dir)
+    spread_metadata = read_json(spread_metadata_file) if spread_metadata_file is not None else None
 
     zero_histories = count_td3_histories(zero_td3)
     bil_histories = count_td3_histories(bil_td3)
@@ -478,6 +497,48 @@ def build_audit_checks(found: dict[str, Path]) -> list[dict[str, Any]]:
         check("bil_cash_has_cash_cost_2_bps", bil_cash_cost, True, bil_cash_cost is True),
         check("zero_cash_has_btc_cost_10_bps", zero_btc_cost, True, zero_btc_cost is True),
         check("bil_cash_has_btc_cost_10_bps", bil_btc_cost, True, bil_btc_cost is True),
+        check(
+            "execution_spread_robustness_dir_exists",
+            str(spread_dir),
+            "exists",
+            spread_dir is not None,
+        ),
+        check(
+            "execution_spread_metadata_exists",
+            str(spread_metadata_file),
+            "exists",
+            spread_metadata_file is not None,
+        ),
+        check(
+            "execution_spread_reporting_only_true",
+            spread_metadata.get("reporting_only") if isinstance(spread_metadata, dict) else None,
+            True,
+            isinstance(spread_metadata, dict) and spread_metadata.get("reporting_only") is True,
+        ),
+        check(
+            "execution_spread_retrained_false",
+            spread_metadata.get("retrained") if isinstance(spread_metadata, dict) else None,
+            False,
+            isinstance(spread_metadata, dict) and spread_metadata.get("retrained") is False,
+        ),
+        check(
+            "execution_spread_creates_new_final_winners_false",
+            spread_metadata.get("creates_new_final_winners") if isinstance(spread_metadata, dict) else None,
+            False,
+            isinstance(spread_metadata, dict) and spread_metadata.get("creates_new_final_winners") is False,
+        ),
+        check(
+            "execution_spread_metrics_exists",
+            str(spread_dir / "execution_spread_strategy_metrics.csv") if spread_dir is not None else None,
+            "exists",
+            spread_dir is not None and (spread_dir / "execution_spread_strategy_metrics.csv").exists(),
+        ),
+        check(
+            "execution_spread_summary_exists",
+            str(spread_dir / "execution_spread_summary.md") if spread_dir is not None else None,
+            "exists",
+            spread_dir is not None and (spread_dir / "execution_spread_summary.md").exists(),
+        ),
     ]
     return checks
 
@@ -701,10 +762,35 @@ def write_key_results(out_dir: Path, found: dict[str, Path]) -> None:
         ("Zero-CASH mandate profile", "final_corrected_zero_cash_mandate_profile_comparison"),
         ("BIL-CASH mandate profile", "final_corrected_bil_cash_mandate_profile_comparison"),
         ("Cash robustness comparison", "final_corrected_cash_robustness_comparison"),
+        ("Execution spread robustness", "final_corrected_execution_spread_robustness"),
     ]:
         path = found.get(dirname)
         status = "available" if path is not None else "missing"
         lines.append(f"- {label}: {status}")
+
+    spread_dir = found.get("final_corrected_execution_spread_robustness")
+    if spread_dir is not None:
+        spread_metadata = read_json(spread_dir / "execution_spread_metadata.json")
+        spread_metrics = read_csv_rows(spread_dir / "execution_spread_strategy_metrics.csv")
+        lines.extend(["", "## Execution spread robustness", ""])
+        if isinstance(spread_metadata, dict):
+            lines.append(
+                "- Reporting-only flags: "
+                f"reporting_only=`{spread_metadata.get('reporting_only')}`, "
+                f"retrained=`{spread_metadata.get('retrained')}`, "
+                f"creates_new_final_winners=`{spread_metadata.get('creates_new_final_winners')}`"
+            )
+            scenarios = [scenario.get("name") for scenario in spread_metadata.get("scenarios", [])]
+            lines.append(f"- Scenarios: `{', '.join(str(s) for s in scenarios)}`")
+        if spread_metrics:
+            stress_rows = [row for row in spread_metrics if row.get("scenario") == "stress_spread"]
+            if stress_rows:
+                worst = min(stress_rows, key=lambda row: _float_or_zero(row.get("delta_sharpe_vs_base")))
+                lines.append(
+                    "- Largest stress-spread Sharpe degradation captured: "
+                    f"`{worst.get('cash_assumption')}` / `{worst.get('strategy_name')}` "
+                    f"delta Sharpe `{worst.get('delta_sharpe_vs_base')}`"
+                )
 
     lines.extend(
         [

@@ -109,6 +109,7 @@ Best benchmark in both settings:
 - `trend_spy_cash_12p`
 
 These rankings are useful, but they are not statistical superiority evidence.
+A reporting-only execution-spread robustness layer was added to stress selected strategies under additional top-of-book spread assumptions. It does not retrain models or create new final winners.
 
 ### C. Statistical Validation
 
@@ -209,6 +210,7 @@ Latest audit pack:
 - Asset-specific costs are broker/exchange-style proxies; they do not model taxes, custody frictions, withdrawal fees, market impact, or transfer delays.
 - Statistical validation and White Reality Check do not support a superiority claim.
 - Data, cash, cost, and execution assumptions matter.
+- Spread robustness is scenario-based and proxy-driven; it is not full market impact modeling.
 
 ## Future Work
 

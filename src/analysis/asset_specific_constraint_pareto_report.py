@@ -30,6 +30,10 @@ DEFAULT_WRC_DIR = "outputs/tables/asset_specific_cost_white_reality_check"
 DEFAULT_REGIME_ANALYSIS_DIR = "outputs/tables/asset_specific_cost_regime_analysis"
 DEFAULT_MANDATE_PROFILE_DIR = "outputs/tables/asset_specific_cost_mandate_profile_comparison"
 DEFAULT_OUTPUT_DIR = "outputs/tables/asset_specific_cost_constraint_pareto"
+ASSET_SPECIFIC_COMBINED_METADATA_FILE = (
+    "asset_specific_cost_benchmark_comparison_metadata.json"
+)
+FINAL_CORRECTED_METADATA_PATTERN = "final_corrected_*_benchmark_comparison_metadata.json"
 MANDATE_PROFILE_SOURCE = "src/risk/mandate_profiles.py"
 MANDATE_MAX_WEIGHT_NOTE = (
     "Max-weight caps are structural TD3 training/evaluation experiments, not official "
@@ -100,6 +104,10 @@ def build_constraint_pareto_report(
     output_path.mkdir(parents=True, exist_ok=True)
 
     strategies, enrichment_notes = load_and_prepare_universe(combined_path, benchmark_path)
+    metadata_validation = validate_combined_report_metadata(
+        combined_path=combined_path,
+        strategies=strategies,
+    )
     pass_fail = build_constraint_pass_fail_matrix(strategies)
     feasible_rankings = build_feasible_strategy_rankings(pass_fail)
     standard_rankings = build_standard_metric_rankings(strategies)
@@ -152,6 +160,7 @@ def build_constraint_pareto_report(
         "pareto_full_objectives": PARETO_FULL_OBJECTIVES,
         "pareto_reduced_objectives": PARETO_REDUCED_OBJECTIVES,
         "enrichment_notes": enrichment_notes,
+        "input_validation": metadata_validation,
         "n_strategies": int(len(strategies)),
     }
     paths["metadata"].write_text(json.dumps(_json_safe(metadata), indent=2), encoding="utf-8")
@@ -179,6 +188,12 @@ def load_and_prepare_universe(
     data = pd.read_csv(combined_ranking_path)
     if data.empty:
         raise ValueError("Combined ranking is empty.")
+    data["strategy_type"] = data["strategy_type"].astype(str).str.lower()
+    if (
+        "average_effective_number_of_assets" not in data.columns
+        and "average_effective_assets" in data.columns
+    ):
+        data["average_effective_number_of_assets"] = data["average_effective_assets"]
     required = [
         "strategy_name",
         "strategy_type",
@@ -205,6 +220,71 @@ def load_and_prepare_universe(
     validate_required_diagnostics(data)
     data["drawdown_severity"] = data["max_drawdown"].abs()
     return data, notes
+
+
+def validate_combined_report_metadata(
+    combined_path: Path,
+    strategies: pd.DataFrame,
+) -> dict[str, Any]:
+    """Validate corrected/asset-specific comparison metadata when available."""
+    metadata_path = _metadata_path_for_combined_ranking(combined_path)
+    td3_count = int((strategies["strategy_type"] == "td3").sum())
+    benchmark_count = int((strategies["strategy_type"] == "benchmark").sum())
+    result = {
+        "selected_td3_count": td3_count,
+        "benchmark_count": benchmark_count,
+        "metadata_path": str(metadata_path) if metadata_path else None,
+        "transaction_cost_mode": None,
+        "asset_transaction_cost_bps": None,
+        "cash_bps": None,
+    }
+    if metadata_path is None:
+        return result
+    if td3_count != 5:
+        raise ValueError(f"Expected 5 selected TD3 strategies, found {td3_count}.")
+    if benchmark_count != 14:
+        raise ValueError(f"Expected 14 benchmark strategies, found {benchmark_count}.")
+
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    mode = metadata.get("transaction_cost_mode") or metadata.get("cost_model", {}).get(
+        "transaction_cost_mode"
+    )
+    bps = metadata.get("asset_transaction_cost_bps") or metadata.get("cost_model", {}).get(
+        "asset_transaction_cost_bps"
+    )
+    bps = _normalize_bps(bps)
+    if mode != "asset_specific":
+        raise ValueError(f"Combined comparison metadata is not asset-specific: {mode}")
+    expected_core = {"SPY": 2.0, "TLT": 2.0, "GLD": 2.0, "BTC-USD": 10.0}
+    for asset, expected in expected_core.items():
+        if bps.get(asset) != expected:
+            raise ValueError(f"Unexpected {asset} cost bps: {bps.get(asset)}")
+    if bps.get("CASH") not in {0.0, 2.0}:
+        raise ValueError(f"Unexpected CASH cost bps: {bps.get('CASH')}")
+
+    result.update(
+        {
+            "transaction_cost_mode": mode,
+            "asset_transaction_cost_bps": bps,
+            "cash_bps": bps.get("CASH"),
+        }
+    )
+    return result
+
+
+def _metadata_path_for_combined_ranking(combined_path: Path) -> Path | None:
+    directory = combined_path.parent
+    asset_path = directory / ASSET_SPECIFIC_COMBINED_METADATA_FILE
+    if asset_path.exists():
+        return asset_path
+    corrected = sorted(directory.glob(FINAL_CORRECTED_METADATA_PATTERN))
+    return corrected[0] if corrected else None
+
+
+def _normalize_bps(value: Any) -> dict[str, float]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(asset): float(value[asset]) for asset in sorted(value)}
 
 
 def enrich_benchmark_diagnostics_from_histories(

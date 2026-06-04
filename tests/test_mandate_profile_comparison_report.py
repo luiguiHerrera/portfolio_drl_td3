@@ -314,6 +314,74 @@ class MandateProfileComparisonReportTests(unittest.TestCase):
                     asset_specific_only=True,
                 )
 
+    def test_final_corrected_combined_report_paths_are_supported(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            combined_dir = root / "corrected"
+            benchmark_dir = root / "benchmarks"
+            histories_dir = benchmark_dir / "histories"
+            output_dir = root / "out"
+            combined_dir.mkdir()
+            histories_dir.mkdir(parents=True)
+            rows = []
+            for idx in range(5):
+                rows.append(
+                    _asset_specific_strategy_row(
+                        f"V{idx}_candidate_cap_0p50",
+                        "TD3",
+                        robust_score=0.70 - idx * 0.01,
+                        max_drawdown=-0.10,
+                    )
+                )
+            for idx in range(14):
+                rows.append(
+                    _asset_specific_strategy_row(
+                        f"benchmark_{idx:02d}",
+                        "benchmark",
+                        robust_score=0.60,
+                        max_drawdown=-0.12,
+                    )
+                )
+                pd.DataFrame(
+                    {
+                        "date": ["2024-01-05"],
+                        "transaction_cost_mode": ["asset_specific"],
+                    }
+                ).to_csv(histories_dir / f"benchmark_{idx:02d}_history.csv", index=False)
+            pd.DataFrame(rows).to_csv(
+                combined_dir / "final_corrected_zero_cash_combined_ranking.csv",
+                index=False,
+            )
+            (combined_dir / "final_corrected_zero_cash_benchmark_comparison_metadata.json").write_text(
+                json.dumps(
+                    {
+                        "transaction_cost_mode": "asset_specific",
+                        "asset_transaction_cost_bps": {
+                            "SPY": 2.0,
+                            "TLT": 2.0,
+                            "GLD": 2.0,
+                            "BTC-USD": 10.0,
+                            "CASH": 0.0,
+                        },
+                        "benchmark_dir": str(benchmark_dir),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = build_mandate_profile_comparison_report(
+                final_report_dir=str(combined_dir),
+                combined_report_dir=str(combined_dir),
+                benchmark_dir=str(benchmark_dir),
+                output_dir=str(output_dir),
+                asset_specific_only=True,
+            )
+
+            metadata = result["metadata"]
+            self.assertEqual(metadata["source_metadata"]["input_mode"], "final_corrected_combined")
+            self.assertEqual(metadata["source_metadata"]["n_strategies"], 19)
+            self.assertTrue((output_dir / "mandate_profile_winners.csv").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

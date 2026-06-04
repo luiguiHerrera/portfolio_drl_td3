@@ -151,6 +151,83 @@ class AssetSpecificConstraintParetoReportTest(unittest.TestCase):
             self.assertIn("not official", metadata["max_weight_mandate_note"])
             self.assertNotIn("max_weight_limit", metadata["canonical_mandate_profiles"]["conservative"])
 
+    def test_corrected_combined_report_metadata_validates_counts_and_costs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            combined = root / "final_corrected_zero_cash_combined_ranking.csv"
+            benchmark_dir = root / "benchmarks"
+            stat_dir = root / "stat"
+            wrc_dir = root / "wrc"
+            output_dir = root / "out"
+            benchmark_dir.mkdir()
+            stat_dir.mkdir()
+            wrc_dir.mkdir()
+            rows = []
+            for idx in range(5):
+                rows.append(
+                    _row(
+                        f"V{idx}_candidate_cap_0p50",
+                        "TD3",
+                        sharpe=0.8,
+                        calmar=1.0,
+                        sortino=1.2,
+                        annualized_return=0.08,
+                        annualized_volatility=0.12,
+                        max_drawdown=-0.12,
+                        average_turnover=0.08,
+                        mean_transaction_cost=0.00002,
+                        average_effective_number_of_assets=2.5,
+                        average_max_weight=0.5,
+                    )
+                )
+            for idx in range(14):
+                rows.append(
+                    _row(
+                        f"benchmark_{idx:02d}",
+                        "benchmark",
+                        sharpe=0.6,
+                        calmar=0.8,
+                        sortino=1.0,
+                        annualized_return=0.06,
+                        annualized_volatility=0.10,
+                        max_drawdown=-0.10,
+                        average_turnover=0.02,
+                        mean_transaction_cost=0.00001,
+                        average_effective_number_of_assets=2.0,
+                        average_max_weight=0.6,
+                    )
+                )
+            pd.DataFrame(rows).to_csv(combined, index=False)
+            (root / "final_corrected_zero_cash_benchmark_comparison_metadata.json").write_text(
+                json.dumps(
+                    {
+                        "transaction_cost_mode": "asset_specific",
+                        "asset_transaction_cost_bps": {
+                            "SPY": 2.0,
+                            "TLT": 2.0,
+                            "GLD": 2.0,
+                            "BTC-USD": 10.0,
+                            "CASH": 0.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            _write_statistical_outputs(stat_dir, wrc_dir)
+
+            result = build_constraint_pareto_report(
+                combined_ranking_path=str(combined),
+                benchmark_dir=str(benchmark_dir),
+                statistical_validation_dir=str(stat_dir),
+                white_reality_check_dir=str(wrc_dir),
+                output_dir=str(output_dir),
+            )
+
+            validation = result["metadata"]["input_validation"]
+            self.assertEqual(validation["selected_td3_count"], 5)
+            self.assertEqual(validation["benchmark_count"], 14)
+            self.assertEqual(validation["cash_bps"], 0.0)
+
 
 def _strategy_frame() -> pd.DataFrame:
     rows = [

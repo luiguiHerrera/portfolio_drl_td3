@@ -31,6 +31,8 @@ ASSET_SPECIFIC_COMBINED_RANKING_FILE = "asset_specific_cost_combined_ranking.csv
 ASSET_SPECIFIC_COMBINED_METADATA_FILE = (
     "asset_specific_cost_benchmark_comparison_metadata.json"
 )
+FINAL_CORRECTED_COMBINED_PATTERN = "final_corrected_*_combined_ranking.csv"
+FINAL_CORRECTED_METADATA_PATTERN = "final_corrected_*_benchmark_comparison_metadata.json"
 MANDATE_PROFILE_SOURCE = "src/risk/mandate_profiles.py"
 MANDATE_MAX_WEIGHT_NOTE = (
     "Max-weight caps are structural TD3 training/evaluation experiments, not official "
@@ -151,18 +153,30 @@ def load_strategy_metrics(
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Load legacy final ranking or asset-specific combined TD3+benchmark ranking."""
     if combined_report_dir is not None:
-        ranking_path = combined_report_dir / ASSET_SPECIFIC_COMBINED_RANKING_FILE
-        metadata_path = combined_report_dir / ASSET_SPECIFIC_COMBINED_METADATA_FILE
+        ranking_path, metadata_path, corrected_mode = _combined_report_paths(
+            combined_report_dir
+        )
         if not ranking_path.exists():
             raise FileNotFoundError(f"Missing asset-specific combined ranking: {ranking_path}")
         if not metadata_path.exists():
             raise FileNotFoundError(f"Missing asset-specific combined metadata: {metadata_path}")
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         if asset_specific_only:
-            validate_asset_specific_sources(final_report_dir, metadata, benchmark_dir)
+            validate_asset_specific_sources(
+                final_report_dir,
+                metadata,
+                benchmark_dir,
+                corrected_mode=corrected_mode,
+            )
         data = pd.read_csv(ranking_path)
         if data.empty:
             raise ValueError("asset-specific combined ranking must not be empty.")
+        data["strategy_type"] = data["strategy_type"].astype(str).str.lower()
+        if (
+            "average_effective_number_of_assets" not in data.columns
+            and "average_effective_assets" in data.columns
+        ):
+            data["average_effective_number_of_assets"] = data["average_effective_assets"]
         if "transaction_cost_mode" not in data.columns:
             raise ValueError("asset-specific combined ranking must include transaction_cost_mode.")
         modes = set(data["transaction_cost_mode"].dropna().astype(str).unique().tolist())
@@ -170,13 +184,20 @@ def load_strategy_metrics(
             raise ValueError(f"Non asset-specific strategies found in combined ranking: {sorted(modes)}")
         if "robust_score" not in data.columns:
             raise ValueError("asset-specific combined ranking must include robust_score.")
+        if corrected_mode:
+            _validate_corrected_counts(data)
         return data, {
-            "input_mode": "asset_specific_combined",
+            "input_mode": "final_corrected_combined" if corrected_mode else "asset_specific_combined",
             "combined_ranking": str(ranking_path),
             "combined_metadata": str(metadata_path),
             "combined_score_scope": metadata.get("combined_score_scope"),
+            "score_scope": metadata.get("score_scope"),
             "n_strategies": int(len(data)),
             "transaction_cost_modes": sorted(modes),
+            "asset_transaction_cost_bps": (
+                metadata.get("asset_transaction_cost_bps")
+                or metadata.get("cost_model", {}).get("asset_transaction_cost_bps")
+            ),
         }
 
     data = load_final_strategy_metrics(final_report_dir)
@@ -190,17 +211,26 @@ def validate_asset_specific_sources(
     final_report_dir: Path,
     combined_metadata: dict[str, Any],
     benchmark_dir: Path | None,
+    corrected_mode: bool = False,
 ) -> None:
     """Fail loudly if cost metadata or benchmark histories are not asset-specific."""
-    td3_metadata_path = final_report_dir / "asset_specific_cost_metadata.json"
-    if not td3_metadata_path.exists():
-        raise FileNotFoundError(f"Missing TD3 asset-specific metadata: {td3_metadata_path}")
-    td3_metadata = json.loads(td3_metadata_path.read_text(encoding="utf-8"))
-    cost_model = td3_metadata.get("cost_model", {})
-    if cost_model.get("transaction_cost_mode") != "asset_specific":
-        raise ValueError("TD3 report is not asset-specific cost aware.")
-    if combined_metadata.get("cost_model", {}).get("transaction_cost_mode") != "asset_specific":
+    if not corrected_mode:
+        td3_metadata_path = final_report_dir / "asset_specific_cost_metadata.json"
+        if not td3_metadata_path.exists():
+            raise FileNotFoundError(f"Missing TD3 asset-specific metadata: {td3_metadata_path}")
+        td3_metadata = json.loads(td3_metadata_path.read_text(encoding="utf-8"))
+        cost_model = td3_metadata.get("cost_model", {})
+        if cost_model.get("transaction_cost_mode") != "asset_specific":
+            raise ValueError("TD3 report is not asset-specific cost aware.")
+    mode = combined_metadata.get("transaction_cost_mode") or combined_metadata.get("cost_model", {}).get(
+        "transaction_cost_mode"
+    )
+    if mode != "asset_specific":
         raise ValueError("Combined report is not asset-specific cost aware.")
+    _validate_asset_bps_mapping(
+        combined_metadata.get("asset_transaction_cost_bps")
+        or combined_metadata.get("cost_model", {}).get("asset_transaction_cost_bps")
+    )
     if benchmark_dir is not None:
         histories_dir = benchmark_dir / "histories"
     else:
@@ -222,6 +252,39 @@ def validate_asset_specific_sources(
         modes = set(history["transaction_cost_mode"].dropna().astype(str).unique().tolist())
         if modes != {"asset_specific"}:
             raise ValueError(f"Scalar/non asset-specific benchmark history detected in {path}: {sorted(modes)}")
+
+
+def _combined_report_paths(combined_report_dir: Path) -> tuple[Path, Path, bool]:
+    asset_ranking = combined_report_dir / ASSET_SPECIFIC_COMBINED_RANKING_FILE
+    asset_metadata = combined_report_dir / ASSET_SPECIFIC_COMBINED_METADATA_FILE
+    if asset_ranking.exists() or asset_metadata.exists():
+        return asset_ranking, asset_metadata, False
+    corrected_rankings = sorted(combined_report_dir.glob(FINAL_CORRECTED_COMBINED_PATTERN))
+    corrected_metadata = sorted(combined_report_dir.glob(FINAL_CORRECTED_METADATA_PATTERN))
+    ranking_path = corrected_rankings[0] if corrected_rankings else asset_ranking
+    metadata_path = corrected_metadata[0] if corrected_metadata else asset_metadata
+    return ranking_path, metadata_path, True
+
+
+def _validate_corrected_counts(data: pd.DataFrame) -> None:
+    td3_count = int((data["strategy_type"] == "td3").sum())
+    benchmark_count = int((data["strategy_type"] == "benchmark").sum())
+    if td3_count != 5:
+        raise ValueError(f"Expected 5 selected TD3 strategies, found {td3_count}.")
+    if benchmark_count != 14:
+        raise ValueError(f"Expected 14 benchmark strategies, found {benchmark_count}.")
+
+
+def _validate_asset_bps_mapping(value: Any) -> None:
+    if not isinstance(value, dict):
+        return
+    bps = {str(asset): float(value[asset]) for asset in value}
+    expected_core = {"SPY": 2.0, "TLT": 2.0, "GLD": 2.0, "BTC-USD": 10.0}
+    for asset, expected in expected_core.items():
+        if bps.get(asset) != expected:
+            raise ValueError(f"Unexpected {asset} cost bps: {bps.get(asset)}")
+    if bps.get("CASH") not in {0.0, 2.0}:
+        raise ValueError(f"Unexpected CASH cost bps: {bps.get('CASH')}")
 
 
 def score_strategies_for_profiles(

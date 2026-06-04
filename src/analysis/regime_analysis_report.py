@@ -25,6 +25,8 @@ RETURN_COLUMNS = ("financial_net_return", "net_return", "portfolio_return")
 ASSET_SPECIFIC_SELECTED_FILE = "asset_specific_cost_selected_candidates.csv"
 ASSET_SPECIFIC_METADATA_FILE = "asset_specific_cost_metadata.json"
 ASSET_SPECIFIC_COMBINED_RANKING_FILE = "asset_specific_cost_combined_ranking.csv"
+FINAL_CORRECTED_COMBINED_PATTERN = "final_corrected_*_combined_ranking.csv"
+FINAL_CORRECTED_METADATA_PATTERN = "final_corrected_*_benchmark_comparison_metadata.json"
 
 REGIME_DEFINITIONS = [
     ("covid_shock_recovery", "COVID shock / recovery", "2020-02-01", "2020-12-31"),
@@ -83,6 +85,7 @@ def build_regime_analysis_report(
     v7_clean_no_dxy_garch_cap_sensitivity_dir: str | None = None,
     v8_cap_sensitivity_dir: str | None = None,
     benchmark_dir: str | None = None,
+    td3_history_dir: str | None = None,
     asset_specific_only: bool | None = None,
 ) -> dict[str, Any]:
     """Build and write regime analysis outputs."""
@@ -102,6 +105,7 @@ def build_regime_analysis_report(
         ),
         v8_cap_sensitivity_dir=v8_cap_sensitivity_dir,
         benchmark_dir=benchmark_dir,
+        td3_history_dir=td3_history_dir,
         asset_specific_only=asset_specific_only,
     )
     metrics = build_regime_strategy_metrics(histories)
@@ -160,6 +164,7 @@ def locate_and_load_histories(
     v7_clean_no_dxy_garch_cap_sensitivity_dir: str | None = None,
     v8_cap_sensitivity_dir: str | None = None,
     benchmark_dir: str | None = None,
+    td3_history_dir: str | None = None,
     asset_specific_only: bool | None = None,
 ) -> tuple[dict[str, pd.Series], dict[str, Any], list[str]]:
     """Load benchmark histories and date-averaged TD3 histories."""
@@ -178,6 +183,8 @@ def locate_and_load_histories(
     )
     if benchmark_dir is not None:
         metadata["benchmark_comparison_dir"] = str(Path(benchmark_dir))
+    if td3_history_dir is not None:
+        metadata["td3_history_dir"] = str(Path(td3_history_dir))
     require_asset_specific = (
         report_mode == "asset_specific" if asset_specific_only is None else asset_specific_only
     )
@@ -628,12 +635,34 @@ def build_summary_markdown(
 
 def cap_to_label(cap: Any) -> str:
     """Convert selected cap to directory label used by experiment outputs."""
+    text = str(cap)
+    if text.lower() in {"uncapped", "nan", "none"}:
+        return "uncapped"
     if pd.isna(cap):
         return "uncapped"
     return f"{float(cap):.2f}".replace(".", "p")
 
 
 def _load_selected_and_metadata(final_report_dir: Path) -> tuple[pd.DataFrame, dict[str, Any], str]:
+    corrected_files = sorted(final_report_dir.glob(FINAL_CORRECTED_COMBINED_PATTERN))
+    if corrected_files:
+        ranking = pd.read_csv(corrected_files[0])
+        selected = ranking.loc[
+            ranking["strategy_type"].astype(str).str.upper() == "TD3"
+        ].copy()
+        if selected.empty:
+            raise ValueError(f"No selected TD3 rows found in {corrected_files[0]}")
+        selected["selected_cap"] = selected["cap_label"]
+        selected["source"] = "final_corrected_td3_benchmark_comparison"
+        metadata_files = sorted(final_report_dir.glob(FINAL_CORRECTED_METADATA_PATTERN))
+        metadata = (
+            json.loads(metadata_files[0].read_text(encoding="utf-8"))
+            if metadata_files
+            else {}
+        )
+        metadata["runner"] = "src.analysis.final_corrected_td3_benchmark_comparison_report"
+        return selected, metadata, "asset_specific"
+
     asset_selected = final_report_dir / ASSET_SPECIFIC_SELECTED_FILE
     asset_metadata = final_report_dir / ASSET_SPECIFIC_METADATA_FILE
     if asset_selected.exists() and asset_metadata.exists():
@@ -657,6 +686,8 @@ def _load_selected_and_metadata(final_report_dir: Path) -> tuple[pd.DataFrame, d
 
 
 def _source_dir_for_candidate(base_candidate: str, metadata: dict[str, Any]) -> str | None:
+    if metadata.get("runner") == "src.analysis.final_corrected_td3_benchmark_comparison_report":
+        return metadata.get("td3_history_dir") or metadata.get("td3_dir")
     if metadata.get("runner") == "src.analysis.asset_specific_cost_final_report":
         source_dirs = metadata.get("source_dirs", {})
         if base_candidate == "V7_real_macro_vintage_clean_no_dxy_garch":
@@ -715,6 +746,20 @@ def _benchmark_history_dir(metadata: dict[str, Any]) -> Path:
 
 
 def _benchmark_names_for_report(final_report_dir: Path) -> list[str]:
+    corrected_files = sorted(final_report_dir.glob(FINAL_CORRECTED_COMBINED_PATTERN))
+    if corrected_files:
+        ranking = pd.read_csv(corrected_files[0])
+        benchmarks = ranking[ranking["strategy_type"].astype(str) == "benchmark"]
+        names = benchmarks["strategy_name"].dropna().astype(str).unique().tolist()
+        key_names = [
+            "trend_spy_cash_12p",
+            "BuyHold_GLD",
+            "Equal_Weight",
+            *DEFAULT_BENCHMARKS,
+        ]
+        ordered = [name for name in key_names if name in names]
+        ordered.extend([name for name in names if name not in ordered])
+        return list(dict.fromkeys(ordered))
     combined_path = (
         final_report_dir.parent
         / "asset_specific_cost_benchmark_comparison"
@@ -767,14 +812,8 @@ def _pairwise_comparisons_for_histories(
     benchmarks = ["trend_spy_cash_12p", "BuyHold_GLD", "Equal_Weight"]
     if primary:
         comparisons.extend((primary, benchmark) for benchmark in benchmarks)
-    for candidate in [
-        "V3_real_macro_vintage_clean_no_dxy_cap_0p70",
-        "V4_real_garch_current_cap_0p50",
-        "V8_ewma_garch_vol_current_cap_0p80",
-        "V7_real_macro_vintage_clean_no_dxy_garch_cap_0p50",
-    ]:
-        if candidate in histories:
-            comparisons.extend((candidate, benchmark) for benchmark in benchmarks)
+    for candidate in sorted(name for name in histories if str(name).startswith("V")):
+        comparisons.extend((candidate, benchmark) for benchmark in benchmarks)
     return list(dict.fromkeys(comparisons))
 
 
@@ -973,6 +1012,7 @@ def main() -> None:
     parser.add_argument("--v7-clean-no-dxy-garch-cap-sensitivity-dir", default=None)
     parser.add_argument("--v8-cap-sensitivity-dir", default=None)
     parser.add_argument("--benchmark-dir", default=None)
+    parser.add_argument("--td3-history-dir", default=None)
     parser.add_argument("--asset-specific-only", action="store_true")
     args = parser.parse_args()
     result = build_regime_analysis_report(
@@ -988,6 +1028,7 @@ def main() -> None:
         ),
         v8_cap_sensitivity_dir=args.v8_cap_sensitivity_dir,
         benchmark_dir=args.benchmark_dir,
+        td3_history_dir=args.td3_history_dir,
         asset_specific_only=args.asset_specific_only or None,
     )
     print(f"Histories found: {len(result['histories'])}")

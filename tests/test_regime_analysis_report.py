@@ -300,6 +300,75 @@ class RegimeAnalysisReportTests(unittest.TestCase):
                     benchmark_dir=str(benchmark_dir),
                 )
 
+    def test_final_corrected_combined_ranking_resolves_selected_td3_histories(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            final_dir = root / "corrected"
+            td3_dir = root / "td3_histories"
+            benchmark_dir = root / "benchmarks"
+            output_dir = root / "out"
+            final_dir.mkdir()
+            (benchmark_dir / "histories").mkdir(parents=True)
+            history_dir = (
+                td3_dir
+                / "per_candidate"
+                / "V8_ewma_garch_vol_current"
+                / "F1_V8_ewma_garch_vol_current_cap_uncapped_seed_7"
+            )
+            history_dir.mkdir(parents=True)
+            self._asset_specific_history_frame("2022-01-07", [0.01] * 52).to_csv(
+                history_dir / "test_policy_history.csv",
+                index=False,
+            )
+            for benchmark in ["trend_spy_cash_12p", "BuyHold_GLD", "Equal_Weight"]:
+                self._asset_specific_history_frame("2022-01-07", [0.005] * 52).to_csv(
+                    benchmark_dir / "histories" / f"{benchmark}_history.csv",
+                    index=False,
+                )
+            pd.DataFrame(
+                [
+                    {
+                        "strategy_name": "V8_ewma_garch_vol_current_cap_uncapped",
+                        "strategy_type": "TD3",
+                        "base_candidate": "V8_ewma_garch_vol_current",
+                        "cap_label": "uncapped",
+                    },
+                    {
+                        "strategy_name": "trend_spy_cash_12p",
+                        "strategy_type": "benchmark",
+                    },
+                    {
+                        "strategy_name": "BuyHold_GLD",
+                        "strategy_type": "benchmark",
+                    },
+                    {
+                        "strategy_name": "Equal_Weight",
+                        "strategy_type": "benchmark",
+                    },
+                ]
+            ).to_csv(final_dir / "final_corrected_zero_cash_combined_ranking.csv", index=False)
+            (final_dir / "final_corrected_zero_cash_benchmark_comparison_metadata.json").write_text(
+                json.dumps(
+                    {
+                        "td3_dir": str(td3_dir),
+                        "benchmark_comparison_dir": str(benchmark_dir),
+                        "transaction_cost_mode": "asset_specific",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = build_regime_analysis_report(
+                final_report_dir=str(final_dir),
+                output_dir=str(output_dir),
+                benchmark_dir=str(benchmark_dir),
+                td3_history_dir=str(td3_dir),
+            )
+
+        self.assertIn("V8_ewma_garch_vol_current_cap_uncapped", result["histories"])
+        self.assertIn("trend_spy_cash_12p", result["histories"])
+        self.assertFalse(result["warnings"])
+
     def _write_synthetic_report(
         self,
         temp_dir: str,

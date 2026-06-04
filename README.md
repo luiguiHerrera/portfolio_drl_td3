@@ -43,7 +43,7 @@ Generated outputs are not fully committed to git. The repository keeps code, tes
 | Synthetic CASH | zero return, 0 bps cost |
 | BIL-CASH robustness | BIL proxy return, 2 bps cost on `CASH` sleeve |
 | Reward | net-return-first: full transaction costs enter financial net return |
-| Risk shaping | drawdown penalty active; turnover and concentration evaluated through diagnostics/mandates |
+| Risk treatment | drawdown penalty active in the reward; turnover and concentration kept out of the reward and evaluated through diagnostics, mandate profiles, and Pareto analysis |
 | Actions | cap-consistent behavior action, executed action, replay action, target smoothing, and actor-loss critic evaluation |
 | Exploration | behavior-policy exploration noise during training only |
 | Macro data | clean vintage/as-of FRED macro with required sidecar metadata |

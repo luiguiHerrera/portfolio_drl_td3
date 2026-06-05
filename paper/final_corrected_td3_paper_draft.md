@@ -1,0 +1,430 @@
+# Robust Evaluation of TD3 Portfolio Allocation under Realistic Cross-Asset Frictions
+
+**Subtitle / alternative framing:** A Cross-Asset Reality Check under Costs, Cash, and Statistical Validation
+
+## Abstract
+
+This paper evaluates whether Twin Delayed Deep Deterministic Policy Gradient (TD3) remains credible for dynamic portfolio allocation once realistic financial evaluation conditions are imposed simultaneously. The experiment uses a compact cross-asset wealth-allocation universe consisting of SPY, TLT, GLD, BTC-USD, and CASH, with weekly long-only allocation, asset-specific transaction costs, explicit Zero-CASH and BIL-CASH assumptions, where BIL-CASH is a short-term Treasury ETF proxy for remunerated cash, regenerated deterministic benchmarks, and out-of-sample walk-forward evaluation. The empirical design separates candidate ranking from statistical validation through bootstrap Sharpe-difference tests and a White Reality Check over the searched TD3 candidate set. Additional robustness layers evaluate mandate and Pareto feasibility, regime dependence, execution-spread stress, and training-budget convergence.
+
+The corrected evidence does not support a claim that TD3 statistically dominates clean portfolio benchmarks. TD3 remains competitive and can rank first under the combined TD3-plus-benchmark ranking layer, but bootstrap confidence intervals include zero and White Reality Check p-values do not reject benchmark competitiveness. Cash assumptions, transaction costs, execution spreads, and hard mandate filters materially affect model selection and interpretation. The contribution is therefore not a deployable alpha claim or an algorithmic contribution, but a falsification-oriented evaluation framework showing how much DRL portfolio claims depend on benchmark, cash, cost, and statistical validation discipline.
+
+## 1. Introduction
+
+Deep reinforcement learning (DRL) is attractive for portfolio allocation because it can represent dynamic, nonlinear decision rules without requiring a closed-form forecasting model. In principle, a continuous-control agent can adapt allocations across asset classes, respond to changing risk conditions, and incorporate transaction costs directly into the portfolio environment. In practice, however, financial DRL results are vulnerable to fragile evaluation. Apparent performance can depend on weak benchmarks, simplified trading costs, unclear cash treatment, unstable concentration behavior, limited robustness analysis, or the absence of data-snooping controls.
+
+This paper asks whether TD3 portfolio allocation benefits survive a realistic cross-asset evaluation once costs, cash assumptions, benchmarks, statistical validation, mandate constraints, regimes, execution frictions, and training-budget sensitivity are imposed simultaneously. The goal is not to market TD3 as a benchmark-beating strategy. The goal is to test whether TD3 remains credible after common objections to financial backtests are built into the protocol.
+
+The central research question is:
+
+> Do TD3 portfolio allocation benefits survive realistic cross-asset evaluation once costs, cash assumptions, benchmarks, statistical validation, mandate constraints, regimes, execution frictions, and training-budget sensitivity are imposed simultaneously?
+
+The answer is deliberately qualified. TD3 remains competitive under the corrected protocol and can rank above regenerated deterministic benchmarks in the combined ranking layer. However, statistical validation does not establish superiority over clean benchmarks. This distinction is central: a high ranking under a diagnostic score is not the same as statistically reliable outperformance. The main empirical finding is therefore not a TD3 victory claim, but a narrowing of what can be responsibly claimed from TD3 portfolio experiments: ranking competitiveness can survive realistic evaluation, while statistical dominance does not.
+
+The paper makes four contributions.
+
+1. It develops a corrected TD3 evaluation protocol for a compact cross-asset wealth-allocation universe with asset-specific costs and explicit cash assumptions.
+
+2. It compares TD3 variants against deterministic benchmarks regenerated under matching cost and cash assumptions.
+
+3. It adds a statistical validation layer using bootstrap Sharpe differences and White Reality Check, explicitly separating ranking from statistical superiority.
+
+4. It evaluates practical robustness through regime behavior, mandate and Pareto feasibility, execution-spread stress, and training-budget convergence.
+
+The paper does not claim deployable investment advice or a production-ready trading system. Its contribution is a robust evaluation framework and a disciplined interpretation of DRL portfolio evidence.
+
+## 2. Related Literature and Research Gap
+
+### 2.1 DRL and TD3 for Portfolio Allocation
+
+Portfolio allocation is a natural application of reinforcement learning because portfolio weights are sequential decisions and realized performance depends on the interaction between returns, costs, and previous allocations. Earlier portfolio theory formalized mean-variance tradeoffs, performance evaluation, and dynamic portfolio choice (Markowitz, 1952; Sharpe, 1966; Merton, 1969, 1971). DRL extends this setting by learning allocation rules from historical state variables rather than specifying a parametric return model.
+
+TD3 is an established continuous-control actor-critic algorithm built on deterministic policy gradients, twin critics, delayed actor updates, target networks, and target policy smoothing (Silver et al., 2014; Lillicrap et al., 2015; Fujimoto et al., 2018). In portfolio allocation, TD3 is useful because portfolio weights are continuous actions. This paper does not treat TD3 as a methodological novelty. TD3 is the learning engine being evaluated, not the main contribution.
+
+Prior work has already studied recurrent reinforcement learning for trading, model-free DRL portfolio management, FinRL-style trading frameworks, risk-aware portfolio rewards, correlation-aware DRL portfolio selection, and TD3 portfolio-selection models (Moody and Saffell, 2001; Jiang et al., 2017; Almahdi and Yang, 2017; Liu et al., 2020; Zhao et al., 2023; Jiang et al., 2024, 2025). The question here is narrower and more severe: whether a TD3 allocator remains credible when realistic evaluation layers are imposed together.
+
+### 2.2 Multi-Asset and Crypto/Gold Portfolio Allocation
+
+The empirical universe combines equities, long-duration Treasuries, gold, Bitcoin, and cash. These assets are not intended to span the full global opportunity set. They are selected as economically interpretable risk sleeves in a compact wealth-allocation problem.
+
+Gold and Bitcoin have both been studied in portfolio, diversification, hedge, and safe-haven contexts, but the literature does not support treating Bitcoin as a simple substitute for gold (Bouri et al., 2017; Henriques and Sadorsky, 2018; Guesmi et al., 2019). They should not be treated as equivalent. Gold is a hard-asset and safe-haven proxy with a long institutional history. Bitcoin is a speculative digital alternative with high volatility, adoption risk, and idiosyncratic market structure. This paper includes both to test whether TD3 can allocate across distinct risk sleeves, not because Bitcoin is assumed to be digital gold.
+
+### 2.3 Transaction Costs, Constraints, and Cash in Portfolio Evaluation
+
+Transaction costs and constraints are not implementation details in portfolio evaluation. A dynamic strategy with high turnover can look attractive before costs and fragile afterward. Similarly, a strategy forced to remain invested in risky assets has a different opportunity set from a strategy allowed to allocate defensively. Prior DRL portfolio work has incorporated transaction costs or risk-aware objectives, and machine-learning portfolio construction has also emphasized diversification and concentration control (Moody and Saffell, 2001; Almahdi and Yang, 2017; Chen et al., 2022; Jiang et al., 2024).
+
+This paper makes cash explicit. The Zero-CASH protocol treats cash as a synthetic zero-return defensive sleeve. The BIL-CASH protocol replaces that assumption with a short-term Treasury ETF proxy and assigns a nonzero transaction cost. This design tests whether the cash assumption changes model selection. It also prevents the paper from hiding the opportunity cost of defensive allocation.
+
+### 2.4 Statistical Validation and Data-Snooping Controls
+
+Financial model selection is vulnerable to data snooping. When many candidate policies are trained and evaluated, the best observed strategy may look strong because of the search process rather than because of a reliable economic edge. White's Reality Check directly addresses data-snooping risk, while Deflated Sharpe and related backtest-overfitting work motivate caution when interpreting searched strategy performance (White, 2000; Bailey and López de Prado, 2014; López de Prado, 2020).
+
+This paper uses bootstrap Sharpe-difference intervals and White Reality Check p-values as statistical guardrails. These tests do not replace economic interpretation, but they prevent ranking results from being overstated as statistical dominance.
+
+### 2.5 Research Gap
+
+TD3 portfolio allocation, transaction costs, macro or factor features, crypto portfolios, and benchmark comparisons have each been studied before. The contribution here is not the isolated use of any one component. The gap is the combined falsification-oriented evaluation stack.
+
+This paper evaluates whether TD3 remains credible when asset-specific costs, explicit cash assumptions, regenerated benchmarks, statistical validation, mandate and Pareto feasibility, regime analysis, execution-spread stress, and training-budget convergence are imposed together in a realistic cross-asset protocol. That combined evaluation discipline is the main research contribution.
+
+## 3. Data and Asset Universe
+
+The universe is deliberately compact, not exhaustive. It is designed to span economically distinct risk sleeves in a wealth-allocation problem while keeping allocation behavior interpretable. A larger universe would add realism, but it would also make it harder to diagnose whether TD3 is learning robust allocation behavior or exploiting a narrow historical artifact.
+
+Table 1 summarizes the asset universe.
+
+**Table 1. Asset universe and economic risk sleeves**
+
+| Asset | Economic role | Interpretation | Limitation |
+| --- | --- | --- | --- |
+| SPY | Equity / growth risk | Broad U.S. equity exposure and the main pro-cyclical growth sleeve. | U.S.-centric equity proxy; not a global equity portfolio. |
+| TLT | Duration / interest-rate risk | Long-duration Treasury exposure that can hedge some equity drawdowns. | Not risk-free; vulnerable to rate shocks. |
+| GLD | Hard asset / safe-haven proxy | Gold exposure used as hard-asset and crisis-hedge sleeve. | Not cash and not a complete commodity allocation. |
+| BTC-USD | Digital alternative / speculative convexity | High-volatility alternative asset with asymmetric upside and idiosyncratic risk. | Not assumed to be digital gold; large drawdown and liquidity risk. |
+| CASH | Defensive allocation / optionality / risk-free sleeve | Allows the policy to reduce risky exposure and preserve optionality. | Synthetic under Zero-CASH; BIL is only a proxy for investable cash. |
+
+The universe is not a full global market portfolio. It does not include credit, real estate, broad commodities, international equities, taxes, custody costs, or investor-specific liabilities. TLT represents duration risk, not risk-free exposure. GLD and BTC-USD are treated as distinct risk sleeves. CASH is explicit because defensive allocation and opportunity cost are central to realistic wealth management.
+
+Two cash protocols are used.
+
+**Table 2. Cash protocols**
+
+| Protocol | Return assumption | Cost assumption | Interpretation |
+| --- | --- | --- | --- |
+| Zero-CASH | 0 return | 0 bps | Synthetic defensive sleeve used to isolate allocation behavior. |
+| BIL-CASH | BIL proxy return | 2 bps | Short-term Treasury ETF proxy used as cash-assumption robustness. |
+
+The two protocols are not interchangeable. They define different investable environments and therefore can produce different preferred TD3 specifications.
+
+## 4. Methodology
+
+### 4.1 Portfolio Environment
+
+At each weekly decision date, the agent selects long-only portfolio weights over SPY, TLT, GLD, BTC-USD, and CASH. Weights are fully invested across the available sleeves, meaning they sum to one. This does not imply full exposure to risky assets because CASH is part of the investable universe.
+
+Portfolio performance is measured after transaction costs. Let \(w_{t,i}^{target}\) be the target weight in asset \(i\) at week \(t\), \(w_{t,i}^{drifted}\) be the pre-trade drifted weight after market movement, \(r_{t,i}\) be the asset return, and \(c_i\) be the asset-specific transaction cost rate. The gross portfolio return is:
+
+```text
+portfolio_return_t = sum_i w_target,t,i * r_t,i
+```
+
+The transaction cost is:
+
+```text
+transaction_cost_t = sum_i c_i * |w_target,t,i - w_drifted,t,i|
+```
+
+The net financial return is:
+
+```text
+net_return_t = portfolio_return_t - transaction_cost_t
+```
+
+The corrected cost schedule is asset-specific: SPY, TLT, and GLD use 2 bps; BTC-USD uses 10 bps; CASH uses 0 bps under Zero-CASH and 2 bps under BIL-CASH.
+
+### 4.2 TD3 Agent
+
+The TD3 agent is a continuous-control actor-critic model. The actor maps state variables into portfolio weights. Twin critics reduce overestimation bias. The algorithm uses a replay buffer, target networks, target policy smoothing, delayed actor updates, and behavior-policy exploration during training. Evaluation is deterministic.
+
+TD3 is not presented as novel. It is used because portfolio allocation is a continuous-action problem and because TD3 is a standard benchmark algorithm for deterministic continuous control.
+
+### 4.3 Feasible Action Handling
+
+Portfolio actions are projected consistently before execution and storage so that the policy, environment, replay buffer, and critic updates operate on feasible weights. This is a methodological safeguard. It is not framed as a separate algorithmic contribution.
+
+### 4.4 Reward
+
+The reward uses net financial return after full transaction costs and an active drawdown penalty:
+
+```text
+financial_net_return_t = portfolio_return_t - transaction_cost_t
+reward_t = financial_net_return_t - drawdown_penalty_t
+```
+
+Transaction costs therefore affect both realized performance and the training signal. Turnover and concentration are not added as direct reward penalties. They are evaluated through transaction costs, max-weight caps, diagnostics, mandate profiles, and Pareto analysis. This separation is important because the paper does not train directly on the final custom evaluation scores.
+
+### 4.5 Feature Families
+
+The experiment evaluates multiple TD3 feature families rather than one manually selected state representation. The objective is to test which independently trained state specification survives a common evaluation protocol.
+
+**Table 3. TD3 feature families**
+
+| Candidate | Description | Role in experiment |
+| --- | --- | --- |
+| `V2_reference_full` | Broad reference financial state. | Baseline rich feature set for comparison. |
+| `V3_real_macro_vintage_clean_no_dxy` | Financial state plus clean real-time/as-of macro variables. | Tests whether audited macro information improves allocation. |
+| `V4_real_garch_current` | Financial state plus fitted GARCH-style volatility features. | Tests volatility-forecast feature value. |
+| `V5_no_volatility_block` | Ablation excluding a volatility feature block. | Tests whether simpler non-volatility states remain competitive. |
+| `V6_financial_state` | Parsimonious financial state with renamed score-like indicators. | Tests compact financial state representation. |
+| `V7_real_macro_vintage_clean_no_dxy_garch` | Clean no-DXY macro state plus GARCH features. | Tests whether GARCH improves the clean macro specification. |
+| `V8_ewma_garch_vol_current` | EWMA/GARCH volatility hybrid. | Tests alternative volatility-state construction. |
+
+The clean macro/as-of pipeline excludes DXY because a full-window fresh true-vintage dollar proxy is not available without fallback, discontinuation, or current-vintage relabeling. CPI year-over-year is computed before weekly alignment. Heuristic probability-like V6 features are treated as scores rather than calibrated probabilities. Mechanical duplicate features are removed. PCA was audited but is not used as the default state representation.
+
+## 5. Experimental Protocol
+
+The final corrected protocol is moderate but systematic. It is designed to make TD3 compete against realistic frictions rather than against weak evaluation assumptions.
+
+**Table 4. Final corrected experimental protocol**
+
+| Component | Design |
+| --- | --- |
+| Frequency | Weekly |
+| Asset universe | SPY, TLT, GLD, BTC-USD, CASH |
+| Allocation | Long-only, fully invested across available sleeves |
+| Seeds | 10 in main corrected experiments |
+| Folds | 4 |
+| Episodes | 60 |
+| TD3 histories per cash assumption | 800 |
+| Benchmarks per cash assumption | 14 |
+| Cash assumptions | Zero-CASH and BIL-CASH |
+| Costs | Asset-specific transaction costs |
+| Statistical validation | Bootstrap Sharpe differences and White Reality Check |
+| Additional robustness | Regime analysis, mandate/Pareto feasibility, execution-spread stress, training-budget convergence |
+
+The 800 histories per cash assumption should not be interpreted as 800 independent market samples. They share the same historical period, folds, and asset universe. Their purpose is to assess candidate, cap, seed, and fold behavior under a systematic evaluation protocol.
+
+Because the project contains several reporting layers, the word "best" changes meaning across sections. Table 5 defines the layers and prevents ranking results from being confused with statistical or practical feasibility claims.
+
+**Table 5. Reporting layers and questions answered**
+
+| Layer | Question answered | Main output | What it does not prove |
+| --- | --- | --- | --- |
+| TD3-only cap sensitivity | Which TD3 specification and cap performs best inside the TD3 universe? | Selected TD3 candidate by cash protocol. | It does not compare TD3 with deterministic benchmarks. |
+| Combined TD3 + benchmark ranking | How do selected TD3 candidates rank against regenerated benchmarks under matching cost and cash assumptions? | Top combined TD3/benchmark ranking. | It does not establish statistical superiority. |
+| Bootstrap / White Reality Check | Does the top searched TD3 candidate statistically outperform clean benchmarks? | Sharpe-difference intervals and WRC p-values. | It does not invalidate competitiveness; it rejects overclaiming. |
+| Regime analysis | Is performance broad-based or regime-specific? | Regime-level winners and metric slices. | It does not prove all-weather dominance. |
+| Mandate / Pareto analysis | Which strategies remain credible under hard constraints and multi-metric tradeoffs? | Mandate pass/fail and Pareto frontier results. | It does not make custom scores sufficient evidence. |
+| Execution-spread robustness | How sensitive are selected histories to additional spread assumptions? | Return and Sharpe degradation under stress spreads. | It is not a new model-selection layer. |
+| Training-budget convergence | Does the 60-episode budget look obviously undertrained? | Comparison across 30/60/100/150 episodes. | It does not prove the globally optimal training length. |
+
+## 6. Results
+
+### 6.1 TD3-Only Cap Sensitivity
+
+The first result is evaluated within the TD3 candidate universe. This layer asks which TD3 variant and cap are strongest before deterministic benchmarks are introduced. It is useful for understanding policy behavior, but it is not evidence that TD3 beats benchmarks.
+
+Under Zero-CASH, the TD3-only winner is `V5_no_volatility_block_cap_0p50`, with mandate-aware score 0.601124 and robust score 0.696702. Under BIL-CASH, the TD3-only winner is `V8_ewma_garch_vol_current_cap_0p70`, with mandate-aware score 0.660435 and robust score 0.749958.
+
+Mandate-aware and robust scores are diagnostic selection summaries. Financial interpretation relies primarily on standard metrics and statistical validation.
+
+**Table 6. TD3-only selected candidates and standard metrics**
+
+| Cash assumption | Selected TD3 | Cap | Ann. return | Ann. volatility | Sharpe | Max drawdown | Avg. turnover | Eff. assets | Mean weekly transaction cost | Mandate-aware | Robust |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Zero-CASH | `V5_no_volatility_block_cap_0p50` | 0.50 | 0.0667 | 0.1156 | 0.5686 | -0.1206 | 0.4195 | 2.8093 | 0.000115 | 0.601124 | 0.696702 |
+| BIL-CASH | `V8_ewma_garch_vol_current_cap_0p70` | 0.70 | 0.0731 | 0.1060 | 1.0253 | -0.1066 | 0.3450 | 2.0044 | 0.000103 | 0.660435 | 0.749958 |
+
+The Zero-CASH row is taken from `outputs/tables/final_corrected_limited_td3_60ep_10seeds/cap_sensitivity_all_results.csv`. The BIL-CASH row is taken from `/Users/thiagoherrera/Projects/portfolio_drl_outputs/final_corrected_limited_td3_cash_bil_proxy_60ep_10seeds/cap_sensitivity_all_results.csv`. Mean transaction cost is reported per weekly decision period.
+
+The fact that the selected TD3 model changes across cash assumptions is itself informative. Cash modeling is not a cosmetic detail; it changes the allocation environment and can change model selection.
+
+### 6.2 Combined TD3 + Benchmark Ranking
+
+The second layer compares selected TD3 candidates with deterministic benchmarks regenerated under matching cost and cash assumptions. This is the first layer in which TD3 competes directly against benchmark strategies.
+
+Under Zero-CASH, the best overall combined-ranking strategy is `V3_real_macro_vintage_clean_no_dxy_cap_0p70`. Under BIL-CASH, the best overall combined-ranking strategy is `V7_real_macro_vintage_clean_no_dxy_garch_cap_0p80`. In both settings, the strongest benchmark is `trend_spy_cash_12p`.
+
+This result supports TD3 competitiveness. It does not support statistical dominance. The combined ranking shows that TD3 can score well under the corrected evaluation framework, but the statistical validation layer determines whether the apparent advantage is reliable.
+
+**Table 7. Combined TD3 and benchmark ranking summary**
+
+| Cash assumption | Strategy | Type | Ann. return | Ann. volatility | Sharpe | Max drawdown | Mandate-aware | Robust |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Zero-CASH | `V3_real_macro_vintage_clean_no_dxy_cap_0p70` | TD3 winner | 0.0869 | 0.1143 | 0.9234 | -0.1040 | 0.6606 | 0.7473 |
+| Zero-CASH | `trend_spy_cash_12p` | Best benchmark | 0.0979 | 0.1136 | 0.8802 | -0.1782 | 0.4831 | 0.6169 |
+| BIL-CASH | `V7_real_macro_vintage_clean_no_dxy_garch_cap_0p80` | TD3 winner | 0.1065 | 0.1270 | 1.1415 | -0.1030 | 0.6902 | 0.7797 |
+| BIL-CASH | `trend_spy_cash_12p` | Best benchmark | 0.1024 | 0.1135 | 0.9169 | -0.1730 | 0.4778 | 0.6042 |
+
+The combined ranking metrics are taken from `final_corrected_zero_cash_combined_ranking.csv` and `final_corrected_bil_cash_combined_ranking.csv` in the final corrected benchmark-comparison output directories. The table reports ranking metrics only; statistical validation is reported separately below.
+
+The clean macro specification is important because it uses as-of macro discipline and excludes DXY from the preferred final macro path. The GARCH-augmented V7 specification becomes the BIL-CASH combined-ranking winner, but that does not imply that GARCH universally improves TD3 policy quality.
+
+### 6.3 Statistical Validation
+
+Statistical validation is the central cautionary layer. It asks whether the top searched TD3 candidate is reliably better than the clean benchmark after sampling uncertainty and model search are considered.
+
+The validation layer is deliberately conservative. Bootstrap Sharpe-difference intervals include zero, and White Reality Check p-values do not support searched TD3 dominance. This is not a side note. It is one of the main findings.
+
+**Table 8. Bootstrap and White Reality Check**
+
+| Cash assumption | Comparison | Sharpe delta | Bootstrap CI | P(candidate beats) | WRC p-value | Interpretation |
+| --- | --- | ---: | --- | ---: | ---: | --- |
+| Zero-CASH | TD3 `V3 cap 0p70` vs `trend_spy_cash_12p` | 0.1559 | [-0.6011, 0.9767] | 0.629 | 0.7136 | No statistical superiority claim is supported. |
+| BIL-CASH | TD3 `V7 cap 0p80` vs `trend_spy_cash_12p` | 0.1170 | [-0.7172, 0.9963] | 0.588 | 0.6767 | No statistical superiority claim is supported. |
+
+The intervals cross zero and the WRC p-values are high. The appropriate conclusion is not that TD3 fails, but that the corrected evidence does not justify a strong alpha claim. TD3 remains competitive, yet the benchmark remains statistically credible.
+
+## 7. Robustness and Practical Feasibility
+
+### 7.1 Regime Analysis
+
+Regime analysis asks whether performance is broad-based or concentrated in particular market environments. The corrected evidence is mixed. Under Zero-CASH, TD3 leads in selected slices, but benchmarks win many regimes. Under BIL-CASH, benchmark dominance is stronger.
+
+This reinforces the cautious interpretation. TD3 can be regime-competitive, but it is not an all-weather dominant allocator. Regime dependence is especially important because a strategy that ranks well on average can still be practically fragile if performance is concentrated in a narrow set of historical conditions.
+
+### 7.2 Mandate and Pareto Analysis
+
+Mandate analysis evaluates whether strategies satisfy hard practical constraints rather than only ranking by a smooth score. Hard mandate infeasibility is treated as a feasibility warning: the tested universe contains strategies that are competitive by ranking or Pareto tradeoff, but none satisfy all canonical hard constraints simultaneously. The constraints are demanding, and even benchmarks struggle to satisfy all of them at once.
+
+TD3 remains Pareto-competitive in several tradeoff views, but it is not universally mandate-feasible. This distinction matters for practical interpretation. A strategy can be competitive under standard metrics and still fail hard investor constraints.
+
+**Table 9. Practical feasibility interpretation**
+
+| Evaluation | Finding | Interpretation |
+| --- | --- | --- |
+| Hard mandate filters | No strategy satisfies all constraints. | Practical feasibility remains unresolved under strict canonical filters. |
+| Mandate scoring | Rolling min-var dominates conservative/moderate profiles; V3 appears as best TD3/aggressive candidate in BIL-CASH. | Mandate preference depends on profile and cash assumption. |
+| Pareto analysis | TD3 remains on or near the frontier with benchmarks. | TD3 is competitive but tradeoff-dependent. |
+| Overall interpretation | No single strategy is universally feasible and dominant. | Competitiveness must be separated from deployability. |
+
+### 7.3 Execution-Spread Robustness
+
+Execution-spread robustness is a reporting-only post-training stress test. It does not retrain TD3 and does not create new final winners. Its purpose is to test whether selected histories are sensitive to additional spread assumptions.
+
+The selected TD3 strategies degrade more than the simple trend/cash benchmark. Under stress spreads, Zero-CASH TD3 `V3 cap 0p70` has an annualized return delta of -0.0139 and Sharpe delta of -0.1321. BIL-CASH TD3 `V7 cap 0p80` has an annualized return delta of -0.0128 and Sharpe delta of -0.1180. The `trend_spy_cash_12p` benchmark has a Sharpe delta around -0.0132.
+
+This does not invalidate TD3 competitiveness, but it shows that execution realism changes the economic interpretation of selected policies.
+
+### 7.4 Training-Budget Convergence
+
+Training-budget convergence checks whether the 60-episode protocol appears obviously undertrained. The convergence run covers 320 histories: 4 candidates, 4 training budgets, 5 seeds, and 4 folds, across 30, 60, 100, and 150 episodes.
+
+The evidence does not show that 60 episodes is materially undertrained for the selected candidate-cap pairs. Longer budgets often reduce Sharpe or increase turnover rather than improving the final evaluation. A 10-seed extension would be useful for publication-grade confirmation, but the current convergence evidence is sufficient for the TFM narrative.
+
+## 8. Discussion
+
+### 8.1 What TD3 Does Well
+
+TD3 remains competitive after the corrected evaluation stack is imposed. It can rank first in the combined TD3-plus-benchmark ranking under both Zero-CASH and BIL-CASH assumptions. It also remains Pareto-competitive in several practical tradeoff views and leads in selected regime slices.
+
+This is a meaningful result. Many DRL portfolio claims weaken once transaction costs, cash assumptions, stronger benchmarks, statistical validation, and mandate constraints are introduced. TD3 surviving as a competitive candidate is therefore informative.
+
+### 8.2 What TD3 Does Not Prove
+
+The boundary of the result is equally important. Bootstrap intervals include zero and White Reality Check p-values do not support searched TD3 superiority. No strategy satisfies every hard mandate filter. Selected TD3 histories are more sensitive to additional spread assumptions than the `trend_spy_cash_12p` benchmark, and cash assumptions change the selected TD3 candidate.
+
+These limits make the paper's claim narrower, but also more credible.
+
+### 8.3 Why Benchmarks Matter
+
+The benchmark set is not a collection of weak strawmen. It includes deterministic rules that capture diversification, trend following, risk-off behavior, momentum, risk parity, and classical optimization ideas. The `trend_spy_cash_12p` benchmark remains a strong comparator in both cash protocols.
+
+TD3 must be compared against these strategies before any claim about dynamic allocation value is credible. A model that ranks well only against weak baselines would not be persuasive in applied finance.
+
+### 8.4 Main Contribution
+
+The main contribution is a falsification-oriented evaluation framework for DRL portfolio allocation. The paper shows how TD3 behaves when evaluated through costs, cash assumptions, benchmark regeneration, statistical validation, mandate/Pareto feasibility, regime analysis, execution-spread stress, and convergence checks.
+
+The evidence supports a cautious claim: TD3 is competitive under the corrected protocol, but its apparent ranking edge should not be converted into an alpha claim.
+
+**Table 10. Claim versus evidence**
+
+| Claim | Supported? | Evidence |
+| --- | --- | --- |
+| TD3 is competitive. | Yes | TD3 candidates rank first in corrected combined Zero-CASH and BIL-CASH rankings and remain Pareto-competitive. |
+| TD3 statistically dominates. | No | Bootstrap confidence intervals include zero and WRC p-values do not support superiority. |
+| Cash assumption matters. | Yes | Zero-CASH and BIL-CASH select different TD3-only and combined winners. |
+| 60 episodes is undertrained. | No evidence | Longer training budgets do not materially improve selected candidate performance and can increase turnover or reduce Sharpe. |
+| Execution assumptions matter. | Yes | Stress spreads degrade selected TD3 strategies more than the trend/cash benchmark. |
+| Hard mandate feasibility is achieved. | No | No strategy passes all hard canonical mandate filters. |
+| TD3 is Pareto-competitive. | Yes | TD3 remains on or near relevant tradeoff frontiers. |
+| Custom scores are sufficient. | No | Scores are diagnostic; standard metrics and statistical validation remain necessary. |
+| Benchmarks are weak. | No | Regenerated deterministic benchmarks remain strong comparators. |
+
+## 9. Limitations
+
+The asset universe is compact and U.S.-centric. It excludes credit, real estate, broad commodities beyond gold, international equities, taxes, custody constraints, liabilities, and investor-specific withdrawal needs. BTC-USD is highly idiosyncratic and may not represent digital assets more broadly.
+
+Execution modeling remains approximate. The protocol includes asset-specific transaction costs and an additional spread robustness layer, but it does not model full order-book depth, market impact, intraday liquidity, broker-specific routing, or tax-aware execution.
+
+Custom mandate-aware and robust scores are diagnostic selection tools, not standalone academic proof. Standard metrics, hard mandate filters, Pareto analysis, bootstrap validation, and White Reality Check remain necessary to interpret results.
+
+The evaluation uses one historical sample. Walk-forward folds and multiple seeds improve robustness, but they do not create independent market histories. The study also does not include live-forward paper trading or production deployment.
+
+Finally, the training-budget convergence check supports the use of 60 episodes for this research design, but it does not prove that the chosen budget is globally optimal. A larger publication-grade replication could extend the convergence analysis to more seeds and a broader candidate set.
+
+## 10. Conclusion
+
+This paper evaluates whether TD3-based dynamic allocation remains credible under realistic cross-asset portfolio evaluation. The corrected protocol includes asset-specific transaction costs, explicit Zero-CASH and BIL-CASH assumptions, regenerated deterministic benchmarks, statistical validation, mandate and Pareto feasibility, regime analysis, execution-spread robustness, and training-budget convergence.
+
+The evidence is deliberately conservative. TD3 remains competitive and can rank first under the corrected combined ranking framework, while bootstrap Sharpe-difference validation and White Reality Check prevent a stronger statistical superiority claim. Cash and execution assumptions materially affect model selection, and hard constraints reveal a practical feasibility gap.
+
+Under the corrected protocol, TD3 is best understood as a competitive research candidate for dynamic allocation, not as a statistically dominant trading strategy. The main result is not that DRL fails, but that realistic evaluation materially changes what can be claimed from DRL portfolio experiments.
+
+## 11. Appendix Plan
+
+The appendix should contain the detailed evidence needed to audit the main conclusions without overloading the paper body.
+
+- Full TD3 cap-sensitivity tables for Zero-CASH and BIL-CASH.
+- Full regenerated benchmark metric tables.
+- Bootstrap implementation details and complete Sharpe-difference results.
+- White Reality Check candidate differential tables, bootstrap distributions, and metadata.
+- Regime definitions and regime-level metrics.
+- Mandate profile rankings and hard mandate pass/fail matrices.
+- Pareto frontier plots and non-dominated strategy lists.
+- Macro vintage/as-of audit, including DXY exclusion rationale and CPI year-over-year construction.
+- Feature dimensionality audit, duplicate-feature checks, and PCA audit results.
+- Spread robustness metadata and stressed metric tables.
+- Training-budget convergence details across 30, 60, 100, and 150 episodes.
+- Action consistency implementation notes for feasible action handling.
+
+## Manuscript Development Plan: Recommended Figures
+
+The main paper should use no more than six figures. Detailed diagnostics can go to the appendix.
+
+**Figure 1. Experimental pipeline**
+
+- Data source placeholder: [pipeline schematic or generated figure].
+- Axes: not applicable.
+- Caption draft: "Corrected TD3 portfolio evaluation pipeline from asset returns and feature construction to TD3/benchmark histories and robustness layers."
+- Do not imply: that every layer is a separate training objective.
+
+**Figure 2. TD3 selected candidates: Sharpe versus max drawdown**
+
+- Data source placeholder: final corrected TD3 cap-sensitivity metric outputs.
+- Axes: x-axis maximum drawdown; y-axis Sharpe ratio; color by cash assumption.
+- Caption draft: "Standard risk-return view of selected TD3 candidates before custom score interpretation."
+- Do not imply: that Sharpe alone determines the final conclusion.
+
+**Figure 3. Combined TD3 versus benchmark ranking**
+
+- Data source placeholder: final corrected combined TD3-plus-benchmark ranking outputs.
+- Axes: x-axis rank or score; y-axis strategy; color TD3 versus benchmark.
+- Caption draft: "Combined corrected ranking of selected TD3 candidates and regenerated deterministic benchmarks under matching cost and cash assumptions."
+- Do not imply: statistical superiority from rank alone.
+
+**Figure 4. Bootstrap Sharpe delta confidence intervals**
+
+- Data source placeholder: bootstrap validation output.
+- Axes: x-axis Sharpe delta; y-axis comparison; vertical zero line.
+- Caption draft: "Bootstrap Sharpe-difference intervals for top TD3 candidates versus clean benchmarks. Intervals crossing zero prevent statistical dominance claims."
+- Do not imply: that a positive point estimate is significant.
+
+**Figure 5. Regime winners heatmap**
+
+- Data source placeholder: regime analysis output.
+- Axes: x-axis regime; y-axis strategy or strategy family; color winner or score.
+- Caption draft: "Regime-level winners show that TD3 competitiveness is state-dependent and that benchmarks dominate several slices."
+- Do not imply: all-weather TD3 dominance.
+
+**Figure 6. Execution-spread degradation**
+
+- Data source placeholder: execution-spread robustness output.
+- Axes: x-axis strategy; y-axis Sharpe or annualized return delta under stress spread.
+- Caption draft: "Performance degradation under additional spread assumptions. Selected TD3 histories are more execution-sensitive than the trend/cash benchmark."
+- Do not imply: spread stress is a new model-selection layer.
+
+## Citation Status
+
+The project bibliography contains the core references used above for portfolio theory, deterministic policy gradients, DDPG, TD3, DRL portfolio allocation, TD3 portfolio selection, diversification-oriented machine-learning portfolio construction, GARCH, Deflated Sharpe, López de Prado's methodological framing, White Reality Check, and Bitcoin/gold portfolio and safe-haven discussion.
+
+The Bitcoin/gold paragraph cites Bouri et al. (2017), Henriques and Sadorsky (2018), and Guesmi et al. (2019). These references support the cautious framing that Bitcoin has been studied as a hedge, diversifier, safe-haven candidate, and portfolio asset, but should not be treated as a simple substitute for gold.
+
+Broader multi-asset allocation and execution-realism references can still be expanded in the formal TFM version, but no citation placeholder remains in this supervisor-facing draft.
+
+## Open Items Before Sending to Supervisor
+
+- Decide whether appendix-only metric tables need to be filled before supervisor review.
+- Decide whether to include all six main figures now or send a table-first supervisor draft.
+- Check the professor's preferred TFM format, citation style, and section ordering.
+- Decide whether the title should emphasize "Reality Check" or "Robust Evaluation."

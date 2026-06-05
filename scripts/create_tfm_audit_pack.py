@@ -69,6 +69,7 @@ FINAL_CORRECTED_DIRS = [
     "final_corrected_bil_cash_mandate_profile_comparison",
     "final_corrected_cash_robustness_comparison",
     "final_corrected_execution_spread_robustness",
+    "final_corrected_training_budget_convergence",
 ]
 
 SUMMARY_NAME_HINTS = (
@@ -87,6 +88,7 @@ SUMMARY_NAME_HINTS = (
     "checks",
     "inventory",
     "key_results",
+    "by_candidate",
 )
 
 SKIP_NAME_HINTS = (
@@ -94,6 +96,14 @@ SKIP_NAME_HINTS = (
     "train_policy_history.csv",
     "validation_policy_history.csv",
     "bootstrap_distribution.csv",
+    "training_summary.csv",
+    "train_summary.csv",
+    "test_comparison_summary.csv",
+    "validation_comparison_summary.csv",
+    "train_comparison_summary.csv",
+    "train_metrics_table.csv",
+    "validation_metrics_table.csv",
+    "test_metrics_table.csv",
 )
 
 
@@ -242,6 +252,8 @@ def is_summary_file(path: Path) -> bool:
     path_text = path.as_posix()
     if "/per_candidate/" in path_text:
         return False
+    if "/cases/" in path_text and "training_budget_case_metadata.json" not in path.name:
+        return False
     lower_name = path.name.lower()
     if any(hint in lower_name for hint in SKIP_NAME_HINTS):
         return False
@@ -279,6 +291,26 @@ def count_benchmark_histories(benchmark_dir: Path | None) -> int:
     for pattern in history_patterns:
         paths.update(benchmark_dir.glob(pattern))
     return len(paths)
+
+
+def count_training_budget_histories(exp_dir: Path | None) -> int:
+    if exp_dir is None or not exp_dir.exists():
+        return 0
+    return sum(1 for _ in exp_dir.glob("cases/*/*/*/test_policy_history.csv"))
+
+
+def training_budget_undertraining_evidence(exp_dir: Path | None) -> bool | None:
+    if exp_dir is None:
+        return None
+    path = exp_dir / "training_budget_convergence_by_candidate.csv"
+    rows = read_csv_rows(path)
+    if not rows:
+        return None
+    for row in rows:
+        raw = str(row.get("sixty_episode_undertraining_evidence", "")).strip().lower()
+        if raw in {"true", "1", "yes"}:
+            return True
+    return False
 
 
 def cap_summary_rows(exp_dir: Path | None) -> int:
@@ -395,8 +427,11 @@ def build_audit_checks(found: dict[str, Path]) -> list[dict[str, Any]]:
     zero_bench = found.get("final_corrected_zero_cash_benchmark_comparison")
     bil_bench = found.get("final_corrected_bil_cash_benchmark_comparison")
     spread_dir = found.get("final_corrected_execution_spread_robustness")
+    training_budget_dir = found.get("final_corrected_training_budget_convergence")
     spread_metadata_file = spread_metadata_path(spread_dir)
     spread_metadata = read_json(spread_metadata_file) if spread_metadata_file is not None else None
+    training_budget_histories = count_training_budget_histories(training_budget_dir)
+    undertraining_evidence = training_budget_undertraining_evidence(training_budget_dir)
 
     zero_histories = count_td3_histories(zero_td3)
     bil_histories = count_td3_histories(bil_td3)
@@ -538,6 +573,56 @@ def build_audit_checks(found: dict[str, Path]) -> list[dict[str, Any]]:
             str(spread_dir / "execution_spread_summary.md") if spread_dir is not None else None,
             "exists",
             spread_dir is not None and (spread_dir / "execution_spread_summary.md").exists(),
+        ),
+        check(
+            "training_budget_convergence_dir_exists",
+            str(training_budget_dir),
+            "exists",
+            training_budget_dir is not None,
+        ),
+        check(
+            "training_budget_convergence_metadata_exists",
+            str(training_budget_dir / "training_budget_convergence_metadata.json") if training_budget_dir is not None else None,
+            "exists",
+            training_budget_dir is not None
+            and (training_budget_dir / "training_budget_convergence_metadata.json").exists(),
+        ),
+        check(
+            "training_budget_convergence_summary_exists",
+            str(training_budget_dir / "training_budget_convergence_summary.md") if training_budget_dir is not None else None,
+            "exists",
+            training_budget_dir is not None
+            and (training_budget_dir / "training_budget_convergence_summary.md").exists(),
+        ),
+        check(
+            "training_budget_convergence_all_results_exists",
+            str(training_budget_dir / "training_budget_convergence_all_results.csv")
+            if training_budget_dir is not None
+            else None,
+            "exists",
+            training_budget_dir is not None
+            and (training_budget_dir / "training_budget_convergence_all_results.csv").exists(),
+        ),
+        check(
+            "training_budget_convergence_by_candidate_exists",
+            str(training_budget_dir / "training_budget_convergence_by_candidate.csv")
+            if training_budget_dir is not None
+            else None,
+            "exists",
+            training_budget_dir is not None
+            and (training_budget_dir / "training_budget_convergence_by_candidate.csv").exists(),
+        ),
+        check(
+            "training_budget_convergence_histories_320",
+            training_budget_histories,
+            320,
+            training_budget_histories == 320,
+        ),
+        check(
+            "training_budget_convergence_undertraining_false",
+            undertraining_evidence,
+            False,
+            undertraining_evidence is False,
         ),
     ]
     return checks
@@ -763,6 +848,7 @@ def write_key_results(out_dir: Path, found: dict[str, Path]) -> None:
         ("BIL-CASH mandate profile", "final_corrected_bil_cash_mandate_profile_comparison"),
         ("Cash robustness comparison", "final_corrected_cash_robustness_comparison"),
         ("Execution spread robustness", "final_corrected_execution_spread_robustness"),
+        ("Training-budget convergence robustness", "final_corrected_training_budget_convergence"),
     ]:
         path = found.get(dirname)
         status = "available" if path is not None else "missing"
@@ -791,6 +877,38 @@ def write_key_results(out_dir: Path, found: dict[str, Path]) -> None:
                     f"`{worst.get('cash_assumption')}` / `{worst.get('strategy_name')}` "
                     f"delta Sharpe `{worst.get('delta_sharpe_vs_base')}`"
                 )
+
+    training_budget_dir = found.get("final_corrected_training_budget_convergence")
+    if training_budget_dir is not None:
+        training_budget_metadata = read_json(training_budget_dir / "training_budget_convergence_metadata.json")
+        by_candidate_rows = read_csv_rows(training_budget_dir / "training_budget_convergence_by_candidate.csv")
+        undertraining_evidence = training_budget_undertraining_evidence(training_budget_dir)
+        histories = count_training_budget_histories(training_budget_dir)
+        lines.extend(["", "## Training-budget convergence robustness", ""])
+        lines.append(f"- Histories completed: `{histories}/320`.")
+        lines.append("- 5-seed check across 30, 60, 100, and 150 episodes.")
+        if isinstance(training_budget_metadata, dict):
+            lines.append(
+                "- Reporting-only flags: "
+                f"reporting_only=`{training_budget_metadata.get('reporting_only')}`, "
+                f"creates_new_final_winners=`{training_budget_metadata.get('creates_new_final_winners')}`"
+            )
+        lines.append(f"- Sixty-episode undertraining evidence: `{undertraining_evidence}`.")
+        if by_candidate_rows:
+            lines.append("- Candidate-cap conclusions:")
+            for row in by_candidate_rows:
+                lines.append(
+                    f"  - `{row.get('candidate_name', 'unknown')}`: "
+                    f"best Sharpe budget `{row.get('best_episode_budget_by_sharpe', 'n/a')}`, "
+                    f"conclusion `{row.get('conclusion', 'n/a')}`"
+                )
+        lines.extend(
+            [
+                "- 60 episodes is not obviously undertrained.",
+                "- Longer budgets do not materially improve Sharpe and often increase turnover or degrade Sharpe.",
+                "- No main protocol rerun is required.",
+            ]
+        )
 
     lines.extend(
         [

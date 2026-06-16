@@ -1,5 +1,37 @@
 # Final Corrected TD3 Paper Draft Change Log
 
+## Economic Asset-Universe Framing
+
+Strengthened the economic framing of the SPY/TLT/GLD/BTC-USD/CASH universe in the working paper draft:
+
+- Replaced the opening paragraph of Section 2.2 with a clearer description of the problem as compact wealth allocation under macro-financial uncertainty.
+- Explicitly described the five allocation sleeves: equity growth exposure, interest-rate duration, real safe-haven exposure, digital alternative risk, and defensive liquidity.
+- Added a sentence before Table 1 explaining that the allocation problem approximates a simplified global wealth-management decision across growth, duration, real defensive assets, digital alternatives, and liquidity.
+- Preserved the compact/not exhaustive limitation and the interpretation that Bitcoin is not treated as digital gold.
+- No results, tables, metrics, model rankings, or citations were changed.
+
+## Supervisor Readability Polish
+
+Improved table and prose readability without changing results, metrics, or conclusions:
+
+- Replaced long candidate identifiers in the main results tables with short display aliases:
+  - `V2_reference_full` -> `V2 reference`
+  - `V3_real_macro_vintage_clean_no_dxy` -> `V3 clean macro`
+  - `V4_real_garch_current` -> `V4 GARCH`
+  - `V5_no_volatility_block` -> `V5 no-vol`
+  - `V6_financial_state` -> `V6 financial`
+  - `V7_real_macro_vintage_clean_no_dxy_garch` -> `V7 macro+GARCH`
+  - `V8_ewma_garch_vol_current` -> `V8 EWMA/GARCH`
+  - `V3_real_macro_vintage_clean_no_dxy_cap_0p70` -> `V3 clean macro cap 0.70`
+  - `V5_no_volatility_block_cap_0p50` -> `V5 no-vol cap 0.50`
+  - `V7_real_macro_vintage_clean_no_dxy_garch_cap_0p80` -> `V7 macro+GARCH cap 0.80`
+  - `V8_ewma_garch_vol_current_cap_0p70` -> `V8 EWMA/GARCH cap 0.70`
+  - `trend_spy_cash_12p` -> `Trend SPY/CASH`
+- Added notes stating that short strategy labels are used for readability and that full candidate identifiers remain available in the project outputs.
+- Removed long local file paths from the main body and replaced them with general source-traceability language.
+- Preserved detailed file-source traceability in changelog-style documentation rather than in the paper body.
+- No numerical values, rankings, citations, or claims were changed.
+
 ## Surgical Supervisor-Facing Polish Pass
 
 Applied a targeted polish pass for supervisor review:

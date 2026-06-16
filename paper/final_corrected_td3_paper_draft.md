@@ -44,7 +44,7 @@ Prior work has already studied recurrent reinforcement learning for trading, mod
 
 ### 2.2 Multi-Asset and Crypto/Gold Portfolio Allocation
 
-The empirical universe combines equities, long-duration Treasuries, gold, Bitcoin, and cash. These assets are not intended to span the full global opportunity set. They are selected as economically interpretable risk sleeves in a compact wealth-allocation problem.
+The empirical universe is designed around a compact wealth-allocation problem under macro-financial uncertainty. At each rebalancing date, the allocation decision is not simply whether to hold more or less risky assets, but how to rotate capital across economically distinct sources of portfolio risk: equity growth exposure, interest-rate duration, real safe-haven exposure, digital alternative risk, and defensive liquidity. SPY, TLT, GLD, BTC-USD, and CASH are therefore used as liquid proxies for these five allocation sleeves. The universe is deliberately compact rather than exhaustive, so the behavior of the TD3 policy can be interpreted through economically meaningful risk categories rather than through a large opaque asset set.
 
 Gold and Bitcoin have both been studied in portfolio, diversification, hedge, and safe-haven contexts, but the literature does not support treating Bitcoin as a simple substitute for gold (Bouri et al., 2017; Henriques and Sadorsky, 2018; Guesmi et al., 2019). They should not be treated as equivalent. Gold is a hard-asset and safe-haven proxy with a long institutional history. Bitcoin is a speculative digital alternative with high volatility, adoption risk, and idiosyncratic market structure. This paper includes both to test whether TD3 can allocate across distinct risk sleeves, not because Bitcoin is assumed to be digital gold.
 
@@ -69,6 +69,8 @@ This paper evaluates whether TD3 remains credible when asset-specific costs, exp
 ## 3. Data and Asset Universe
 
 The universe is deliberately compact, not exhaustive. It is designed to span economically distinct risk sleeves in a wealth-allocation problem while keeping allocation behavior interpretable. A larger universe would add realism, but it would also make it harder to diagnose whether TD3 is learning robust allocation behavior or exploiting a narrow historical artifact.
+
+The allocation problem approximates a simplified global wealth-management decision: whether capital should be exposed to economic growth, long-duration bonds, real defensive assets, digital alternatives, or liquidity.
 
 Table 1 summarizes the asset universe.
 
@@ -150,13 +152,15 @@ The experiment evaluates multiple TD3 feature families rather than one manually 
 
 | Candidate | Description | Role in experiment |
 | --- | --- | --- |
-| `V2_reference_full` | Broad reference financial state. | Baseline rich feature set for comparison. |
-| `V3_real_macro_vintage_clean_no_dxy` | Financial state plus clean real-time/as-of macro variables. | Tests whether audited macro information improves allocation. |
-| `V4_real_garch_current` | Financial state plus fitted GARCH-style volatility features. | Tests volatility-forecast feature value. |
-| `V5_no_volatility_block` | Ablation excluding a volatility feature block. | Tests whether simpler non-volatility states remain competitive. |
-| `V6_financial_state` | Parsimonious financial state with renamed score-like indicators. | Tests compact financial state representation. |
-| `V7_real_macro_vintage_clean_no_dxy_garch` | Clean no-DXY macro state plus GARCH features. | Tests whether GARCH improves the clean macro specification. |
-| `V8_ewma_garch_vol_current` | EWMA/GARCH volatility hybrid. | Tests alternative volatility-state construction. |
+| `V2 reference` | Broad reference financial state. | Baseline rich feature set for comparison. |
+| `V3 clean macro` | Financial state plus clean real-time/as-of macro variables. | Tests whether audited macro information improves allocation. |
+| `V4 GARCH` | Financial state plus fitted GARCH-style volatility features. | Tests volatility-forecast feature value. |
+| `V5 no-vol` | Ablation excluding a volatility feature block. | Tests whether simpler non-volatility states remain competitive. |
+| `V6 financial` | Parsimonious financial state with renamed score-like indicators. | Tests compact financial state representation. |
+| `V7 macro+GARCH` | Clean no-DXY macro state plus GARCH features. | Tests whether GARCH improves the clean macro specification. |
+| `V8 EWMA/GARCH` | EWMA/GARCH volatility hybrid. | Tests alternative volatility-state construction. |
+
+Short candidate labels are used for readability; full feature-family identifiers are reported in the project outputs.
 
 The clean macro/as-of pipeline excludes DXY because a full-window fresh true-vintage dollar proxy is not available without fallback, discontinuation, or current-vintage relabeling. CPI year-over-year is computed before weekly alignment. Heuristic probability-like V6 features are treated as scores rather than calibrated probabilities. Mechanical duplicate features are removed. PCA was audited but is not used as the default state representation.
 
@@ -203,7 +207,7 @@ Because the project contains several reporting layers, the word "best" changes m
 
 The first result is evaluated within the TD3 candidate universe. This layer asks which TD3 variant and cap are strongest before deterministic benchmarks are introduced. It is useful for understanding policy behavior, but it is not evidence that TD3 beats benchmarks.
 
-Under Zero-CASH, the TD3-only winner is `V5_no_volatility_block_cap_0p50`, with mandate-aware score 0.601124 and robust score 0.696702. Under BIL-CASH, the TD3-only winner is `V8_ewma_garch_vol_current_cap_0p70`, with mandate-aware score 0.660435 and robust score 0.749958.
+Under Zero-CASH, the TD3-only winner is `V5 no-vol cap 0.50`, with mandate-aware score 0.601124 and robust score 0.696702. Under BIL-CASH, the TD3-only winner is `V8 EWMA/GARCH cap 0.70`, with mandate-aware score 0.660435 and robust score 0.749958.
 
 Mandate-aware and robust scores are diagnostic selection summaries. Financial interpretation relies primarily on standard metrics and statistical validation.
 
@@ -211,10 +215,10 @@ Mandate-aware and robust scores are diagnostic selection summaries. Financial in
 
 | Cash assumption | Selected TD3 | Cap | Ann. return | Ann. volatility | Sharpe | Max drawdown | Avg. turnover | Eff. assets | Mean weekly transaction cost | Mandate-aware | Robust |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Zero-CASH | `V5_no_volatility_block_cap_0p50` | 0.50 | 0.0667 | 0.1156 | 0.5686 | -0.1206 | 0.4195 | 2.8093 | 0.000115 | 0.601124 | 0.696702 |
-| BIL-CASH | `V8_ewma_garch_vol_current_cap_0p70` | 0.70 | 0.0731 | 0.1060 | 1.0253 | -0.1066 | 0.3450 | 2.0044 | 0.000103 | 0.660435 | 0.749958 |
+| Zero-CASH | `V5 no-vol cap 0.50` | 0.50 | 0.0667 | 0.1156 | 0.5686 | -0.1206 | 0.4195 | 2.8093 | 0.000115 | 0.601124 | 0.696702 |
+| BIL-CASH | `V8 EWMA/GARCH cap 0.70` | 0.70 | 0.0731 | 0.1060 | 1.0253 | -0.1066 | 0.3450 | 2.0044 | 0.000103 | 0.660435 | 0.749958 |
 
-The Zero-CASH row is taken from `outputs/tables/final_corrected_limited_td3_60ep_10seeds/cap_sensitivity_all_results.csv`. The BIL-CASH row is taken from `/Users/thiagoherrera/Projects/portfolio_drl_outputs/final_corrected_limited_td3_cash_bil_proxy_60ep_10seeds/cap_sensitivity_all_results.csv`. Mean transaction cost is reported per weekly decision period.
+Rows are taken from the final corrected cap-sensitivity outputs. Mean transaction cost is reported per weekly decision period. Short strategy labels are used for readability; full candidate identifiers are reported in the project outputs.
 
 The fact that the selected TD3 model changes across cash assumptions is itself informative. Cash modeling is not a cosmetic detail; it changes the allocation environment and can change model selection.
 
@@ -222,7 +226,7 @@ The fact that the selected TD3 model changes across cash assumptions is itself i
 
 The second layer compares selected TD3 candidates with deterministic benchmarks regenerated under matching cost and cash assumptions. This is the first layer in which TD3 competes directly against benchmark strategies.
 
-Under Zero-CASH, the best overall combined-ranking strategy is `V3_real_macro_vintage_clean_no_dxy_cap_0p70`. Under BIL-CASH, the best overall combined-ranking strategy is `V7_real_macro_vintage_clean_no_dxy_garch_cap_0p80`. In both settings, the strongest benchmark is `trend_spy_cash_12p`.
+Under Zero-CASH, the best overall combined-ranking strategy is `V3 clean macro cap 0.70`. Under BIL-CASH, the best overall combined-ranking strategy is `V7 macro+GARCH cap 0.80`. In both settings, the strongest benchmark is `Trend SPY/CASH`.
 
 This result supports TD3 competitiveness. It does not support statistical dominance. The combined ranking shows that TD3 can score well under the corrected evaluation framework, but the statistical validation layer determines whether the apparent advantage is reliable.
 
@@ -230,12 +234,12 @@ This result supports TD3 competitiveness. It does not support statistical domina
 
 | Cash assumption | Strategy | Type | Ann. return | Ann. volatility | Sharpe | Max drawdown | Mandate-aware | Robust |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Zero-CASH | `V3_real_macro_vintage_clean_no_dxy_cap_0p70` | TD3 winner | 0.0869 | 0.1143 | 0.9234 | -0.1040 | 0.6606 | 0.7473 |
-| Zero-CASH | `trend_spy_cash_12p` | Best benchmark | 0.0979 | 0.1136 | 0.8802 | -0.1782 | 0.4831 | 0.6169 |
-| BIL-CASH | `V7_real_macro_vintage_clean_no_dxy_garch_cap_0p80` | TD3 winner | 0.1065 | 0.1270 | 1.1415 | -0.1030 | 0.6902 | 0.7797 |
-| BIL-CASH | `trend_spy_cash_12p` | Best benchmark | 0.1024 | 0.1135 | 0.9169 | -0.1730 | 0.4778 | 0.6042 |
+| Zero-CASH | `V3 clean macro cap 0.70` | TD3 winner | 0.0869 | 0.1143 | 0.9234 | -0.1040 | 0.6606 | 0.7473 |
+| Zero-CASH | `Trend SPY/CASH` | Best benchmark | 0.0979 | 0.1136 | 0.8802 | -0.1782 | 0.4831 | 0.6169 |
+| BIL-CASH | `V7 macro+GARCH cap 0.80` | TD3 winner | 0.1065 | 0.1270 | 1.1415 | -0.1030 | 0.6902 | 0.7797 |
+| BIL-CASH | `Trend SPY/CASH` | Best benchmark | 0.1024 | 0.1135 | 0.9169 | -0.1730 | 0.4778 | 0.6042 |
 
-The combined ranking metrics are taken from `final_corrected_zero_cash_combined_ranking.csv` and `final_corrected_bil_cash_combined_ranking.csv` in the final corrected benchmark-comparison output directories. The table reports ranking metrics only; statistical validation is reported separately below.
+Combined-ranking metrics are taken from the final corrected benchmark-comparison outputs. The table reports ranking metrics only; statistical validation is reported separately below. Short strategy labels are used for readability; full candidate identifiers are reported in the project outputs.
 
 The clean macro specification is important because it uses as-of macro discipline and excludes DXY from the preferred final macro path. The GARCH-augmented V7 specification becomes the BIL-CASH combined-ranking winner, but that does not imply that GARCH universally improves TD3 policy quality.
 
@@ -249,8 +253,10 @@ The validation layer is deliberately conservative. Bootstrap Sharpe-difference i
 
 | Cash assumption | Comparison | Sharpe delta | Bootstrap CI | P(candidate beats) | WRC p-value | Interpretation |
 | --- | --- | ---: | --- | ---: | ---: | --- |
-| Zero-CASH | TD3 `V3 cap 0p70` vs `trend_spy_cash_12p` | 0.1559 | [-0.6011, 0.9767] | 0.629 | 0.7136 | No statistical superiority claim is supported. |
-| BIL-CASH | TD3 `V7 cap 0p80` vs `trend_spy_cash_12p` | 0.1170 | [-0.7172, 0.9963] | 0.588 | 0.6767 | No statistical superiority claim is supported. |
+| Zero-CASH | TD3 `V3 clean macro cap 0.70` vs `Trend SPY/CASH` | 0.1559 | [-0.6011, 0.9767] | 0.629 | 0.7136 | No statistical superiority claim is supported. |
+| BIL-CASH | TD3 `V7 macro+GARCH cap 0.80` vs `Trend SPY/CASH` | 0.1170 | [-0.7172, 0.9963] | 0.588 | 0.6767 | No statistical superiority claim is supported. |
+
+Short strategy labels are used for readability; full candidate identifiers are reported in the project outputs.
 
 The intervals cross zero and the WRC p-values are high. The appropriate conclusion is not that TD3 fails, but that the corrected evidence does not justify a strong alpha claim. TD3 remains competitive, yet the benchmark remains statistically credible.
 
@@ -281,7 +287,7 @@ TD3 remains Pareto-competitive in several tradeoff views, but it is not universa
 
 Execution-spread robustness is a reporting-only post-training stress test. It does not retrain TD3 and does not create new final winners. Its purpose is to test whether selected histories are sensitive to additional spread assumptions.
 
-The selected TD3 strategies degrade more than the simple trend/cash benchmark. Under stress spreads, Zero-CASH TD3 `V3 cap 0p70` has an annualized return delta of -0.0139 and Sharpe delta of -0.1321. BIL-CASH TD3 `V7 cap 0p80` has an annualized return delta of -0.0128 and Sharpe delta of -0.1180. The `trend_spy_cash_12p` benchmark has a Sharpe delta around -0.0132.
+The selected TD3 strategies degrade more than the simple trend/cash benchmark. Under stress spreads, Zero-CASH TD3 `V3 clean macro cap 0.70` has an annualized return delta of -0.0139 and Sharpe delta of -0.1321. BIL-CASH TD3 `V7 macro+GARCH cap 0.80` has an annualized return delta of -0.0128 and Sharpe delta of -0.1180. The `Trend SPY/CASH` benchmark has a Sharpe delta around -0.0132.
 
 This does not invalidate TD3 competitiveness, but it shows that execution realism changes the economic interpretation of selected policies.
 
@@ -301,13 +307,13 @@ This is a meaningful result. Many DRL portfolio claims weaken once transaction c
 
 ### 8.2 What TD3 Does Not Prove
 
-The boundary of the result is equally important. Bootstrap intervals include zero and White Reality Check p-values do not support searched TD3 superiority. No strategy satisfies every hard mandate filter. Selected TD3 histories are more sensitive to additional spread assumptions than the `trend_spy_cash_12p` benchmark, and cash assumptions change the selected TD3 candidate.
+The boundary of the result is equally important. Bootstrap intervals include zero and White Reality Check p-values do not support searched TD3 superiority. No strategy satisfies every hard mandate filter. Selected TD3 histories are more sensitive to additional spread assumptions than the `Trend SPY/CASH` benchmark, and cash assumptions change the selected TD3 candidate.
 
 These limits make the paper's claim narrower, but also more credible.
 
 ### 8.3 Why Benchmarks Matter
 
-The benchmark set is not a collection of weak strawmen. It includes deterministic rules that capture diversification, trend following, risk-off behavior, momentum, risk parity, and classical optimization ideas. The `trend_spy_cash_12p` benchmark remains a strong comparator in both cash protocols.
+The benchmark set is not a collection of weak strawmen. It includes deterministic rules that capture diversification, trend following, risk-off behavior, momentum, risk parity, and classical optimization ideas. The `Trend SPY/CASH` benchmark remains a strong comparator in both cash protocols.
 
 TD3 must be compared against these strategies before any claim about dynamic allocation value is credible. A model that ranks well only against weak baselines would not be persuasive in applied finance.
 
@@ -325,7 +331,7 @@ The evidence supports a cautious claim: TD3 is competitive under the corrected p
 | TD3 statistically dominates. | No | Bootstrap confidence intervals include zero and WRC p-values do not support superiority. |
 | Cash assumption matters. | Yes | Zero-CASH and BIL-CASH select different TD3-only and combined winners. |
 | 60 episodes is undertrained. | No evidence | Longer training budgets do not materially improve selected candidate performance and can increase turnover or reduce Sharpe. |
-| Execution assumptions matter. | Yes | Stress spreads degrade selected TD3 strategies more than the trend/cash benchmark. |
+| Execution assumptions matter. | Yes | Stress spreads degrade selected TD3 strategies more than the `Trend SPY/CASH` benchmark. |
 | Hard mandate feasibility is achieved. | No | No strategy passes all hard canonical mandate filters. |
 | TD3 is Pareto-competitive. | Yes | TD3 remains on or near relevant tradeoff frontiers. |
 | Custom scores are sufficient. | No | Scores are diagnostic; standard metrics and statistical validation remain necessary. |

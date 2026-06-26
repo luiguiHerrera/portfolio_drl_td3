@@ -1,170 +1,227 @@
-# Robust TD3 Portfolio Allocation under Realistic Trading Frictions
+# Portfolio DRL TD3 - Realistic Evaluation of DRL Portfolio Claims
 
-This repository contains Master's thesis research code for TD3-based Deep Reinforcement Learning in portfolio allocation.
+This repository contains a research case study on TD3 for cross-asset portfolio
+allocation. The point is not to present TD3 as a trading system. The point is to
+test whether deep reinforcement learning portfolio claims survive a stricter
+evaluation protocol: realistic transaction costs, explicit cash assumptions,
+matched deterministic benchmarks, out-of-sample validation, and statistical
+checks for searched strategy performance.
 
-The project does not try to market a trading bot. It asks a narrower question: can a continuous-action TD3 portfolio policy become credible once transaction costs, cash assumptions, concentration, drawdown, turnover, benchmarks, regimes, and statistical uncertainty are treated seriously?
+The current paper is titled:
 
-The final corrected answer is cautious. TD3 is competitive and sometimes top-ranked, but it does not pass statistical superiority tests against clean benchmarks. The strongest contribution is the evaluation framework and the corrected protocol, not a fake alpha claim.
+> Evaluating DRL Portfolio Claims under Realistic Cross-Asset Frictions: A TD3
+> Case Study with Costs, Cash, Matched Benchmarks, and Statistical Validation
 
-## What This Project Tests
+The final answer is cautious. Selected TD3 candidates can be competitive under
+mandate-aware and robust diagnostic rankings, but the evidence does not support
+a clean statistical superiority claim over deterministic benchmarks. Bootstrap
+Sharpe-difference intervals cross zero. White Reality Check does not support a
+strong alpha claim. The main contribution is the evaluation discipline, not a
+deployable trading signal.
 
-- TD3 for weekly long-only portfolio allocation.
-- Financial, macro, volatility, and hybrid feature families.
-- Asset-specific transaction costs.
-- Synthetic zero-return `CASH` versus a BIL short-term Treasury ETF cash proxy.
-- Deterministic benchmark strategies under matching cost assumptions.
-- Bootstrap validation, White Reality Check, regime analysis, mandate profiles, and Pareto analysis.
+## Why This Project Exists
 
-## Why This Is Not Just a Toy Backtest
+DRL finance results can look stronger than they are when the evaluation setup is
+too loose. Common problems include weak benchmarks, ambiguous cash handling,
+simplified transaction costs, model-search bias, limited seed testing, and
+little statistical validation.
 
-The final corrected experiments use:
+This repo stress-tests a TD3 portfolio allocator under those conditions. It asks
+what remains after the backtest is forced through a more skeptical evidence
+stack.
 
-- walk-forward-style evaluation;
-- 10 random seeds;
-- 4 folds;
-- 60 training episodes;
-- 800 TD3 histories per cash assumption;
-- 14 deterministic benchmarks per cash assumption;
-- explicit transaction costs and turnover diagnostics;
-- max-weight caps as TD3 structural constraints;
-- canonical mandate profiles;
-- bootstrap statistical validation and White Reality Check;
-- regime, mandate-profile, and Pareto reporting layers.
+## Research Question
 
-Generated outputs are not fully committed to git. The repository keeps code, tests, docs, and audit tooling; large experiment outputs live under `outputs/` or an external output directory such as `~/Projects/portfolio_drl_outputs`.
+Can a disciplined evaluation protocol distinguish statistically credible and
+practically feasible DRL portfolio performance from apparent backtest strength?
 
-## Final Corrected Protocol
+## What Is Being Tested
 
-| Component | Final corrected choice |
-|---|---|
-| Assets | `SPY`, `TLT`, `GLD`, `BTC-USD`, `CASH` |
-| Portfolio | weekly, long-only, fully invested |
-| Asset-specific costs | `SPY/TLT/GLD`: 2 bps, `BTC-USD`: 10 bps |
-| Synthetic CASH | zero return, 0 bps cost |
-| BIL-CASH robustness | BIL proxy return, 2 bps cost on `CASH` sleeve |
-| Reward | net-return-first: full transaction costs enter financial net return |
-| Risk treatment | drawdown penalty active in the reward; turnover and concentration kept out of the reward and evaluated through diagnostics, mandate profiles, and Pareto analysis |
-| Actions | cap-consistent behavior action, executed action, replay action, target smoothing, and actor-loss critic evaluation |
-| Exploration | behavior-policy exploration noise during training only |
-| Macro data | clean vintage/as-of FRED macro with required sidecar metadata |
-| Mandate constraints | max drawdown, max annualized volatility, min effective assets, max average turnover |
+The learning model is TD3, used as a continuous-action portfolio allocator. At a
+weekly decision frequency, the agent chooses long-only portfolio weights over a
+compact cross-asset universe:
 
-`max_weight` is not an official mandate constraint. It is a structural TD3 training/evaluation intervention used to control degenerate concentration.
+| Asset | Role in the allocation problem |
+| --- | --- |
+| `SPY` | Equity / growth risk |
+| `TLT` | Duration / interest-rate risk |
+| `GLD` | Real safe-haven / hard-asset exposure |
+| `BTC-USD` | Digital alternative / speculative convexity |
+| `CASH` / `BIL` | Defensive liquidity / optionality |
 
-## Feature Families
+The project evaluates two cash protocols:
 
-Each state specification is trained as a separate TD3 policy under the same protocol.
+- `Zero-CASH`: synthetic zero-return cash sleeve with 0 bps cash transaction
+  cost.
+- `BIL-CASH`: short-term Treasury ETF proxy for cash, with 2 bps cash
+  transaction cost.
 
-- `V2_reference_full`: rich financial/reference state.
-- `V3_real_macro_vintage_clean_no_dxy`: clean real-time/as-of macro state.
-- `V4_real_garch_current`: rolling fitted GARCH volatility state.
-- `V5_no_volatility_block`: no-volatility ablation.
-- `V6_financial_state`: parsimonious financial state.
-- `V7_real_macro_vintage_clean_no_dxy_garch`: clean macro plus GARCH.
-- `V8_ewma_garch_vol_current`: EWMA/GARCH volatility hybrid.
+The corrected cost schedule uses asset-specific transaction costs:
 
-The clean macro specification uses `DGS10`, `DGS2`, `VIX`, and `CPI`. DXY is excluded because no full-window fresh true-vintage dollar proxy was available for 2015-2026 without fallback, discontinuation, or current-vintage relabeling.
+- `SPY`, `TLT`, `GLD`: 2 bps
+- `BTC-USD`: 10 bps
+- `CASH`: 0 bps under Zero-CASH, 2 bps under BIL-CASH
 
-The corrected clean macro pipeline requires traceability sidecar metadata. CPI YoY is computed on monthly CPI before weekly alignment. The old CPI 12-week momentum feature was removed from the clean final specification.
+## Evaluation Stack
 
-V6 heuristic probability-like variables were renamed as scores. Mechanical duplicate/self-reference features were removed. PCA was audited but not added as a default protocol step.
+The final paper separates ranking, statistical credibility, and practical
+feasibility. Those are different claims.
 
-## Main Results
+The evaluation stack includes:
 
-Different reporting layers answer different questions:
+- out-of-sample walk-forward evaluation
+- multiple random seeds and folds
+- asset-specific transaction costs
+- explicit Zero-CASH and BIL-CASH assumptions
+- regenerated deterministic benchmarks under matching assumptions
+- bootstrap Sharpe-difference intervals
+- White Reality Check for searched candidate performance
+- mandate and Pareto feasibility analysis
+- regime dependence analysis
+- execution-spread stress tests
+- training-budget convergence checks
 
-- TD3-only cap sensitivity asks which TD3 variant is best.
-- Combined ranking asks how selected TD3 policies compare with benchmarks.
-- White Reality Check asks whether searched TD3 superiority is statistically supported.
-- Mandate/Pareto analysis asks whether strategies survive practical constraints.
+## Benchmarks
 
-### A. TD3-Only Cap Sensitivity
+The benchmark set is deliberately not weak. It includes static allocations,
+single-asset buy-and-hold exposures, momentum rules, risk-off rules, risk
+parity, and rolling Markowitz-style optimizers.
 
-Under synthetic zero-CASH:
+Deterministic benchmarks used in the final corrected comparison include:
 
-- winner: `V5_no_volatility_block_cap_0p50`
-- mandate-aware score: `0.601124`
-- robust score: `0.696702`
-
-Under BIL-CASH robustness:
-
-- winner: `V8_ewma_garch_vol_current_cap_0p70`
-- mandate-aware score: `0.660435`
-- robust score: `0.749958`
-
-The cash-return assumption materially changes TD3 model selection.
-
-### B. TD3 + Benchmark Ranking
-
-Under synthetic zero-CASH:
-
-- best overall: `V3_real_macro_vintage_clean_no_dxy_cap_0p70`
-
-Under BIL-CASH robustness:
-
-- best overall: `V7_real_macro_vintage_clean_no_dxy_garch_cap_0p80`
-
-Best benchmark in both settings:
-
+- `60_40_SPY_TLT`
+- `BuyHold_BTC-USD`
+- `BuyHold_GLD`
+- `BuyHold_SPY`
+- `BuyHold_TLT`
+- `Equal_Weight`
+- `Equal_Weight_Risky`
+- `defensive_risk_off_12p`
+- `momentum_winner_12p`
+- `risk_adjusted_momentum_winner_12p_12p`
+- `rolling_markowitz_long_only_52p`
+- `rolling_markowitz_min_variance_52p`
+- `rolling_risk_parity_inverse_vol_12p`
 - `trend_spy_cash_12p`
 
-These rankings are useful, but they are not statistical superiority evidence.
-A reporting-only execution-spread robustness layer was added to stress selected strategies under additional top-of-book spread assumptions. It does not retrain models or create new final winners.
+## Main Findings
 
-### C. Statistical Validation
+The findings are intentionally modest:
 
-Top TD3 versus `trend_spy_cash_12p`:
+- TD3 can be competitive under some mandate-aware and robust diagnostic
+  rankings.
+- TD3 does not establish statistical superiority over the deterministic
+  benchmarks in the final validation layer.
+- `trend_spy_cash_12p` remains a serious benchmark comparator in both cash
+  protocols.
+- Cash assumptions matter. Zero-CASH and BIL-CASH select different preferred
+  TD3 candidates.
+- Costs and execution-spread assumptions materially affect interpretation.
+- No strategy passes all hard canonical mandate filters in the final
+  constraint-first analysis.
+- More training does not automatically improve the selected candidates; the
+  convergence check does not show that the 60-episode protocol is obviously
+  undertrained.
+- The value of the repo is the evaluation protocol and the traceable research
+  workflow, not a claim that TD3 is a reliable trading edge.
 
-| Cash assumption | Sharpe delta | Bootstrap CI | P(TD3 beats) | WRC p-value |
-|---|---:|---:|---:|---:|
-| Zero-CASH | `0.1559` | `[-0.6011, 0.9767]` | `0.629` | `0.7136` |
-| BIL-CASH | `0.1170` | `[-0.7172, 0.9963]` | `0.588` | `0.6767` |
+## What This Repo Demonstrates
 
-The conclusion is direct: TD3 does not survive statistical superiority tests. No statistical dominance claim should be made.
+For reviewers, quant researchers, and recruiters, the useful part of this repo
+is the research discipline around the model:
 
-### D. Regime, Mandate, and Pareto Results
+- PyTorch TD3 implementation for continuous portfolio weights
+- portfolio environment design with feasible action handling
+- net-return-first accounting with transaction costs
+- feature-family experimentation across financial, macro, volatility, and
+  hybrid states
+- walk-forward validation across seeds and folds
+- deterministic benchmark regeneration under matched assumptions
+- bootstrap and White Reality Check validation
+- mandate-aware, robust-score, Pareto, regime, and execution-friction reporting
+- output-lineage documentation to separate final evidence from historical runs
+- a paper workflow that links narrative claims back to source files
 
-Regime analysis shows selected TD3 competitiveness, not broad dominance. Benchmarks still win important slices.
+## What This Repo Does Not Claim
 
-Constraint-first and mandate-profile analysis use canonical hard constraints:
+This repository does not claim:
 
-- maximum drawdown;
-- maximum annualized volatility;
-- minimum effective number of assets;
-- maximum average turnover.
+- that TD3 reliably beats deterministic portfolio benchmarks
+- that the result is statistically dominant after model search
+- that the code is a production trading system
+- that this is investment advice
+- that the asset universe is a complete global allocation universe
+- that the backtest models taxes, custody, intraday liquidity, order-book depth,
+  or full market impact
+- that the results have been live-forward validated
 
-No strategy passes all hard canonical mandate filters. This is uncomfortable, but useful: the final result is not that TD3 solved the mandate problem. The result is that corrected TD3 policies can be competitive research candidates, while practical constraints remain binding.
-
-## Interpretation
-
-The corrected protocol changed the story.
-
-Earlier scalar-cost results suggested a clean macro TD3 candidate was the main leader. After asset-specific costs, cap-consistent actions, net-return-first reward, corrected macro alignment, benchmark regeneration, and robustness checks, the preferred model depends on the cash assumption and reporting layer.
-
-The honest summary:
-
-- TD3 is competitive.
-- TD3 sometimes ranks first.
-- TD3 does not statistically dominate clean benchmarks.
-- Cash assumptions matter.
-- Regime behavior matters.
-- The evaluation framework is the main contribution.
-
-## Repository Structure
+## Repository Map
 
 ```text
-configs/      experiment configuration
-src/          data, environment, models, training, analysis, risk, backtests
-tests/        unit and integration tests
-scripts/      standalone audit/data/report helpers
-docs/         research notes and design documents
-paper/        manuscript files, figures, bibliography
-outputs/      generated artifacts; not fully versioned
+configs/      experiment configuration files
+data/         raw, interim, and processed data files
+docs/         research notes, paper framing, and output lineage audits
+notebooks/    notebook placeholder area
+outputs/      generated artifacts; contains historical and final-like outputs
+paper/        LaTeX manuscript, rendered PDF, references, and paper notes
+scripts/      data, recovery, audit-pack, and robustness helper scripts
+src/          implementation code
+tests/        unittest coverage for data, env, TD3, benchmarks, and reports
 ```
 
-## How To Reproduce
+Important implementation areas:
 
-Create the environment:
+```text
+src/models/        actor, critic, TD3 agent
+src/env/           portfolio environment
+src/train/         TD3 training and exploration
+src/data/          datasets, features, macro data, walk-forward splits
+src/backtest/      benchmarks, metrics, policy evaluation
+src/analysis/      final reports, audits, statistical validation, robustness
+src/costs/         spread-cost utilities
+src/risk/          mandate profiles and penalties
+```
+
+## Final Output Lineage
+
+This repository contains many historical experiment outputs. Do not treat every
+folder under `outputs/` as final paper evidence.
+
+The source-of-truth audit docs are:
+
+- `docs/final_output_source_map.md`
+- `docs/output_lineage_audit.md`
+
+Those files map the final paper tables, figures, and major numeric claims to
+specific source files. They also identify repo-local folders that are historical,
+superseded, or ambiguous.
+
+The key point: final paper evidence should come from the documented
+`final_corrected_*` output roots and the specific repo-local upstream folders
+named in the source map, not from old smoke tests or intermediate reports.
+
+## How To Read The Paper
+
+The polished research narrative is in:
+
+- `paper/main.pdf`
+- `paper/main.tex`
+
+The paper explains the motivation, methodology, results, and interpretation.
+The docs explain traceability:
+
+- `docs/paper_results_narrative.md`
+- `docs/paper_reporting_layers.md`
+- `docs/paper_claim_vs_evidence.md`
+- `docs/final_output_source_map.md`
+- `docs/output_lineage_audit.md`
+
+Read the paper for the argument. Read the source-map docs when checking whether
+a table or claim is supported by final evidence.
+
+## Reproducibility And Usage
+
+The repository has a Python dependency file:
 
 ```bash
 python3 -m venv .venv
@@ -178,7 +235,20 @@ Run the test suite:
 .venv/bin/python -m unittest discover tests
 ```
 
-Generate the audit pack:
+Build the paper PDF if the LaTeX tooling is installed:
+
+```bash
+latexmk -pdf paper/main.tex
+```
+
+If `latexmk` is unavailable and Tectonic is installed:
+
+```bash
+tectonic paper/main.tex
+```
+
+Create a lightweight audit pack from the current repo and external final output
+directory:
 
 ```bash
 .venv/bin/python scripts/create_tfm_audit_pack.py \
@@ -187,36 +257,21 @@ Generate the audit pack:
   --zip-name tfm_audit_pack.zip
 ```
 
-The heavy final-corrected experiments are not rerun by this README. They are generated under `outputs/` or the external output directory and summarized by the audit pack.
+The heavy final-corrected experiments are not rerun from this README. Large
+experiment outputs may live under `outputs/` or under an external directory such
+as `~/Projects/portfolio_drl_outputs`. Inspect
+`docs/final_output_source_map.md` before using any output folder as final paper
+evidence.
 
-## Audit Status
+## Current Status
 
-Latest audit pack:
+- Research paper is near final review.
+- Final output lineage is documented.
+- The README, paper framing docs, and source-map docs now reflect the corrected
+  research purpose.
+- Figure 2 now uses the final split Zero-CASH and BIL-CASH regime outputs.
 
-- 22 audit checks passed.
-- Zero-CASH histories: 800/800.
-- BIL-CASH histories: 800/800.
-- Zero-CASH benchmarks: 14.
-- BIL-CASH benchmarks: 14.
-- `compileall` OK.
-- unittest suite OK: 1,258 tests in the latest recorded full run.
+## License And Use
 
-## Important Caveats
-
-- This is research code, not production trading software.
-- It is not financial advice or an investment recommendation.
-- There is no deployable alpha claim.
-- BIL-CASH is a robustness proxy, not exact cash execution.
-- Asset-specific costs are broker/exchange-style proxies; they do not model taxes, custody frictions, withdrawal fees, market impact, or transfer delays.
-- Statistical validation and White Reality Check do not support a superiority claim.
-- Data, cash, cost, and execution assumptions matter.
-- Spread robustness is scenario-based and proxy-driven; it is not full market impact modeling.
-
-## Future Work
-
-- Calibrated probability features for the financial-state block using logistic regression, Platt scaling, isotonic calibration, Brier score, and reliability curves.
-- Larger asset universes.
-- Stricter slippage and execution modeling.
-- Paper-trading or live-forward validation.
-- Alternative continuous-control RL agents.
-- More formal treatment of benchmark uncertainty and regime transitions.
+This is research code for portfolio-allocation evaluation. It is not financial
+advice, not a trading recommendation, and not a production execution system.

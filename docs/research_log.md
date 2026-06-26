@@ -5594,3 +5594,69 @@ This supports the cautious thesis claim:
 
 - `.venv/bin/python -m unittest tests/test_regime_analysis_report.py`: 7 OK
 - `.venv/bin/python -m unittest discover tests`: 1083 OK
+
+## Entry X — Paper Draft Literature Positioning and Protocol Figure
+
+**Change type:**
+Editorial paper-structure update.
+
+**Paper file:**
+
+- `paper/Robust Evaluation of TD3 Portfolio Allocation under Realistic Cross-Asset Frictions - revision David.md`
+
+**Updates:**
+
+- Added a research gap and literature positioning table clarifying that the contribution is the integrated falsification-oriented evaluation protocol, not TD3 novelty, Bitcoin inclusion, or transaction costs in isolation.
+- Added an experimental protocol overview figure showing the flow from inputs and candidate construction through TD3 evaluation, matched benchmark regeneration, ranking, statistical validation, practical robustness, and final interpretation.
+- Added `scripts/render_revision_david_pdf.py` and regenerated the revision David PDF from the Markdown draft.
+- Updated `paper/README.md` to reflect the current Markdown-to-PDF workflow.
+
+**Empirical status:**
+No reported results, metrics, or empirical findings were changed.
+
+## Entry X — LaTeX Paper Pipeline Restored
+
+**Change type:**
+Paper build-system restoration.
+
+**Paper files:**
+
+- `paper/main.tex`
+- `paper/main.pdf`
+- `paper/README.md`
+
+**Updates:**
+
+- Recreated a clean LaTeX source for the current revision David manuscript.
+- Converted Markdown tables into LaTeX tables using `booktabs`, `tabularx`, `adjustbox`, and landscape formatting where needed.
+- Replaced the Mermaid protocol diagram with a native TikZ figure.
+- Restored a reproducible LaTeX workflow documented in `paper/README.md`, with `latexmk -pdf paper/main.tex` as the preferred command and `tectonic paper/main.tex` as the available local fallback.
+- Superseded the temporary Markdown-to-PDF rendering script; the review PDF is now generated from LaTeX.
+
+**Build verification:**
+
+- `latexmk -pdf paper/main.tex`: unavailable in the current environment (`latexmk` not installed).
+- `tectonic paper/main.tex`: compiled successfully and wrote `paper/main.pdf`.
+
+**Empirical status:**
+No reported empirical outputs, metrics, or findings were changed.
+
+## Entry X — Final Paper Polish: Cost Sources and Convergence Grounding
+
+**Change type:**
+Final LaTeX paper polish.
+
+**Paper files:**
+
+- `paper/main.tex`
+- `paper/references.bib`
+
+**Updates:**
+
+- Added public broker/exchange fee schedule references for the transaction-cost modeling assumptions: Interactive Brokers for ETF/equity trading context and Binance for crypto trading-fee context.
+- Grounded Section 7.4 in the existing training-budget convergence output at `/Users/thiagoherrera/Projects/portfolio_drl_outputs/final_corrected_training_budget_convergence/`.
+- The convergence output reports 320 completed histories across 30, 60, 100, and 150 episodes, with zero rows supporting 60-episode undertraining evidence.
+- Confirmed that the convergence check is reporting-only and does not create new final winners.
+
+**Empirical status:**
+No reported empirical outputs, metrics, winners, or findings were changed.

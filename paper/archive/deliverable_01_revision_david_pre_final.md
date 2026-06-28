@@ -4,30 +4,33 @@
 
 ## Abstract
 
-This paper evaluates whether Twin Delayed Deep Deterministic Policy Gradient (TD3) remains credible for dynamic portfolio allocation once realistic financial evaluation conditions are imposed simultaneously. The experiment uses a compact cross-asset wealth-allocation universe consisting of SPY, TLT, GLD, BTC-USD, and CASH, with weekly long-only allocation, asset-specific transaction costs, explicit Zero-CASH and BIL-CASH assumptions, where BIL-CASH is a short-term Treasury ETF proxy for remunerated cash, regenerated deterministic benchmarks, and out-of-sample walk-forward evaluation. The empirical design separates candidate ranking from statistical validation through bootstrap Sharpe-difference tests and a White Reality Check over the searched TD3 candidate set. Additional robustness layers evaluate mandate and Pareto feasibility, regime dependence, execution-spread stress, and training-budget convergence.
+Financial deep reinforcement learning (DRL) portfolio results are often difficult to interpret because performance depends not only on the learning algorithm, but also on the evaluation protocol used around it. Weak benchmarks, simplified transaction costs, ambiguous cash treatment, candidate-search bias, and limited statistical validation can make a strategy appear stronger than it is.
 
-The corrected evidence does not support a claim that TD3 statistically dominates clean portfolio benchmarks. TD3 remains competitive and can rank first under the combined TD3-plus-benchmark ranking layer, but bootstrap confidence intervals include zero and White Reality Check p-values do not reject benchmark competitiveness. Cash assumptions, transaction costs, execution spreads, and hard mandate filters materially affect model selection and interpretation. The contribution is therefore not a deployable alpha claim or an algorithmic contribution, but a falsification-oriented evaluation framework showing how much DRL portfolio claims depend on benchmark, cash, cost, and statistical validation discipline.
+This paper proposes and applies a falsification-oriented evaluation protocol for TD3-based cross-asset portfolio allocation. The experiment uses a compact and interpretable wealth-allocation universe composed of five economic sleeves: equity growth, interest-rate duration, real safe-haven exposure, digital alternative risk, and defensive liquidity, proxied by SPY, TLT, GLD, BTC-USD, and CASH. TD3 candidates are evaluated under weekly long-only allocation, asset-specific transaction costs, explicit Zero-CASH and BIL-CASH protocols, regenerated deterministic benchmarks, and out-of-sample walk-forward testing. The ranking layer is separated from statistical validation through bootstrap Sharpe-difference intervals and White Reality Check. Additional robustness layers examine mandate and Pareto feasibility, regime dependence, execution-spread stress, and training-budget convergence.
+
+The results show that TD3 remains competitive under this corrected evaluation stack, but the evidence does not support a claim of statistical dominance over clean deterministic benchmarks. Cash assumptions, transaction costs, execution spreads, and hard feasibility filters materially affect model selection and interpretation. The main contribution is therefore not an algorithmic modification to TD3 or a deployable alpha claim. It is a disciplined evaluation framework showing how DRL portfolio claims change when competitiveness, statistical superiority, and practical feasibility are treated as separate questions.
 
 ## Introduction
 
-Deep reinforcement learning (DRL) is attractive for portfolio allocation because it can represent dynamic, nonlinear decision rules without requiring a closed-form forecasting model. In principle, a continuous-control agent can adapt allocations across asset classes, respond to changing risk conditions, and incorporate transaction costs directly into the portfolio environment. In practice, however, financial DRL results are vulnerable to fragile evaluation. Apparent performance can depend on weak benchmarks, simplified trading costs, unclear cash treatment, unstable concentration behavior, limited robustness analysis, or the absence of data-snooping controls.
+Financial deep reinforcement learning (DRL) has become an appealing tool for portfolio allocation because it can learn dynamic allocation rules without imposing a closed-form return model. In continuous-action settings, algorithms such as TD3 can map market states into portfolio weights, adapt allocations over time, and internalize transaction costs through the environment. This makes DRL attractive for cross-asset allocation problems where the relevant decision is not a single buy-or-sell signal, but a sequence of portfolio weights.
 
-This paper asks whether TD3 portfolio allocation benefits survive a realistic cross-asset evaluation once costs, cash assumptions, benchmarks, statistical validation, mandate constraints, regimes, execution frictions, and training-budget sensitivity are imposed simultaneously. The goal is not to market TD3 as a benchmark-beating strategy. The goal is to test whether TD3 remains credible after common objections to financial backtests are built into the protocol.
+The central challenge, however, is not producing a high-ranking backtest. It is determining whether that ranking survives a disciplined financial evaluation. In financial applications, apparent outperformance can be created or amplified by weak benchmarks, simplified trading costs, unclear cash treatment, candidate-search bias, unstable concentration, limited robustness analysis, or the absence of statistical controls for data snooping. A strategy may rank well in a backtest and still fail to establish a reliable economic advantage once these layers are imposed.
+
+The empirical setting is a compact and interpretable wealth-allocation universe composed of five economic sleeves: equity growth, interest-rate duration, real safe-haven exposure, digital alternative risk, and defensive liquidity. These sleeves are proxied by SPY, TLT, GLD, BTC-USD, and CASH. The universe is deliberately narrow. It is not intended to approximate the full global market portfolio. It is designed as a controlled test bed where allocation behavior can be interpreted as rotation across distinct macro-financial exposures.
 
 The central research question is:
 
-> Do TD3 portfolio allocation benefits survive realistic cross-asset evaluation once costs, cash assumptions, benchmarks, statistical validation, mandate constraints, regimes, execution frictions, and training-budget sensitivity are imposed simultaneously?
+> Can a disciplined evaluation protocol distinguish statistically credible and practically feasible DRL portfolio performance from apparent backtest strength?
 
-The answer is deliberately qualified. TD3 remains competitive under the corrected protocol and can rank above regenerated deterministic benchmarks in the combined ranking layer. However, statistical validation does not establish superiority over clean benchmarks. This distinction is central: a high ranking under a diagnostic score is not the same as statistically reliable outperformance. The main empirical finding is therefore not a TD3 victory claim, but a narrowing of what can be responsibly claimed from TD3 portfolio experiments: ranking competitiveness can survive realistic evaluation, while statistical dominance does not.
+This paper addresses that question using TD3 as a continuous-control empirical test case. TD3 is well suited for portfolio-weight decisions, but the focus of the paper is the evaluation protocol surrounding the model: how benchmarks are matched, how cash is treated, how costs are imposed, how candidate search is controlled, and how ranking results are separated from statistical and practical claims.
 
-The paper makes four contributions.
+The paper answers the research question through a falsification-oriented evaluation protocol. TD3 candidates are trained and evaluated in a weekly long-only portfolio environment with asset-specific costs and two explicit cash protocols: Zero-CASH and BIL-CASH. Deterministic benchmarks are regenerated under the same asset universe, cost schedule, cash assumption, and evaluation window. Candidate ranking is then separated from statistical validation using bootstrap Sharpe-difference intervals and White Reality Check. Additional layers examine mandate and Pareto feasibility, regime dependence, execution-spread robustness, and training-budget convergence.
 
-1. It develops a corrected TD3 evaluation protocol for a compact cross-asset wealth-allocation universe with asset-specific costs and explicit cash assumptions.
-2. It compares TD3 variants against deterministic benchmarks regenerated under matching cost and cash assumptions.
-3. It adds a statistical validation layer using bootstrap Sharpe differences and White Reality Check, explicitly separating ranking from statistical superiority.
-4. It evaluates practical robustness through regime behavior, mandate and Pareto feasibility, execution-spread stress, and training-budget convergence.
+The evidence leads to a deliberately cautious interpretation. TD3 remains competitive under the corrected evaluation stack and can rank above regenerated deterministic benchmarks in the combined ranking layer. However, the statistical validation layer does not support a claim of dominance over clean benchmarks. Cash assumptions, transaction costs, execution spreads, and hard feasibility filters materially affect model selection and interpretation. The main result is therefore not that TD3 wins or fails. The main result is that realistic evaluation changes what can be responsibly claimed from DRL portfolio experiments.
 
-The paper does not claim deployable investment advice or a production-ready trading system. Its contribution is a robust evaluation framework and a disciplined interpretation of DRL portfolio evidence.
+The paper makes four contributions. First, it proposes a matched evaluation protocol for TD3-based cross-asset allocation with explicit cash assumptions and asset-specific costs. Second, it regenerates deterministic benchmarks under the same assumptions used for TD3, avoiding unmatched comparisons. Third, it separates ranking competitiveness from statistical superiority through bootstrap Sharpe-difference intervals and White Reality Check. Fourth, it adds practical robustness layers covering mandate feasibility, Pareto tradeoffs, regime dependence, execution-spread stress, and training-budget convergence.
+
+The contribution is a disciplined evaluation framework for interpreting DRL portfolio evidence. Under this framework, competitiveness, statistical dominance, and practical feasibility are treated as separate claims rather than collapsed into a single backtest ranking.
 
 ## Related Literature and Research Gap
 
@@ -57,11 +60,21 @@ Financial model selection is vulnerable to data snooping. When many candidate po
 
 This paper uses bootstrap Sharpe-difference intervals and White Reality Check p-values as statistical guardrails. These tests do not replace economic interpretation, but they prevent ranking results from being overstated as statistical dominance.
 
-### Research Gap
+### Research gap and literature positioning
 
-TD3 portfolio allocation, transaction costs, macro or factor features, crypto portfolios, and benchmark comparisons have each been studied before. The contribution here is not the isolated use of any one component. The gap is the combined falsification-oriented evaluation stack.
+The relevant gap is not the use of TD3, the inclusion of Bitcoin, or the addition of transaction costs in isolation. These elements already appear in adjacent literatures. The unresolved issue is whether DRL portfolio evidence remains credible when the evaluation protocol jointly controls the main sources of backtest fragility.
 
-This paper evaluates whether TD3 remains credible when asset-specific costs, explicit cash assumptions, regenerated benchmarks, statistical validation, mandate and Pareto feasibility, regime analysis, execution-spread stress, and training-budget convergence are imposed together in a realistic cross-asset protocol. That combined evaluation discipline is the main research contribution.
+**Research gap and literature positioning**
+
+| Literature stream | What it typically does | Main limitation for the present question | What remains missing |
+| --- | --- | --- | --- |
+| DRL portfolio allocation | Trains reinforcement-learning agents to map market states into allocation or trading decisions. | Often emphasizes model performance without fully isolating the evaluation assumptions that support the result. | A protocol that treats ranking, statistical credibility, and practical feasibility as separate claims. |
+| TD3-based portfolio studies | Uses TD3 as a continuous-control allocator for portfolio weights or trading actions. | The algorithmic choice can be foregrounded more than the evidentiary discipline around the backtest. | A TD3 evaluation framed as a stress test of claims rather than as a claim of TD3 novelty. |
+| Multi-asset allocation with Bitcoin and alternative assets | Studies diversification, hedge behavior, and allocation across conventional and alternative assets. | Including alternative assets does not by itself resolve benchmark matching, cash treatment, or model-selection bias. | An interpretable cross-asset test bed where alternative-risk exposure is evaluated under matched financial assumptions. |
+| Portfolio studies with transaction costs and practical frictions | Adds trading costs, constraints, turnover analysis, or implementation frictions. | Frictions are often examined as isolated adjustments rather than as part of a unified validation stack. | Joint treatment of asset-specific costs, explicit cash protocols, execution-spread stress, and feasibility filters. |
+| Robustness and statistical evaluation in quantitative finance | Uses bootstrap methods, data-snooping controls, and robustness checks to discipline performance claims. | These tools are not always integrated into DRL portfolio model selection and benchmark comparison. | A falsification-oriented pipeline linking searched TD3 candidates, regenerated benchmarks, bootstrap Sharpe differences, White Reality Check, and practical robustness layers. |
+
+The contribution is therefore the integrated evaluation design. This paper asks whether a TD3 allocator remains competitive, statistically credible, and practically feasible after matched benchmarks, asset-specific frictions, explicit cash assumptions, statistical validation, and robustness layers are imposed together.
 
 ## Data and Asset Universe
 
@@ -161,6 +174,29 @@ Short candidate labels are used for readability; full feature-family identifiers
 ## Experimental Protocol
 
 The final corrected protocol is moderate but systematic. It is designed to make TD3 compete against realistic frictions rather than against weak evaluation assumptions.
+
+### Experimental protocol overview
+
+```mermaid
+flowchart TD
+    A["Inputs<br/>SPY, TLT, GLD, BTC-USD, CASH<br/>Weekly returns<br/>Macro / volatility features<br/>Zero-CASH / BIL-CASH<br/>Asset-specific transaction costs"]
+    B["Candidate construction<br/>Feature families: V3, V4, V5, V7, V8<br/>Cap variants: uncapped, 0.50, 0.70, 0.80"]
+    C["TD3 training and evaluation<br/>Walk-forward folds<br/>Multi-seed protocol<br/>60 episodes<br/>Long-only continuous allocation"]
+    D["Benchmark regeneration<br/>Same universe<br/>Same cost model<br/>Same cash assumption<br/>Same evaluation window"]
+    E["Ranking layer<br/>TD3-only cap sensitivity<br/>Combined TD3 vs benchmark ranking"]
+    F["Statistical validation<br/>Bootstrap Sharpe-difference intervals<br/>White Reality Check"]
+    G["Practical robustness<br/>Mandate profiles<br/>Constraint-first / Pareto analysis<br/>Regime analysis<br/>Execution-spread robustness<br/>Training-budget convergence"]
+    H["Final interpretation<br/>Competitive ranking<br/>No statistical superiority claim<br/>Interpretation depends on cash, costs, and feasibility filters"]
+
+    A --> B --> C --> E
+    A --> D --> E
+    E --> F --> H
+    E --> G --> H
+```
+
+**Experimental protocol overview.** The evaluation pipeline separates data construction, TD3 candidate search, matched benchmark regeneration, ranking, statistical validation, and practical robustness. The figure summarizes the order of evidence used to interpret TD3 performance without treating a high ranking as sufficient proof of superiority.
+
+The contribution lies in this integrated evaluation pipeline rather than in TD3 itself. TD3 provides a continuous-control portfolio allocator, but the paper's central object is the discipline imposed around it: matched benchmarks, explicit cash protocols, asset-specific frictions, data-snooping controls, and feasibility-oriented robustness checks.
 
 **Final corrected experimental protocol**
 

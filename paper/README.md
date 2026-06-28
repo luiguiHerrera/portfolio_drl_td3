@@ -1,24 +1,42 @@
 # Paper draft
 
-This folder contains the LaTeX working draft for the TD3 portfolio allocation
-paper.
+This folder contains the LaTeX working draft and rendered PDF for the TD3
+portfolio allocation paper.
 
-Build from this directory with the installed Tectonic toolchain:
-
-```bash
-make
-```
-
-or directly:
-
-```bash
-tectonic main.tex
-```
-
-The draft references final figures from:
+Current LaTeX source:
 
 ```text
-../outputs/figures/final_v3_clean_no_dxy_v7_clean_garch_v4_v7_v8/
+main.tex
+```
+
+Preferred build command from the repository root:
+
+```bash
+latexmk -pdf paper/main.tex
+```
+
+If `latexmk` is unavailable, compile with Tectonic:
+
+```bash
+tectonic paper/main.tex
+```
+
+The generated PDF is written to:
+
+```text
+main.pdf
+```
+
+The Markdown file remains as a content-review draft:
+
+```text
+Robust Evaluation of TD3 Portfolio Allocation under Realistic Cross-Asset Frictions - revision David.md
+```
+
+The LaTeX draft references figures from:
+
+```text
+figures/
 ```
 
 and final ranking/statistical validation tables from:

@@ -24,6 +24,7 @@ data/processed/
 # Outputs generados
 outputs/
 reports/
+tmp/
 
 # Backup temporal de entorno Rosetta
 .venv_rosetta_backup/
@@ -44,4 +45,3 @@ paper/*.fdb_latexmk
 paper/*.fls
 paper/*.synctex.gz
 paper/*.xdv
-

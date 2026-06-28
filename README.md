@@ -229,17 +229,12 @@ Run the test suite:
 .venv/bin/python -m unittest discover tests
 ```
 
-Build the paper PDF if the LaTeX tooling is installed:
+The paper is available directly at `paper/main.pdf`, with the LaTeX source in
+`paper/main.tex`.
 
-```bash
-latexmk -pdf paper/main.tex
-```
-
-If `latexmk` is unavailable and Tectonic is installed:
-
-```bash
-tectonic paper/main.tex
-```
+Heavy final experiments are documented through the paper and evidence
+traceability files under `docs/`. They are not presented here as a one-command
+production pipeline.
 
 ## License And Use
 

@@ -139,7 +139,7 @@ is the research discipline around the model:
 - deterministic benchmark regeneration under matched assumptions
 - bootstrap and White Reality Check validation
 - mandate-aware, robust-score, Pareto, regime, and execution-friction reporting
-- output-lineage documentation to separate final evidence from historical runs
+- evidence traceability documentation for paper tables and figures
 - a paper workflow that links narrative claims back to source files
 
 ## What This Repo Does Not Claim
@@ -160,11 +160,11 @@ This repository does not claim:
 ```text
 configs/      experiment configuration files
 data/         raw, interim, and processed data files
-docs/         research notes, paper framing, and output lineage audits
+docs/         research notes, paper framing, and evidence traceability
 notebooks/    notebook placeholder area
-outputs/      generated artifacts; contains historical and final-like outputs
+outputs/      generated experiment and report artifacts
 paper/        LaTeX manuscript, rendered PDF, references, and paper notes
-scripts/      data, recovery, audit-pack, and robustness helper scripts
+scripts/      data, recovery, and robustness helper scripts
 src/          implementation code
 tests/        unittest coverage for data, env, TD3, benchmarks, and reports
 ```
@@ -182,23 +182,17 @@ src/costs/         spread-cost utilities
 src/risk/          mandate profiles and penalties
 ```
 
-## Final Output Lineage
+## Paper And Evidence Traceability
 
-This repository contains many historical experiment outputs. Do not treat every
-folder under `outputs/` as final paper evidence.
-
-The source-of-truth audit docs are:
+Because this project went through several experiment iterations, final paper
+claims are documented through source-map and audit files under `docs/`. Readers
+who want to verify table or figure lineage should start with:
 
 - `docs/final_output_source_map.md`
-- `docs/output_lineage_audit.md`
+- `docs/final_paper_full_audit.md`
 
-Those files map the final paper tables, figures, and major numeric claims to
-specific source files. They also identify repo-local folders that are historical,
-superseded, or ambiguous.
-
-The key point: final paper evidence should come from the documented
-`final_corrected_*` output roots and the specific repo-local upstream folders
-named in the source map, not from old smoke tests or intermediate reports.
+Some heavy experiment artifacts are not intended to be regenerated from the
+README. The paper and audit docs identify the relevant final evidence files.
 
 ## How To Read The Paper
 
@@ -246,30 +240,6 @@ If `latexmk` is unavailable and Tectonic is installed:
 ```bash
 tectonic paper/main.tex
 ```
-
-Create a lightweight audit pack from the current repo and external final output
-directory:
-
-```bash
-.venv/bin/python scripts/create_tfm_audit_pack.py \
-  --external-outputs-dir ~/Projects/portfolio_drl_outputs \
-  --output-dir tfm_audit_pack \
-  --zip-name tfm_audit_pack.zip
-```
-
-The heavy final-corrected experiments are not rerun from this README. Large
-experiment outputs may live under `outputs/` or under an external directory such
-as `~/Projects/portfolio_drl_outputs`. Inspect
-`docs/final_output_source_map.md` before using any output folder as final paper
-evidence.
-
-## Current Status
-
-- Research paper is near final review.
-- Final output lineage is documented.
-- The README, paper framing docs, and source-map docs now reflect the corrected
-  research purpose.
-- Figure 2 now uses the final split Zero-CASH and BIL-CASH regime outputs.
 
 ## License And Use
 

@@ -16,6 +16,8 @@
 \usepackage{booktabs}
 \usepackage{enumitem}
 \usepackage{graphicx}
+\usepackage{tikz}
+\usepackage[round,authoryear]{natbib}
 \usepackage[hypertexnames=false]{hyperref}
 \usepackage{multicol}
 \usepackage{tikz-cd}
@@ -23,8 +25,22 @@
 \usepackage{array}
 \usepackage{caption}
 \usepackage{float}
+\usepackage{listings}
 
-\graphicspath{{paper/assets/}{assets/}}
+\usetikzlibrary{arrows.meta,positioning}
+\setcitestyle{aysep={,},yysep={;}}
+\lstset{
+    basicstyle=\ttfamily\scriptsize,
+    breaklines=true,
+    columns=fullflexible,
+    frame=single,
+    keepspaces=true,
+    showstringspaces=false,
+    xleftmargin=0.5em,
+    xrightmargin=0.5em
+}
+
+\graphicspath{{tfm/assets/}{assets/}}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 
@@ -35,7 +51,12 @@
 \onehalfspacing
 \emergencystretch=3em
 \makeatletter
-\renewcommand*\l@section{\@dottedtocline{1}{1.5em}{5.8em}}
+\renewcommand*\@pnumwidth{2.1em}
+\renewcommand*\l@section{\@dottedtocline{1}{0em}{2.6em}}
+\renewcommand*\l@subsection{\@dottedtocline{2}{1.8em}{3.2em}}
+\newcommand{\listannexname}{List of Annexes}
+\newcommand{\listofannexes}{\section*{\listannexname}\@starttoc{loa}}
+\newcommand*\l@annex{\@dottedtocline{1}{0em}{2.6em}}
 \makeatother
 
 \hypersetup{
@@ -134,6 +155,14 @@ I would like to thank Prof. David Toscano for his guidance, critical feedback, a
 \phantomsection
 \addcontentsline{toc}{section}{List of Tables}
 \listoftables
+\newpage
+\phantomsection
+\addcontentsline{toc}{section}{List of Figures}
+\listoffigures
+\newpage
+\phantomsection
+\addcontentsline{toc}{section}{List of Annexes}
+\listofannexes
 
 \newpage
 \pagenumbering{arabic}
@@ -189,9 +218,9 @@ Third, it makes cash treatment explicit. Zero-CASH and BIL-CASH are treated as d
 
 Fourth, it separates three levels of evidence: ranking competitiveness, statistical credibility, and practical feasibility. This separation is implemented through standard performance metrics, bootstrap Sharpe-difference intervals, White Reality Check, regime analysis, mandate/Pareto diagnostics, execution-spread stress, and training-budget convergence.
 
-The thesis interprets portfolio evidence through a claim hierarchy. A strategy may be ranking-competitive if it performs well relative to matched benchmarks. It may be statistically credible if the apparent advantage survives sampling uncertainty and data-snooping controls. It may be practically feasible if it remains acceptable under mandate constraints, regime dependence, execution stress, and implementability diagnostics.
+The thesis uses a claim hierarchy. A strategy is ranking-competitive if it performs well relative to matched benchmarks. It is statistically credible only if the apparent advantage survives sampling uncertainty and data-snooping controls. It is practically feasible only if it remains acceptable under mandate constraints, regime dependence, execution stress, and implementability diagnostics.
 
-These claims are related, but they are not equivalent. The empirical results are interpreted through this hierarchy to avoid converting a favorable ranking into a stronger conclusion than the evidence supports.
+These claims are related, but they are not equivalent. The empirical results are read through this hierarchy so that a favorable ranking is not converted into a stronger conclusion than the evidence supports.
 
 The hypotheses follow directly from this hierarchy. The thesis tests whether TD3 candidates remain ranking-competitive under matched evaluation, whether ranking competitiveness survives statistical validation, whether cash treatment changes model selection, and whether practical feasibility can be inferred from standard performance rankings alone.
 
@@ -203,41 +232,41 @@ The remainder of the thesis is organized as follows. Section 2 reviews the relev
 
 \section{Selective Review of Previous Literature and Research Gap}
 
-This section reviews the literature needed to position the thesis. The purpose is selective rather than exhaustive. The review focuses on portfolio allocation, DRL portfolio management, cross-asset allocation with gold, Bitcoin and cash, trading frictions, and statistical validation. The research gap is defined by the joint evaluation problem: how to interpret DRL portfolio results when ranking competitiveness, statistical credibility, and practical feasibility are treated as separate claims.
+This section reviews the literature needed to position the thesis. The purpose is selective rather than exhaustive. The review focuses on portfolio allocation, DRL portfolio management, cross-asset allocation with gold, Bitcoin and cash, trading frictions, and statistical validation. The research gap is the joint evaluation problem: how to interpret DRL portfolio results when ranking competitiveness, statistical credibility, and practical feasibility are treated separately.
 
 \subsection{Portfolio Allocation and Dynamic Decision-Making}
 
-Portfolio allocation is a natural setting for sequential decision-making because portfolio weights are chosen repeatedly and realized performance depends on returns, costs, and previous allocations. Classical portfolio theory established the portfolio-level treatment of risk and return, the evaluation of fund performance, and dynamic portfolio choice \cite{markowitz1952,sharpe1966,merton1969,merton1971}. These foundations remain relevant even when the allocation rule is learned rather than specified analytically.
+Portfolio allocation is a natural setting for sequential decision-making because portfolio weights are chosen repeatedly and realized performance depends on returns, costs, and previous allocations. Classical portfolio theory established the portfolio-level treatment of risk and return, the evaluation of fund performance, and dynamic portfolio choice \citep{markowitz1952,sharpe1966,merton1969,merton1971}. These foundations remain relevant even when the allocation rule is learned rather than specified analytically.
 
 In the thesis setting, the allocation decision is not only whether to increase or reduce risky exposure. It is how to rotate capital across distinct macro-financial exposures: equity growth, interest-rate duration, real safe-haven exposure, digital alternative risk, and defensive liquidity. This motivates a compact test bed rather than a broad universe. A smaller universe makes the sources of portfolio behavior easier to interpret and supports the falsification-oriented objective of the thesis.
 
 \subsection{Deep Reinforcement Learning for Portfolio Allocation}
 
-DRL extends portfolio allocation by learning allocation rules from historical states without imposing a parametric return model. Prior studies have examined recurrent reinforcement learning for trading, model-free DRL portfolio management, FinRL-style trading frameworks, risk-aware portfolio rewards, correlation-aware DRL portfolio selection, and TD3 portfolio-selection models \cite{moody2001,jiang2017,almahdi2017,liu2020,zhao2023,jiang2024,jiang2025}. This literature supports the relevance of DRL as a portfolio-learning approach, but it also raises an evaluation problem: performance depends on the protocol surrounding the learner.
+DRL extends portfolio allocation by learning allocation rules from historical states without imposing a parametric return model. Prior studies have examined recurrent reinforcement learning for trading, model-free DRL portfolio management, FinRL-style trading frameworks, risk-aware portfolio rewards, correlation-aware DRL portfolio selection, and TD3 portfolio-selection models \citep{moody2001,jiang2017,almahdi2017,liu2020finrl,zhao2023correlation,jiang2024td3,jiang2025multiperiod}. This literature supports DRL as a portfolio-learning approach, but it also leaves an evaluation problem: performance depends on the protocol surrounding the learner.
 
-TD3 is an established continuous-control actor-critic algorithm based on deterministic policy gradients, twin critics, delayed actor updates, target networks, and target policy smoothing \cite{silver2014,lillicrap2015,fujimoto2018}. Its continuous-action structure is suitable for portfolio-weight decisions. In this thesis, TD3 is used as a case-study learner. The research claim concerns the evaluation framework around TD3, not algorithmic novelty in TD3 itself.
+TD3 is an established continuous-control actor-critic algorithm based on deterministic policy gradients, twin critics, delayed actor updates, target networks, and target policy smoothing \citep{silver2014,lillicrap2015,fujimoto2018}. Its continuous-action structure is suitable for portfolio-weight decisions. In this thesis, TD3 is used as a case-study learner. The thesis evaluates the protocol around TD3, not a new TD3 variant.
 
 \subsection{Multi-Asset Allocation, Gold, Bitcoin, and Cash}
 
 The empirical universe is designed around a compact wealth-allocation problem under macro-financial uncertainty. SPY, TLT, GLD, BTC-USD, and CASH/BIL serve as liquid proxies for equity growth, duration risk, real safe-haven exposure, digital alternative risk, and defensive liquidity. The universe is deliberately compact rather than exhaustive, so allocation behavior can be interpreted through economically meaningful risk categories rather than through a large opaque asset set.
 
-This compact design is consistent with work that studies Bitcoin inside stock-bond or multi-asset portfolio settings, including out-of-sample allocation, transaction costs, liquidity, and institutional portfolio construction \cite{platanakis2020,hubrich2023,petukhina2021}. Gold and Bitcoin have both been studied in diversification, hedge, and safe-haven contexts, but the literature does not support treating Bitcoin as a simple substitute for gold \cite{bouri2017,henriques2018,guesmi2019,klein2018}. Gold is a real safe-haven and hard-asset proxy with a long institutional history. Bitcoin is a speculative digital alternative with high volatility, adoption risk, and idiosyncratic market structure. The thesis includes both because they represent different risk sleeves.
+This compact design is consistent with work that studies Bitcoin inside stock-bond or multi-asset portfolio settings, including out-of-sample allocation, transaction costs, liquidity, and institutional portfolio construction \citep{platanakis2020bitcoin,hubrich2023bitcoin,petukhina2021digitalassets}. Gold and Bitcoin have both been studied in diversification, hedge, and safe-haven contexts, but the literature does not support treating Bitcoin as a simple substitute for gold \citep{bouri2017bitcoinhedge,henriques2018bitcoinGold,guesmi2019bitcoinDiversification,klein2018bitcoin}. Gold is a real safe-haven and hard-asset proxy with a long institutional history. Bitcoin is a speculative digital alternative with high volatility, adoption risk, and idiosyncratic market structure. The thesis includes both because they represent different risk sleeves.
 
 \subsection{Transaction Costs, Constraints, and Cash Treatment}
 
-Transaction costs and constraints are central to portfolio evaluation. A dynamic strategy with high turnover can look attractive before costs and fragile afterward. A strategy forced to remain invested in risky assets has a different opportunity set from a strategy allowed to allocate defensively. Prior DRL portfolio work has incorporated transaction costs or risk-aware objectives, and machine-learning portfolio construction has emphasized diversification and concentration control \cite{moody2001,almahdi2017,chen2022,jiang2024}.
+Transaction costs and constraints are central to portfolio evaluation. A dynamic strategy with high turnover can look attractive before costs and fragile afterward. A strategy forced to remain invested in risky assets has a different opportunity set from a strategy allowed to allocate defensively. Prior DRL portfolio work has incorporated transaction costs or risk-aware objectives, and machine-learning portfolio construction has emphasized diversification and concentration control \citep{moody2001,almahdi2017,chen2022,jiang2024td3}.
 
-Cash and near-cash instruments are not merely residual balances in many wealth-management and institutional allocation settings. They provide liquidity, optionality, operational flexibility, and defensive risk control. Treating cash explicitly changes the allocation problem rather than adding only another asset label. The thesis therefore evaluates both Zero-CASH and BIL-CASH protocols to test whether cash assumptions affect model selection and performance interpretation \cite{simutin2014}.
+Cash and near-cash instruments are not merely residual balances in many wealth-management and institutional allocation settings. They provide liquidity, optionality, operational flexibility, and defensive risk control. Treating cash explicitly changes the allocation problem rather than adding only another asset label. The thesis therefore evaluates both Zero-CASH and BIL-CASH protocols to test whether cash assumptions affect model selection and performance interpretation \citep{simutin2014}.
 
 \subsection{Statistical Validation and Data-Snooping Controls}
 
-Financial model selection is vulnerable to data snooping. When many candidate policies are trained and evaluated, the best observed strategy may look strong because of the search process rather than because of a reliable economic advantage. White Reality Check directly addresses data-snooping risk, while Deflated Sharpe and related backtest-overfitting work motivate caution when interpreting searched strategy performance \cite{white2000,bailey2014,lopezdeprado2020}.
+Financial model selection is vulnerable to data snooping. When many candidate policies are trained and evaluated, the best observed strategy may look strong because of the search process rather than because of a reliable economic advantage. White Reality Check directly addresses data-snooping risk, while Deflated Sharpe and related backtest-overfitting work motivate caution when interpreting searched strategy performance \citep{white2000,bailey2014,lopezdeprado2020mlam}.
 
 This thesis uses bootstrap Sharpe-difference intervals and White Reality Check p-values as statistical guardrails. These tests do not replace economic interpretation. They prevent ranking results from being overstated as statistical dominance. A candidate may remain ranking-competitive and still fail to support a stronger statistical superiority claim.
 
 \subsection{Research Gap and Literature Positioning}
 
-The research gap is not any single ingredient in isolation: TD3, Bitcoin, transaction costs, cash, or statistical testing. Each appears in adjacent literatures. The gap lies in how these ingredients are combined and interpreted. Few DRL portfolio studies jointly impose matched benchmarks, explicit cash assumptions, asset-specific frictions, statistical validation, and practical robustness layers before translating performance into claims.
+The research gap is not any single ingredient in isolation: TD3, Bitcoin, transaction costs, cash, or statistical testing. Each appears in adjacent literatures. The gap is the joint interpretation problem. Few DRL portfolio studies impose matched benchmarks, explicit cash assumptions, asset-specific frictions, statistical validation, and practical robustness layers before translating performance into claims.
 
 The contribution is therefore the integrated evaluation design. The thesis asks whether apparent DRL portfolio advantages, instantiated through a TD3 case study, remain competitive, statistically credible, and practically feasible after matched benchmarks, asset-specific frictions, explicit cash assumptions, statistical validation, and robustness layers are imposed together.
 
@@ -262,7 +291,7 @@ Robust quantitative evaluation & Uses bootstrap methods, data-snooping controls,
 \newpage
 \section{Research Hypotheses}
 
-The hypotheses translate the research question into testable empirical claims. They organize the evaluation around the thesis claim hierarchy: ranking competitiveness, statistical credibility, and practical feasibility.
+The hypotheses organize the evaluation around the thesis claim hierarchy: ranking competitiveness, statistical credibility, and practical feasibility.
 
 The empirical analysis evaluates whether TD3-based allocation candidates remain competitive under matched financial assumptions, whether that competitiveness survives statistical validation, whether cash treatment changes model selection, and whether practical feasibility can be inferred from standard performance rankings.
 
@@ -294,7 +323,7 @@ Selected learning candidates should not be interpreted only through their main t
 \toprule
 \textbf{Hypothesis} & \textbf{Evidence layer} & \textbf{Main outputs} \\
 \midrule
-H1 & Ranking competitiveness & Benchmark-matched rankings; standard performance metrics; cumulative wealth; drawdown comparison \\
+H1 & Ranking competitiveness & Benchmark-matched rankings; standard performance metrics; drawdown metrics \\
 H2 & Statistical credibility & Bootstrap Sharpe-difference intervals; White Reality Check; candidate/seed dispersion \\
 H3 & Cash treatment & Zero-CASH vs BIL-CASH candidate selection; benchmark rankings; turnover; transaction costs; portfolio weights \\
 H4 & Practical feasibility and investor suitability & Mandate filters; investor-profile suitability; Pareto diagnostics; turnover; concentration; drawdowns \\
@@ -303,27 +332,27 @@ H5 & Robustness and interpretation & Regime analysis; execution-spread stress; t
 \end{tabularx}
 \end{table}
 
-Together, these hypotheses define the empirical logic of the thesis. H1 addresses ranking competitiveness. H2 addresses statistical credibility. H3 tests whether cash assumptions change the allocation environment. H4 and H5 address practical feasibility and robustness. The results section evaluates each hypothesis separately before summarizing the overall claim supported by the evidence.
+Together, these hypotheses define the empirical logic of the thesis. H1 addresses ranking competitiveness. H2 addresses statistical credibility. H3 tests whether cash assumptions change the allocation environment. H4 and H5 address feasibility and robustness. The results section evaluates each hypothesis before summarizing the supported claim.
 
 \newpage
 
 \section{Methodology, Experimental Strategy and Data}
 
-This section defines the empirical design used to evaluate the hypotheses. The thesis uses an experimental portfolio-evaluation strategy rather than a classical econometric strategy. The design combines a controlled cross-asset allocation environment, a TD3 case-study learner, matched deterministic benchmarks, statistical validation, and practical feasibility diagnostics. The purpose is to determine which performance claims survive the evaluation stack defined in Sections 1--3.
+This section defines the empirical design used to evaluate the hypotheses. The thesis uses an experimental portfolio-evaluation strategy rather than a classical econometric strategy. The design combines a controlled cross-asset allocation environment, a TD3 case-study learner, matched deterministic benchmarks, statistical validation, and practical feasibility diagnostics. The purpose is to test which performance claims survive the evaluation stack defined in Sections 1--3.
 
 \subsection{Data and Asset Universe}
 
-The asset universe is compact by design. It does not seek to approximate the full global market portfolio. Instead, it provides an interpretable cross-asset test bed in which allocation behavior can be linked to distinct economic exposures. This design is consistent with the thesis objective: evaluating DRL portfolio claims under controlled and realistic assumptions rather than maximizing coverage of the investment universe.
+The asset universe is compact by design. It does not seek to approximate the full global market portfolio. It provides an interpretable cross-asset test bed in which allocation behavior can be linked to distinct economic exposures. This serves the thesis objective: evaluating DRL portfolio claims under controlled and realistic assumptions rather than maximizing coverage of the investment universe.
 
-The investable sleeves are SPY, TLT, GLD, BTC-USD, and CASH. SPY represents equity growth exposure. TLT represents interest-rate duration exposure. GLD represents real safe-haven and hard-asset exposure. BTC-USD represents digital alternative risk. CASH represents defensive liquidity and optionality. The inclusion of both GLD and BTC-USD does not treat Bitcoin as digital gold. The two sleeves are included because they expose the portfolio to different risk channels and have different empirical behavior in diversification, hedging, and stress episodes \cite{bouri2017,henriques2018,guesmi2019,klein2018,platanakis2020,hubrich2023,petukhina2021}.
+The investable sleeves are SPY, TLT, GLD, BTC-USD, and CASH. SPY represents equity growth exposure. TLT represents interest-rate duration exposure. GLD represents real safe-haven and hard-asset exposure. BTC-USD represents digital alternative risk. CASH represents defensive liquidity and optionality. The inclusion of both GLD and BTC-USD does not treat Bitcoin as digital gold. The two sleeves are included because they expose the portfolio to different risk channels and have different empirical behavior in diversification, hedging, and stress episodes \citep{bouri2017bitcoinhedge,henriques2018bitcoinGold,guesmi2019bitcoinDiversification,klein2018bitcoin,platanakis2020bitcoin,hubrich2023bitcoin,petukhina2021digitalassets}.
 
-The allocation problem follows the portfolio-choice logic that risk and return should be evaluated at the portfolio level rather than asset by asset \cite{markowitz1952,sharpe1966}. The sequential setting also connects to dynamic portfolio choice, where allocations adapt over time as the investment opportunity set changes \cite{merton1969,merton1971}. The universe remains deliberately small so that changes in portfolio weights, cash use, turnover, and regime dependence can be interpreted directly.
+The allocation problem follows the portfolio-choice logic that risk and return should be evaluated at the portfolio level rather than asset by asset \citep{markowitz1952,sharpe1966}. The sequential setting also connects to dynamic portfolio choice, where allocations adapt over time as the investment opportunity set changes \citep{merton1969,merton1971}. The universe remains deliberately small so that changes in portfolio weights, cash use, turnover, and regime dependence can be interpreted directly.
 
 \subsection{Cash Protocols}
 
 The thesis evaluates two cash protocols. The Zero-CASH protocol treats cash as a synthetic defensive sleeve with zero return and zero transaction cost. The BIL-CASH protocol replaces the synthetic zero-return assumption with BIL as an investable short-term Treasury ETF proxy and applies the same ETF transaction-cost assumption used for SPY, TLT, and GLD.
 
-Real investment portfolios and funds are rarely managed as if defensive liquidity did not exist. Cash and near-cash instruments provide liquidity, optionality, operational flexibility, and defensive risk control. Treating cash explicitly therefore adds realism to the allocation problem and allows the analysis to test whether cash assumptions affect model selection and performance interpretation. This treatment is consistent with evidence that fund cash holdings can have portfolio-performance implications \cite{simutin2014}.
+Real investment portfolios and funds are rarely managed as if defensive liquidity did not exist. Cash and near-cash instruments provide liquidity, optionality, operational flexibility, and defensive risk control. Treating cash explicitly therefore adds realism to the allocation problem and allows the analysis to test whether cash assumptions affect model selection and performance interpretation. This treatment is consistent with evidence that fund cash holdings can have portfolio-performance implications \citep{simutin2014}.
 
 The two protocols define different environments. Under Zero-CASH, the defensive sleeve is a synthetic non-yielding asset. Under BIL-CASH, the cash sleeve has an observable return series and ETF-like trading cost. Comparisons across the two protocols therefore test whether TD3 selection, benchmark rankings, turnover, transaction costs, and portfolio weights depend on the cash assumption.
 
@@ -348,15 +377,15 @@ The net portfolio return used for realized performance and training is
     R^{\mathrm{net}}_{t+1}=R^{\mathrm{gross}}_{t+1}-C_t.
 \end{equation}
 
-The cost schedule is a transparent modeling assumption rather than an account-specific execution-cost estimate, informed by public broker and exchange fee schedules \cite{interactivebrokers2026,binance2026}. SPY, TLT, and GLD are assigned 2 basis points. BTC-USD is assigned 10 basis points. CASH has zero cost under Zero-CASH. Under BIL-CASH, the cash sleeve is treated as BIL and assigned the 2 basis point ETF cost used for SPY, TLT, and GLD. Transaction costs therefore affect realized performance and the learning signal.
+The cost schedule is a transparent modeling assumption rather than an account-specific execution-cost estimate, informed by public broker and exchange fee schedules \citep{interactivebrokers2026commissions,binance2026tradingfees}. SPY, TLT, and GLD are assigned 2 basis points. BTC-USD is assigned 10 basis points. CASH has zero cost under Zero-CASH. Under BIL-CASH, the cash sleeve is treated as BIL and assigned the 2 basis point ETF cost used for SPY, TLT, and GLD. Transaction costs therefore affect realized performance and the learning signal.
 
 \subsection{Case-Study Learning Agent: TD3}
 
-The empirical learner is TD3. It is used as a case-study algorithm because portfolio allocation is a continuous-action problem: the model selects a vector of portfolio weights rather than a discrete buy-or-sell decision. Continuous-control reinforcement learning is therefore a natural fit for the action space, and deterministic policy-gradient methods provide the relevant learning framework \cite{silver2014,lillicrap2015}.
+The empirical learner is TD3. It is used as a case-study algorithm because portfolio allocation is a continuous-action problem: the model selects a vector of portfolio weights rather than a discrete buy-or-sell decision. Continuous-control reinforcement learning is therefore a natural fit for the action space, and deterministic policy-gradient methods provide the relevant learning framework \citep{silver2014,lillicrap2015}.
 
-TD3 extends deterministic actor-critic learning by addressing overestimation and instability in continuous-control settings \cite{fujimoto2018}. The actor maps the observed state to a proposed continuous action. The critics estimate action values. Twin critics are used to reduce overestimation bias. Delayed policy updates slow the actor update relative to critic learning. Target networks stabilize bootstrapping. Target policy smoothing reduces sensitivity to narrow action-value peaks. A replay buffer stores transitions for off-policy learning, and exploration noise is used during training. Evaluation is deterministic: after training, the selected policy is evaluated without exploration noise.
+TD3 extends deterministic actor-critic learning by addressing overestimation and instability in continuous-control settings \citep{fujimoto2018}. The actor maps the observed state to a proposed continuous action. The critics estimate action values. Twin critics are used to reduce overestimation bias. Delayed policy updates slow the actor update relative to critic learning. Target networks stabilize bootstrapping. Target policy smoothing reduces sensitivity to narrow action-value peaks. A replay buffer stores transitions for off-policy learning, and exploration noise is used during training. Evaluation is deterministic: after training, the selected policy is evaluated without exploration noise.
 
-TD3 itself is not the methodological contribution. The contribution is the evaluation framework around the learner. TD3 provides a disciplined case-study learner for testing whether a DRL allocation claim survives matched benchmarks, explicit cash protocols, transaction costs, statistical validation, and practical feasibility filters. Prior DRL portfolio studies motivate the relevance of the learning setting, but this thesis evaluates the evidence layer by layer rather than treating a trained agent as sufficient evidence of portfolio skill \cite{moody2001,almahdi2017,jiang2017,liu2020}.
+TD3 itself is not the methodological contribution. It is the case-study learner used to test whether a DRL allocation result survives matched benchmarks, explicit cash protocols, transaction costs, statistical validation, and practical feasibility filters. Prior DRL portfolio studies motivate the learning setting, but this thesis evaluates the result layer by layer rather than treating a trained agent as sufficient evidence of portfolio skill \citep{moody2001,almahdi2017,jiang2017,liu2020finrl}.
 
 \subsection{Feasible Action Handling}
 
@@ -378,37 +407,64 @@ The reward can be written as
 \end{equation}
 where $\lambda_{DD}$ controls the penalty strength and $\bar{DD}$ defines the active drawdown threshold.
 
-Turnover and concentration are not added as direct reward penalties. Turnover is penalized economically through transaction costs, and concentration is evaluated through max-weight caps, effective-asset diagnostics, mandate profiles, and Pareto analysis. This separation reduces circularity between training and evaluation. The reward therefore remains a training objective, while the evaluation stack remains an external test of ranking competitiveness, statistical credibility, and practical feasibility.
+Turnover and concentration are not added as direct reward penalties. Turnover is penalized economically through transaction costs, and concentration is evaluated through max-weight caps, effective-asset diagnostics, mandate profiles, and Pareto analysis. This separation reduces circularity between training and evaluation. The reward remains a training objective; the evaluation stack remains an external test of ranking competitiveness, statistical credibility, and practical feasibility.
 
 \subsection{Feature Families}
 
 The experiment evaluates multiple TD3 feature families rather than a single manually selected state representation. This design makes candidate selection visible and allows statistical validation to account for the fact that several representations are searched.
 
-The feature families are summarized as follows. V2 is the reference feature set. V3 is the clean macro feature family. V4 adds GARCH-style volatility information. V5 removes volatility features to test a no-volatility representation. V6 uses financial score-like indicators. V7 combines macro and GARCH information. V8 uses EWMA/GARCH volatility features. Full feature definitions, transformations, and data-source notes are reserved for the annex.
+The feature families are summarized as follows. V2 is the reference feature set. V3 is the clean macro feature family. V4 adds GARCH-style volatility information \citep{bollerslev1986}. V5 removes volatility features to test a no-volatility representation. V6 uses financial score-like indicators. V7 combines macro and GARCH information. V8 uses EWMA/GARCH volatility features. Full feature definitions, transformations, and data-source notes are reserved for the annex.
 
 Three clarifications are important. First, the clean macro/as-of pipeline excludes DXY because a full-window fresh true-vintage dollar proxy is not available without fallback, discontinuation, or current-vintage relabeling. Second, heuristic probability-like V6 variables are treated as score-like indicators rather than calibrated probabilities. Third, PCA was audited but is not used as the default state representation. These choices keep the state design interpretable and reduce the risk that feature engineering choices obscure the evaluation claim.
 
 \subsection{Matched Benchmarks}
 
-TD3 candidates are compared against deterministic benchmarks regenerated under the same asset universe, cash assumption, cost schedule, and evaluation window. This matching is essential because a DRL candidate can appear strong if it is compared against weak or mismatched baselines. The benchmark design therefore disciplines the interpretation of TD3 rankings.
+TD3 candidates are compared against deterministic benchmarks regenerated under the same asset universe, cash assumption, cost schedule, and evaluation window. This matching is essential because a DRL candidate can appear strong if it is compared against weak or mismatched baselines.
 
-The benchmark set is intended to be competitive enough to discipline the interpretation of TD3 results. It covers naive diversification, static stock-bond allocation, trend and momentum rules, rolling mean-variance allocation, minimum variance, and inverse-volatility risk parity. These benchmark families are standard reference points in portfolio evaluation and make the comparison harder than a weak-baseline exercise \cite{markowitz1952,sharpe1966,demiguel2009,jagannathan2003,jegadeesh1993,moskowitz2012,maillard2010}.
+The benchmark set is designed to discipline the interpretation of TD3 results. It covers naive diversification, static stock-bond allocation, trend and momentum rules, rolling mean-variance allocation, minimum variance, and inverse-volatility risk parity. These benchmark families are standard reference points in portfolio evaluation and make the comparison harder than a weak-baseline exercise \citep{markowitz1952,sharpe1966,demiguel2009,jagannathan2003,jegadeesh1993,moskowitz2012,maillard2010}.
 
-Transaction-cost-aware comparison is required because turnover can convert apparent gross outperformance into weak net performance. This is especially relevant when comparing learned policies with deterministic rules that trade at different frequencies or intensities \cite{novymarx2016}. The benchmark outputs reported in Section 5 include rankings, standard performance metrics, cumulative wealth, drawdowns, turnover, and costs. The final corrected experimental protocol is documented in the methodology notes and annexes.
+Transaction-cost-aware comparison is required because turnover can convert apparent gross outperformance into weak net performance. This is especially relevant when comparing learned policies with deterministic rules that trade at different frequencies or intensities \citep{novymarx2016}. The benchmark outputs reported in Section 5 include rankings, standard performance metrics, cumulative wealth, drawdowns, turnover, and costs. The final corrected experimental protocol is documented in the methodology notes and annexes.
 
 \subsection{Statistical Validation}
 
 Statistical validation addresses the risk that the best observed learning candidate reflects sampling variation or candidate-search bias. This risk is especially relevant because the experiment evaluates multiple feature families, caps, seeds, folds, and cash assumptions. The thesis therefore separates benchmark ranking from statistical validation.
 
-Bootstrap Sharpe-difference intervals quantify uncertainty around the Sharpe difference between selected TD3 candidates and the clean benchmark comparator. White Reality Check evaluates whether the searched candidate set provides evidence beyond what could arise from data-snooping across multiple candidate policies \cite{white2000}. The bootstrap interval is interpreted as pairwise uncertainty; White Reality Check is interpreted as search-adjusted candidate-set evidence. This separation is consistent with the broader concern that backtest selection can overstate performance when many variants are tried \cite{bailey2014,lopezdeprado2020}.
+Bootstrap Sharpe-difference intervals quantify uncertainty around the Sharpe difference between selected TD3 candidates and the clean benchmark comparator. White Reality Check evaluates whether the searched candidate set provides evidence beyond what could arise from data-snooping across multiple candidate policies \citep{white2000}. The bootstrap interval is interpreted as pairwise uncertainty; White Reality Check is interpreted as search-adjusted candidate-set evidence. This separation is consistent with the broader concern that backtest selection can overstate performance when many variants are tried \citep{bailey2014,lopezdeprado2020mlam}.
 
-A ranking advantage is reported as competitiveness. It is interpreted as statistical superiority only if it survives the validation layer. The main body does not expand the full White Reality Check implementation. The annex will document the null hypothesis, benchmark comparator, candidate set, performance differential, bootstrap procedure, p-value interpretation, and limitations.
+A ranking advantage is reported as competitiveness. It is interpreted as statistical superiority only if it survives validation. The main body does not expand the full White Reality Check implementation; the annex documents the null hypothesis, benchmark comparator, candidate set, performance differential, bootstrap procedure, p-value interpretation, and limitations.
 
 \subsection{Falsification-Oriented Evaluation Framework}
 
-The final methodology is organized as a falsification-oriented evaluation framework. The framework starts with TD3 candidate training and ranking, then challenges the apparent result through matched benchmarks, explicit cash protocols, asset-specific transaction costs, statistical validation, and practical feasibility diagnostics.
+The final methodology is organized as a falsification-oriented evaluation framework. It starts with TD3 candidate training and ranking, then challenges the apparent result through matched benchmarks, explicit cash protocols, asset-specific transaction costs, statistical validation, and practical feasibility diagnostics.
 
-The final interpretation depends on the evidence layer being evaluated. A high ranking supports competitiveness. Statistical tests determine whether the advantage is credible after uncertainty and candidate search. Feasibility diagnostics determine whether the strategy remains acceptable under practical constraints.
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=0.45cm and 0.55cm,
+    box/.style={draw=black!70, rounded corners=1.5pt, align=center, inner sep=4pt, font=\scriptsize, text width=3.05cm, minimum height=0.72cm},
+    wide/.style={draw=black!70, rounded corners=1.5pt, align=center, inner sep=5pt, font=\scriptsize, text width=4.35cm, minimum height=0.78cm},
+    arrow/.style={-{Stealth[length=2mm]}, line width=0.35pt, black!75}
+]
+\node[wide] (apparent) {Apparent DRL portfolio strength};
+\node[box, below left=of apparent] (construction) {Case-study construction\\universe, features, TD3 candidates};
+\node[box, below=of apparent] (engine) {Matched evaluation\\same universe, cash, costs, window};
+\node[box, below right=of apparent] (filters) {Evidence filters\\ranking, statistics,\\feasibility};
+\node[wide, below=1.05cm of engine] (hierarchy) {Evidence hierarchy\\ranking competitiveness,\\statistical credibility,\\practical feasibility};
+\node[wide, below=0.50cm of hierarchy] (interpretation) {Final interpretation\\bounded research evidence,\\not an alpha claim};
+
+\draw[arrow] (apparent) -- (construction);
+\draw[arrow] (apparent) -- (engine);
+\draw[arrow] (apparent) -- (filters);
+\draw[arrow] (construction) -- (hierarchy);
+\draw[arrow] (engine) -- (hierarchy);
+\draw[arrow] (filters) -- (hierarchy);
+\draw[arrow] (hierarchy) -- (interpretation);
+\end{tikzpicture}
+\caption[Evaluation hierarchy for TD3 portfolio evidence]{Evaluation hierarchy used to interpret TD3 portfolio evidence. The diagram separates candidate construction, matched comparison, and validation filters before any performance result is translated into a thesis claim.}
+\label{fig:evaluation-hierarchy}
+\end{figure}
+
+Figure~\ref{fig:evaluation-hierarchy} summarizes the logic used in the rest of the thesis. A high ranking supports competitiveness. Statistical tests determine whether the advantage is credible after uncertainty and candidate search. Feasibility diagnostics determine whether the strategy remains acceptable under practical constraints.
 
 Practical feasibility is evaluated through regime analysis, mandate and Pareto diagnostics, execution-spread stress, and training-budget convergence. Regime analysis uses historically meaningful market episodes and windows, including COVID shock/recovery, inflation and hiking shocks, post-COVID liquidity, risk-on expansion, recent test windows, and calendar-year regimes. Mandate diagnostics test whether a policy is compatible with investor-relevant limits. Pareto analysis separates tradeoffs across return, risk, concentration, turnover, and drawdown. Execution-spread stress tests sensitivity to less favorable trading assumptions. Training-budget convergence checks whether selected policies are stable enough to support interpretation.
 
@@ -418,13 +474,13 @@ The final claim depends on which evidence layers are passed, weakened, or reject
 
 \section{Results, Robustness and Practical Feasibility}
 
-This section reports the empirical evidence and organizes it according to the TFM claim hierarchy. The interpretation follows the sequence established in Sections 3 and 4: learning-candidate selection, matched benchmark ranking, statistical validation, regime analysis, mandate and Pareto feasibility, execution-spread robustness, training-budget convergence, and claim-versus-evidence synthesis.
+This section reports the empirical results according to the TFM claim hierarchy. The sequence follows Sections 3 and 4: learning-candidate selection, matched benchmark ranking, statistical validation, regime analysis, mandate and Pareto feasibility, execution-spread robustness, training-budget convergence, and claim-versus-evidence synthesis.
 
 \subsection{Learning-Candidate Selection}
 
-The first result is evaluated within the searched learning-candidate universe. This layer asks which TD3 case-study variant and cap are strongest before deterministic benchmarks are introduced. It identifies the strongest searched learning candidates, while leaving benchmark comparison and statistical credibility to subsequent layers.
+The first result is evaluated within the searched learning-candidate universe. This layer asks which TD3 variant and cap are strongest before deterministic benchmarks are introduced. Benchmark comparison and statistical credibility are left to subsequent layers.
 
-Under Zero-CASH, the TD3-only winner is V5 no-vol cap 0.50, with mandate-aware score 0.601124 and robust score 0.696702. Under BIL-CASH, the TD3-only winner is V8 EWMA/GARCH cap 0.70, with mandate-aware score 0.660435 and robust score 0.749958. Mandate-aware and robust scores are diagnostic selection summaries. Financial interpretation relies primarily on standard metrics and statistical validation.
+Under Zero-CASH, the TD3-only winner is V5 no-vol cap 0.50, with mandate-aware score 0.601124 and robust score 0.696702. Under BIL-CASH, the TD3-only winner is V8 \mbox{EWMA/GARCH} cap 0.70, with mandate-aware score 0.660435 and robust score 0.749958. Mandate-aware and robust scores are diagnostic selection summaries. Financial interpretation relies primarily on standard metrics and statistical validation.
 
 \begin{table}[htbp]
 \centering
@@ -435,7 +491,7 @@ Under Zero-CASH, the TD3-only winner is V5 no-vol cap 0.50, with mandate-aware s
 \textbf{Cash} & \textbf{Selected TD3} & \textbf{Cap} & \textbf{Ann. ret.} & \textbf{Ann. vol.} & \textbf{Sharpe} & \textbf{Max DD} & \textbf{Robust} \\
 \midrule
 Zero-CASH & V5 no-vol cap 0.50 & 0.50 & 0.0667 & 0.1156 & 0.5686 & -0.1206 & 0.6967 \\
-BIL-CASH & V8 EWMA/GARCH cap 0.70 & 0.70 & 0.0731 & 0.1060 & 1.0253 & -0.1066 & 0.7500 \\
+BIL-CASH & V8 \mbox{EWMA/GARCH} cap 0.70 & 0.70 & 0.0731 & 0.1060 & 1.0253 & -0.1066 & 0.7500 \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -464,7 +520,7 @@ BIL-CASH & Trend SPY/CASH & Clean benchmark & 0.1024 & 0.1135 & 0.9169 & -0.1730
 \end{tabularx}
 \end{table}
 
-This result supports ranking competitiveness under diagnostic scores. It does not support unconditional superiority. Several deterministic benchmarks rank strongly by return, Sharpe, or robust score, so the statistical validation layer determines whether the apparent advantage is reliable. The deterministic benchmark set includes buy-and-hold sleeves, equal-weight rules, defensive risk-off rules, momentum and risk-adjusted momentum rules, rolling Markowitz allocation, rolling minimum variance, inverse-volatility risk parity, and Trend SPY/CASH.
+This result supports ranking competitiveness under diagnostic scores. It does not support unconditional superiority. Several deterministic benchmarks rank strongly by return, Sharpe, or robust score, so statistical validation determines whether the apparent advantage is reliable. The deterministic benchmark set includes buy-and-hold sleeves, equal-weight rules, defensive risk-off rules, momentum and risk-adjusted momentum rules, rolling Markowitz allocation, rolling minimum variance, inverse-volatility risk parity, and Trend SPY/CASH.
 
 This evidence supports H1 in the limited sense of benchmark-matched ranking competitiveness. The selected TD3 candidates remain competitive under matched assumptions, but the ranking layer alone does not establish statistical superiority.
 
@@ -488,7 +544,34 @@ BIL-CASH & TD3 V7 macro+GARCH cap 0.80 vs Trend SPY/CASH & 0.1170 & [-0.7172, 0.
 \parbox{\textwidth}{\scriptsize\textit{Note: Bootstrap intervals report pairwise uncertainty around the Sharpe difference. White Reality Check reports search-adjusted candidate-set evidence.}}
 \end{table}
 
-The intervals cross zero and the WRC p-values are high. The appropriate conclusion is that the ranking evidence remains informative, while the statistical layer does not justify a strong alpha or superiority claim. This result supports H2: ranking competitiveness does not imply statistical superiority once uncertainty and candidate-search bias are considered. The ranking result remains informative, yet the benchmark remains statistically credible.
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[x=4.5cm,y=0.72cm]
+    \draw[-{Latex[length=2mm]},line width=0.4pt] (-0.82,0) -- (1.05,0) node[right,font=\scriptsize] {Sharpe difference};
+    \foreach \x/\lab in {-0.8/-0.8,-0.4/-0.4,0/0,0.4/0.4,0.8/0.8} {
+        \draw[line width=0.3pt] (\x,0.07) -- (\x,-0.07);
+        \node[below,font=\scriptsize] at (\x,-0.07) {\lab};
+    }
+    \draw[dashed,line width=0.35pt] (0,-0.1) -- (0,2.55);
+    \node[above,font=\scriptsize] at (0,2.55) {zero};
+
+    \node[anchor=east,font=\scriptsize] at (-0.84,2.0) {Zero-CASH};
+    \draw[line width=0.65pt] (-0.6011,2.0) -- (0.9767,2.0);
+    \draw[line width=0.5pt] (-0.6011,1.87) -- (-0.6011,2.13);
+    \draw[line width=0.5pt] (0.9767,1.87) -- (0.9767,2.13);
+    \fill (0.1559,2.0) circle (1.45pt);
+
+    \node[anchor=east,font=\scriptsize] at (-0.84,1.1) {BIL-CASH};
+    \draw[line width=0.65pt] (-0.7172,1.1) -- (0.9963,1.1);
+    \draw[line width=0.5pt] (-0.7172,0.97) -- (-0.7172,1.23);
+    \draw[line width=0.5pt] (0.9963,0.97) -- (0.9963,1.23);
+    \fill (0.1170,1.1) circle (1.45pt);
+\end{tikzpicture}
+\caption{Bootstrap Sharpe-difference intervals for selected TD3 candidates against the clean benchmark}
+\label{fig:bootstrap-sharpe-ci}
+\end{figure}
+
+The intervals cross zero and the WRC p-values are high. The ranking result remains informative, but the statistical layer does not justify a strong alpha or superiority claim. This result supports H2: ranking competitiveness does not imply statistical superiority once uncertainty and candidate-search bias are considered. The benchmark remains statistically credible.
 
 \subsection{Regime Analysis}
 
@@ -496,13 +579,13 @@ Regime analysis asks whether performance is broad-based or concentrated in parti
 
 Under Zero-CASH, TD3 candidates appear in selected regimes such as AI/risk-on recovery, calendar 2023, and parts of calendar 2024, depending on the metric. Buy-and-hold BTC, buy-and-hold GLD, rolling Markowitz, rolling minimum variance, momentum, and Trend SPY/CASH also appear as winners in other slices. Under BIL-CASH, risk-adjusted momentum is particularly strong across many regimes, while buy-and-hold BTC, buy-and-hold GLD, 60/40, and buy-and-hold SPY remain relevant in specific windows.
 
-This reinforces the cautious interpretation. The learning approach can be regime-competitive, but it does not dominate consistently across market regimes. Regime dependence matters because a strategy that ranks well on average can still be practically fragile if performance is concentrated in a narrow set of historical conditions.
+This supports a cautious interpretation. The learning approach can be regime-competitive, but it does not dominate consistently across market regimes. Regime dependence matters because a strategy that ranks well on average can still be practically fragile if performance is concentrated in a narrow set of historical conditions.
 
 This evidence supports the regime component of H5. The interpretation of selected TD3 policies changes across market environments.
 
 \subsection{Mandate and Pareto Analysis}
 
-Mandate analysis evaluates whether strategies satisfy hard practical constraints rather than only ranking by a smooth score. Hard mandate infeasibility is treated as a feasibility warning: the tested universe contains strategies that are competitive by ranking or Pareto tradeoff, but none satisfy all canonical hard constraints simultaneously. The constraints are demanding, and even benchmarks struggle to satisfy all of them at once.
+Mandate analysis evaluates whether strategies satisfy hard practical constraints rather than only ranking by a smooth score. Under the hard mandate filters used in the final diagnostic outputs, no strategy satisfies the conservative profile, while moderate and aggressive feasibility remains profile-dependent. The constraints are demanding, and even benchmarks struggle to satisfy them.
 
 The selected learning candidates remain Pareto-competitive in several tradeoff views, but they are not universally mandate-feasible. Rolling minimum variance is strongest under conservative and moderate mandate scoring, while V3 appears as the best TD3/aggressive candidate in BIL-CASH. Mandate preference therefore depends on investor profile and cash assumption.
 
@@ -514,7 +597,7 @@ The selected learning candidates remain Pareto-competitive in several tradeoff v
 \toprule
 \textbf{Evaluation} & \textbf{Finding} & \textbf{Interpretation} \\
 \midrule
-Hard mandate filters & No strategy satisfies all constraints. & Practical feasibility remains unresolved under strict canonical filters. \\
+Hard mandate filters & No strategy satisfies the conservative hard-filter layer; moderate and aggressive feasibility is profile-dependent. & Practical feasibility remains unresolved under strict conservative filters and conditional under looser profiles. \\
 Mandate scoring & Rolling min-var dominates conservative/moderate profiles; V3 appears as best TD3/aggressive candidate in BIL-CASH. & Mandate preference depends on profile and cash assumption. \\
 Pareto analysis & Selected case-study candidates remain on or near the frontier with benchmarks. & The learning candidate is competitive but tradeoff-dependent. \\
 Overall interpretation & No single strategy is universally feasible and dominant. & Competitiveness must be separated from deployability. \\
@@ -530,6 +613,15 @@ Execution-spread robustness is a reporting-only post-training stress test. It do
 
 The selected learning candidates are more sensitive to the spread stress than the Trend SPY/CASH benchmark. Under stress spreads, Zero-CASH TD3 V3 clean macro cap 0.70 has an annualized return delta of -0.0139 and Sharpe delta of -0.1321. BIL-CASH TD3 V7 macro+GARCH cap 0.80 has an annualized return delta of -0.0128 and Sharpe delta of -0.1180. The Trend SPY/CASH benchmark has a Sharpe delta around -0.0132. This does not invalidate ranking competitiveness, but it shows that execution realism changes the economic interpretation of selected policies.
 
+Figure~\ref{fig:execution-spread-sharpe-degradation} shows the same stress-spread Sharpe degradation visually. The plotted comparison reinforces that the selected TD3 candidates are materially more exposed to execution-spread assumptions than the benchmark comparator.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.82\textwidth]{figures/execution_spread_sharpe_degradation.pdf}
+\caption[Stress-spread Sharpe degradation for selected TD3 candidates and Trend benchmark]{Stress-spread Sharpe degradation for selected TD3 candidates and \mbox{Trend SPY/CASH}}
+\label{fig:execution-spread-sharpe-degradation}
+\end{figure}
+
 This supports the execution-sensitivity component of H5.
 
 \subsection{Training-Budget Convergence}
@@ -538,13 +630,22 @@ Training-budget convergence checks whether the 60-episode protocol appears obvio
 
 The evidence does not show that 60 episodes is materially undertrained for the selected candidate-cap pairs. In the convergence output, zero rows support undertraining of the 60-episode budget; three selected candidate-cap pairs have their best Sharpe at 60 episodes, while the remaining V5 no-volatility Zero-CASH pair peaks at 30 episodes. Additional training does not improve the selected pairs and, in several cases, degrades Sharpe or increases turnover.
 
+Figure~\ref{fig:training-budget-sharpe-convergence} plots the Sharpe path for the two benchmark-comparison TD3 candidates used in the main validation comparison. The diagnostic is consistent with the text: the 60-episode setting is not flagged as obviously undertrained for these selected pairs.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.82\textwidth]{figures/training_budget_sharpe_convergence.pdf}
+\caption{Training-budget Sharpe convergence for selected TD3 candidates}
+\label{fig:training-budget-sharpe-convergence}
+\end{figure}
+
 The convergence check is therefore interpreted as a diagnostic against obvious undertraining, not as proof of global training-budget optimality.
 
 \subsection{Claim-versus-Evidence Summary}
 
-The evaluation stack changes the strength of the claim that can be defended. Ranking competitiveness survives in a precise sense: selected DRL candidates lead relevant mandate-aware or robust diagnostic rankings, remain Pareto-competitive in several practical tradeoff views, and lead in selected regime slices. These findings are informative because they survive a demanding evaluation protocol.
+The evaluation stack changes the strength of the defensible claim. Ranking competitiveness survives in a precise sense: selected DRL candidates lead relevant mandate-aware or robust diagnostic rankings, remain Pareto-competitive in several practical tradeoff views, and lead in selected regime slices.
 
-The boundary of the result is equally important. Bootstrap intervals include zero and White Reality Check p-values do not support statistical superiority for the searched learning candidate. No strategy satisfies every hard mandate filter. Selected case-study histories are more sensitive to additional spread assumptions than the Trend SPY/CASH benchmark, and cash assumptions change the selected case-study candidate.
+The boundary is equally clear. Bootstrap intervals include zero and White Reality Check p-values do not support statistical superiority for the searched learning candidate. No strategy satisfies every hard mandate filter. Selected case-study histories are more sensitive to additional spread assumptions than the Trend SPY/CASH benchmark, and cash assumptions change the selected case-study candidate.
 
 \begin{table}[htbp]
 \centering
@@ -558,7 +659,7 @@ Ranking competitiveness survives. & Yes & Selected case-study candidates lead re
 Statistical superiority is established. & No & Bootstrap confidence intervals include zero and WRC p-values do not support superiority. \\
 Cash assumption matters. & Yes & Zero-CASH and BIL-CASH select different learning candidates and diagnostic-ranking leaders. \\
 Execution assumptions matter. & Yes & Stress spreads degrade selected learning candidates more than Trend SPY/CASH. \\
-Hard mandate feasibility is achieved. & No & No strategy passes all hard canonical mandate filters. \\
+Hard mandate feasibility is achieved. & Profile-dependent & No strategy passes the conservative hard-filter layer; moderate and aggressive feasibility remains conditional on profile and tradeoff choice. \\
 Learning candidate is Pareto-competitive. & Yes & Selected case-study candidates remain on or near relevant tradeoff frontiers. \\
 Benchmarks are weak. & No & Regenerated deterministic benchmarks remain strong comparators. \\
 \bottomrule
@@ -571,7 +672,7 @@ Benchmarks are weak. & No & Regenerated deterministic benchmarks remain strong c
 
 \subsection{Answer to the Research Question}
 
-The research question asked whether a falsification-oriented evaluation framework can distinguish ranking competitiveness, statistical credibility, and practical feasibility in TD3-based cross-asset portfolio allocation. The evidence supports an affirmative answer. The framework separates these claims and shows that they receive different levels of empirical support.
+The research question asked whether a falsification-oriented evaluation framework can distinguish ranking competitiveness, statistical credibility, and practical feasibility in TD3-based cross-asset portfolio allocation. The answer is yes. The framework separates these claims and shows that they receive different levels of empirical support.
 
 Selected TD3 candidates remain ranking-competitive under the corrected benchmark-matched framework. Bootstrap Sharpe-difference intervals and White Reality Check do not support a stronger claim of statistical superiority over clean deterministic benchmarks. Practical feasibility remains conditional on cash assumptions, hard mandate filters, Pareto tradeoffs, execution-spread stress, regime dependence, and training-budget diagnostics.
 
@@ -579,15 +680,15 @@ Selected TD3 candidates remain ranking-competitive under the corrected benchmark
 
 The main findings follow the claim hierarchy developed in the thesis. H1 is supported in a limited sense: selected learning candidates remain benchmark-matched ranking-competitive under the corrected protocol. H2 is also supported: statistical superiority is not established once sampling uncertainty and candidate-search bias are considered. The statistical validation layer therefore limits the strength of the claim that can be defended.
 
-H3 is supported because cash treatment matters. Zero-CASH and BIL-CASH select different candidates and change the interpretation of allocation performance. H4 is supported because practical feasibility cannot be inferred from rankings alone; mandate constraints, Pareto tradeoffs, and investor profiles affect whether a strategy is practically relevant. H5 is supported in the sense that regime dependence, execution-spread stress, mandate constraints, and training-budget checks materially affect interpretation.
+H3 is supported because cash treatment matters. Zero-CASH and BIL-CASH select different candidates and change the interpretation of allocation performance. H4 is supported because practical feasibility cannot be inferred from rankings alone; mandate constraints, Pareto tradeoffs, and investor profiles affect whether a strategy is practically relevant. H5 is supported for regime dependence, mandate constraints, and execution-spread sensitivity, while the training-budget check acts as a diagnostic boundary against obvious undertraining rather than as proof of global training-budget optimality.
 
 The benchmark results are central to this interpretation. The benchmark set is not a collection of weak strawmen. It includes deterministic rules that capture diversification, trend following, risk-off behavior, momentum, risk parity, and classical optimization ideas. Trend SPY/CASH remains a strong comparator in both cash protocols. A learned policy must be compared against these strategies before any claim about dynamic allocation value is credible.
 
 \subsection{Methodological Contribution}
 
-The contribution of the thesis is a falsification-oriented evaluation framework for DRL portfolio evidence. TD3 is the case-study learner. The framework is the contribution.
+The contribution of the thesis is a falsification-oriented evaluation framework for DRL portfolio evidence. TD3 is the case-study learner; the evaluation protocol is the contribution.
 
-The framework converts a portfolio backtest into a structured evidence hierarchy: ranking competitiveness, statistical credibility, and practical feasibility. It combines matched benchmarks, explicit cash protocols, asset-specific costs, bootstrap Sharpe-difference intervals, White Reality Check, mandate/Pareto diagnostics, regime analysis, execution-spread stress, and training-budget convergence. The contribution is methodological rather than algorithmic: the thesis does not propose a new TD3 variant, deployable alpha, or universal superiority claim.
+The framework turns a portfolio backtest into a structured evidence hierarchy: ranking competitiveness, statistical credibility, and practical feasibility. It combines matched benchmarks, explicit cash protocols, asset-specific costs, bootstrap Sharpe-difference intervals, White Reality Check, mandate/Pareto diagnostics, regime analysis, execution-spread stress, and training-budget convergence. The contribution is methodological rather than algorithmic: the thesis does not propose a new TD3 variant, deployable alpha, or universal superiority claim.
 
 \subsection{Limitations}
 
@@ -613,73 +714,75 @@ The framework can be extended to additional DRL learners, alternative reward fun
 \addcontentsline{toc}{section}{References}
 \begin{thebibliography}{99}
 
-\bibitem{almahdi2017} Almahdi, S. and Yang, S. Y. (2017). An adaptive portfolio trading system: A risk-return portfolio optimization using recurrent reinforcement learning with expected maximum drawdown. \emph{Expert Systems with Applications}, 87, 267--279.
+\bibitem[Almahdi and Yang(2017)]{almahdi2017} Almahdi, S. and Yang, S. Y. (2017). An adaptive portfolio trading system: A risk-return portfolio optimization using recurrent reinforcement learning with expected maximum drawdown. \emph{Expert Systems with Applications}, 87, 267--279.
 
-\bibitem{bailey2014} Bailey, D. H. and López de Prado, M. (2014). The deflated Sharpe ratio: Correcting for selection bias, backtest overfitting, and non-normality. \emph{Journal of Portfolio Management}, 40(5), 94--107.
+\bibitem[Bailey and López de Prado(2014)]{bailey2014} Bailey, D. H. and López de Prado, M. (2014). The deflated Sharpe ratio: Correcting for selection bias, backtest overfitting, and non-normality. \emph{Journal of Portfolio Management}, 40(5), 94--107.
 
-\bibitem{binance2026} Binance. (2026). Trading fees. \url{https://www.binance.com/es/fee/trading}. Accessed 25 June 2026.
+\bibitem[Binance(2026)]{binance2026tradingfees} Binance. (2026). Trading fees. \url{https://www.binance.com/es/fee/trading}. Accessed 25 June 2026.
 
-\bibitem{bouri2017} Bouri, E., Molnár, P., Azzi, G., Roubaud, D., and Hagfors, L. I. (2017). On the hedge and safe haven properties of Bitcoin: Is it really more than a diversifier? \emph{Finance Research Letters}, 20, 192--198.
+\bibitem[Bollerslev(1986)]{bollerslev1986} Bollerslev, T. (1986). Generalized autoregressive conditional heteroskedasticity. \emph{Journal of Econometrics}, 31(3), 307--327.
 
-\bibitem{chen2022} Chen, W., Zhang, H., and Jia, L. (2022). A novel two-stage method for well-diversified portfolio construction based on stock return prediction using machine learning. \emph{North American Journal of Economics and Finance}, 63, 101818.
+\bibitem[Bouri et al.(2017)]{bouri2017bitcoinhedge} Bouri, E., Molnár, P., Azzi, G., Roubaud, D., and Hagfors, L. I. (2017). On the hedge and safe haven properties of Bitcoin: Is it really more than a diversifier? \emph{Finance Research Letters}, 20, 192--198.
 
-\bibitem{demiguel2009} DeMiguel, V., Garlappi, L., and Uppal, R. (2009). Optimal versus naive diversification: How inefficient is the 1/N portfolio strategy? \emph{Review of Financial Studies}, 22(5), 1915--1953.
+\bibitem[Chen et al.(2022)]{chen2022} Chen, W., Zhang, H., and Jia, L. (2022). A novel two-stage method for well-diversified portfolio construction based on stock return prediction using machine learning. \emph{North American Journal of Economics and Finance}, 63, 101818.
 
-\bibitem{fujimoto2018} Fujimoto, S., van Hoof, H., and Meger, D. (2018). Addressing function approximation error in actor-critic methods. \emph{Proceedings of the 35th International Conference on Machine Learning}.
+\bibitem[DeMiguel et al.(2009)]{demiguel2009} DeMiguel, V., Garlappi, L., and Uppal, R. (2009). Optimal versus naive diversification: How inefficient is the 1/N portfolio strategy? \emph{Review of Financial Studies}, 22(5), 1915--1953.
 
-\bibitem{guesmi2019} Guesmi, K., Saadi, S., Abid, I., and Ftiti, Z. (2019). Portfolio diversification with virtual currency: Evidence from Bitcoin. \emph{International Review of Financial Analysis}, 63, 431--437.
+\bibitem[Fujimoto et al.(2018)]{fujimoto2018} Fujimoto, S., van Hoof, H., and Meger, D. (2018). Addressing function approximation error in actor-critic methods. \emph{Proceedings of the 35th International Conference on Machine Learning}.
 
-\bibitem{henriques2018} Henriques, I. and Sadorsky, P. (2018). Can Bitcoin replace gold in an investment portfolio? \emph{Journal of Risk and Financial Management}, 11(3), 48.
+\bibitem[Guesmi et al.(2019)]{guesmi2019bitcoinDiversification} Guesmi, K., Saadi, S., Abid, I., and Ftiti, Z. (2019). Portfolio diversification with virtual currency: Evidence from Bitcoin. \emph{International Review of Financial Analysis}, 63, 431--437.
 
-\bibitem{hubrich2023} Hubrich, S. (2023). Bitcoin in a multi-asset portfolio. \emph{Journal of Alternative Investments}, 25(3), 63--80.
+\bibitem[Henriques and Sadorsky(2018)]{henriques2018bitcoinGold} Henriques, I. and Sadorsky, P. (2018). Can Bitcoin replace gold in an investment portfolio? \emph{Journal of Risk and Financial Management}, 11(3), 48.
 
-\bibitem{interactivebrokers2026} Interactive Brokers. (2026). Commissions. \url{https://www.interactivebrokers.com/es/pricing/commissions-home.php}. Accessed 25 June 2026.
+\bibitem[Hubrich(2023)]{hubrich2023bitcoin} Hubrich, S. (2023). Bitcoin in a multi-asset portfolio. \emph{Journal of Alternative Investments}, 25(3), 63--80.
 
-\bibitem{jagannathan2003} Jagannathan, R. and Ma, T. (2003). Risk reduction in large portfolios: Why imposing the wrong constraints helps. \emph{Journal of Finance}, 58(4), 1651--1683.
+\bibitem[Interactive Brokers(2026)]{interactivebrokers2026commissions} Interactive Brokers. (2026). Commissions. \url{https://www.interactivebrokers.com/es/pricing/commissions-home.php}. Accessed 25 June 2026.
 
-\bibitem{jegadeesh1993} Jegadeesh, N. and Titman, S. (1993). Returns to buying winners and selling losers: Implications for stock market efficiency. \emph{Journal of Finance}, 48(1), 65--91.
+\bibitem[Jagannathan and Ma(2003)]{jagannathan2003} Jagannathan, R. and Ma, T. (2003). Risk reduction in large portfolios: Why imposing the wrong constraints helps. \emph{Journal of Finance}, 58(4), 1651--1683.
 
-\bibitem{jiang2017} Jiang, Z., Xu, D., and Liang, J. (2017). A deep reinforcement learning framework for the financial portfolio management problem. \emph{arXiv preprint arXiv:1706.10059}.
+\bibitem[Jegadeesh and Titman(1993)]{jegadeesh1993} Jegadeesh, N. and Titman, S. (1993). Returns to buying winners and selling losers: Implications for stock market efficiency. \emph{Journal of Finance}, 48(1), 65--91.
 
-\bibitem{jiang2024} Jiang, Y., Olmo, J., and Atwi, M. (2024). Deep reinforcement learning for portfolio selection. \emph{Global Finance Journal}, 62, 101016.
+\bibitem[Jiang et al.(2017)]{jiang2017} Jiang, Z., Xu, D., and Liang, J. (2017). A deep reinforcement learning framework for the financial portfolio management problem. \emph{arXiv preprint arXiv:1706.10059}.
 
-\bibitem{jiang2025} Jiang, Y., Olmo, J., and Atwi, M. (2025). Deep reinforcement learning for high-dimensional multi-period portfolio allocation. \emph{International Review of Economics and Finance}, 98, 103996.
+\bibitem[Jiang et al.(2024)]{jiang2024td3} Jiang, Y., Olmo, J., and Atwi, M. (2024). Deep reinforcement learning for portfolio selection. \emph{Global Finance Journal}, 62, 101016.
 
-\bibitem{klein2018} Klein, T., Pham Thu, H., and Walther, T. (2018). Bitcoin is not the new gold: A comparison of volatility, correlation, and portfolio performance. \emph{International Review of Financial Analysis}, 58, 105--116.
+\bibitem[Jiang et al.(2025)]{jiang2025multiperiod} Jiang, Y., Olmo, J., and Atwi, M. (2025). Deep reinforcement learning for high-dimensional multi-period portfolio allocation. \emph{International Review of Economics and Finance}, 98, 103996.
 
-\bibitem{lillicrap2015} Lillicrap, T. P., Hunt, J. J., Pritzel, A., Heess, N., Erez, T., Tassa, Y., Silver, D., and Wierstra, D. (2015). Continuous control with deep reinforcement learning. \emph{arXiv preprint arXiv:1509.02971}.
+\bibitem[Klein et al.(2018)]{klein2018bitcoin} Klein, T., Pham Thu, H., and Walther, T. (2018). Bitcoin is not the new gold: A comparison of volatility, correlation, and portfolio performance. \emph{International Review of Financial Analysis}, 58, 105--116.
 
-\bibitem{liu2020} Liu, X.-Y., Yang, H., Chen, Q., Zhang, R., Yang, L., Xiao, B., and Wang, C. D. (2020). FinRL: A deep reinforcement learning library for automated stock trading in quantitative finance. \emph{arXiv preprint arXiv:2011.09607}.
+\bibitem[Lillicrap et al.(2015)]{lillicrap2015} Lillicrap, T. P., Hunt, J. J., Pritzel, A., Heess, N., Erez, T., Tassa, Y., Silver, D., and Wierstra, D. (2015). Continuous control with deep reinforcement learning. \emph{arXiv preprint arXiv:1509.02971}.
 
-\bibitem{lopezdeprado2020} López de Prado, M. (2020). \emph{Machine Learning for Asset Managers}. Cambridge University Press.
+\bibitem[Liu et al.(2020)]{liu2020finrl} Liu, X.-Y., Yang, H., Chen, Q., Zhang, R., Yang, L., Xiao, B., and Wang, C. D. (2020). FinRL: A deep reinforcement learning library for automated stock trading in quantitative finance. \emph{arXiv preprint arXiv:2011.09607}.
 
-\bibitem{maillard2010} Maillard, S., Roncalli, T., and Teiletche, J. (2010). The properties of equally weighted risk contribution portfolios. \emph{Journal of Portfolio Management}, 36(4), 60--70.
+\bibitem[López de Prado(2020)]{lopezdeprado2020mlam} López de Prado, M. (2020). \emph{Machine Learning for Asset Managers}. Cambridge University Press.
 
-\bibitem{markowitz1952} Markowitz, H. (1952). Portfolio selection. \emph{Journal of Finance}, 7(1), 77--91.
+\bibitem[Maillard et al.(2010)]{maillard2010} Maillard, S., Roncalli, T., and Teiletche, J. (2010). The properties of equally weighted risk contribution portfolios. \emph{Journal of Portfolio Management}, 36(4), 60--70.
 
-\bibitem{merton1969} Merton, R. C. (1969). Lifetime portfolio selection under uncertainty: The continuous-time case. \emph{Review of Economics and Statistics}, 51(3), 247--257.
+\bibitem[Markowitz(1952)]{markowitz1952} Markowitz, H. (1952). Portfolio selection. \emph{Journal of Finance}, 7(1), 77--91.
 
-\bibitem{merton1971} Merton, R. C. (1971). Optimum consumption and portfolio rules in a continuous-time model. \emph{Journal of Economic Theory}, 3(4), 373--413.
+\bibitem[Merton(1969)]{merton1969} Merton, R. C. (1969). Lifetime portfolio selection under uncertainty: The continuous-time case. \emph{Review of Economics and Statistics}, 51(3), 247--257.
 
-\bibitem{moody2001} Moody, J. and Saffell, M. (2001). Learning to trade via direct reinforcement. \emph{IEEE Transactions on Neural Networks}, 12(4), 875--889.
+\bibitem[Merton(1971)]{merton1971} Merton, R. C. (1971). Optimum consumption and portfolio rules in a continuous-time model. \emph{Journal of Economic Theory}, 3(4), 373--413.
 
-\bibitem{moskowitz2012} Moskowitz, T. J., Ooi, Y. H., and Pedersen, L. H. (2012). Time series momentum. \emph{Journal of Financial Economics}, 104(2), 228--250.
+\bibitem[Moody and Saffell(2001)]{moody2001} Moody, J. and Saffell, M. (2001). Learning to trade via direct reinforcement. \emph{IEEE Transactions on Neural Networks}, 12(4), 875--889.
 
-\bibitem{novymarx2016} Novy-Marx, R. and Velikov, M. (2016). A taxonomy of anomalies and their trading costs. \emph{Review of Financial Studies}, 29(1), 104--147.
+\bibitem[Moskowitz et al.(2012)]{moskowitz2012} Moskowitz, T. J., Ooi, Y. H., and Pedersen, L. H. (2012). Time series momentum. \emph{Journal of Financial Economics}, 104(2), 228--250.
 
-\bibitem{petukhina2021} Petukhina, A. and Sprünken, E. (2021). Evaluation of multi-asset investment strategies with digital assets. \emph{Digital Finance}, 3(1), 45--79.
+\bibitem[Novy-Marx and Velikov(2016)]{novymarx2016} Novy-Marx, R. and Velikov, M. (2016). A taxonomy of anomalies and their trading costs. \emph{Review of Financial Studies}, 29(1), 104--147.
 
-\bibitem{platanakis2020} Platanakis, E. and Urquhart, A. (2020). Should investors include Bitcoin in their portfolios? A portfolio theory approach. \emph{British Accounting Review}, 52(4), 100837.
+\bibitem[Petukhina and Sprünken(2021)]{petukhina2021digitalassets} Petukhina, A. and Sprünken, E. (2021). Evaluation of multi-asset investment strategies with digital assets. \emph{Digital Finance}, 3(1), 45--79.
 
-\bibitem{sharpe1966} Sharpe, W. F. (1966). Mutual fund performance. \emph{Journal of Business}, 39(1), 119--138.
+\bibitem[Platanakis and Urquhart(2020)]{platanakis2020bitcoin} Platanakis, E. and Urquhart, A. (2020). Should investors include Bitcoin in their portfolios? A portfolio theory approach. \emph{British Accounting Review}, 52(4), 100837.
 
-\bibitem{silver2014} Silver, D., Lever, G., Heess, N., Degris, T., Wierstra, D., and Riedmiller, M. (2014). Deterministic policy gradient algorithms. \emph{Proceedings of the 31st International Conference on Machine Learning}.
+\bibitem[Sharpe(1966)]{sharpe1966} Sharpe, W. F. (1966). Mutual fund performance. \emph{Journal of Business}, 39(1), 119--138.
 
-\bibitem{simutin2014} Simutin, M. (2014). Cash holdings and mutual fund performance. \emph{Review of Finance}, 18(4), 1425--1464.
+\bibitem[Silver et al.(2014)]{silver2014} Silver, D., Lever, G., Heess, N., Degris, T., Wierstra, D., and Riedmiller, M. (2014). Deterministic policy gradient algorithms. \emph{Proceedings of the 31st International Conference on Machine Learning}.
 
-\bibitem{white2000} White, H. (2000). A reality check for data snooping. \emph{Econometrica}, 68(5), 1097--1126.
+\bibitem[Simutin(2014)]{simutin2014} Simutin, M. (2014). Cash holdings and mutual fund performance. \emph{Review of Finance}, 18(4), 1425--1464.
 
-\bibitem{zhao2023} Zhao, T., Ma, X., Li, X., and Zhang, C. (2023). Asset correlation based deep reinforcement learning for the portfolio selection. \emph{Expert Systems with Applications}, 221, 119707.
+\bibitem[White(2000)]{white2000} White, H. (2000). A reality check for data snooping. \emph{Econometrica}, 68(5), 1097--1126.
+
+\bibitem[Zhao et al.(2023)]{zhao2023correlation} Zhao, T., Ma, X., Li, X., and Zhang, C. (2023). Asset correlation based deep reinforcement learning for the portfolio selection. \emph{Expert Systems with Applications}, 221, 119707.
 
 \end{thebibliography}
 
@@ -690,11 +793,12 @@ The framework can be extended to additional DRL learners, alternative reward fun
     \phantomsection
     \section*{Annex #1. #3}
     \addcontentsline{toc}{section}{Annex #1. #2}
+    \addcontentsline{loa}{annex}{Annex #1. #2}
 }
 
 \annexsection{A}{Data and Cash Protocols}{Data, Asset Universe and Cash Protocols}
 
-This annex summarizes the investable universe and cash protocols used in the thesis. The universe is deliberately compact and is designed to support interpretable cross-asset allocation tests rather than to approximate the full global market portfolio.
+This annex records the investable universe and cash protocols used in the thesis. The universe is deliberately compact: it supports interpretable cross-asset allocation tests, not a proxy for the full global market portfolio.
 
 \begin{table}[H]
 \centering
@@ -715,11 +819,32 @@ Defensive liquidity & CASH under Zero-CASH; BIL under BIL-CASH & Weekly & CASH h
 
 Zero-CASH defines the defensive sleeve as a synthetic zero-return cash position. BIL-CASH replaces that synthetic assumption with BIL as a short-term Treasury ETF proxy. These protocols define different investable environments and are therefore evaluated separately.
 
+The market-price pipeline downloads adjusted-close prices for non-synthetic assets, resamples them to weekly Friday observations, and constructs simple percentage returns. CASH is not downloaded under Zero-CASH; it is inserted as a zero-return sleeve. Under BIL-CASH, BIL returns are mapped into the CASH column while preserving the same portfolio action label. Feature matrices are aligned to the weekly return index and shifted so that features used at a decision date are available before the realized next-period return.
+
+\begin{table}[H]
+\centering
+\caption{Annex data acquisition and preprocessing traceability}
+\scriptsize
+\begin{tabularx}{\textwidth}{L{0.28\textwidth}Y}
+\toprule
+\textbf{Step} & \textbf{Treatment in the project pipeline} \\
+\midrule
+Market prices & SPY, TLT, GLD, BTC-USD and, when required, BIL are obtained as adjusted-close price series for the configured historical window. \\
+Return construction & Prices are aligned to weekly Friday observations and converted to simple percentage returns; returns are not normalized because they define realized portfolio rewards. \\
+Cash treatment & Zero-CASH inserts a synthetic zero-return CASH sleeve; BIL-CASH maps BIL returns into the CASH sleeve and applies the ETF-like transaction-cost convention. \\
+Missing observations & Price and return series are sorted, duplicate dates are resolved by keeping the last observation, and unusable rows with missing return values are dropped before modeling. \\
+Feature timing & Features are aligned to the return index and shifted by one weekly step before training/evaluation to reduce look-ahead leakage. \\
+Macro/as-of data & Macro features are built from local or FRED/ALFRED-style inputs and aligned to weekly dates; CPI availability uses a conservative lag approximation where applicable. \\
+Execution scope & The experiment uses historical research data only; it does not use live trading, production execution, account-specific routing, taxes, or custody data. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
 The transaction-cost schedule is a transparent modeling assumption used to make turnover economically visible in the experiment. It is not an account-specific execution estimate and does not include taxes, market impact, custody fees, broker-specific routing, or investor-specific implementation constraints.
 
 \annexsection{B}{TD3 Feature Families}{TD3 Candidate Design and Feature Families}
 
-The TD3 search evaluates multiple state representations under a common evaluation protocol. The feature families are kept concise in the main text because the thesis claim concerns the evaluation framework rather than a new feature-engineering method.
+The TD3 search evaluates multiple state representations under one evaluation protocol. The main text keeps feature-family detail concise because the thesis evaluates the protocol, not a new feature-engineering method.
 
 \begin{table}[H]
 \centering
@@ -769,7 +894,7 @@ The searched histories share the same historical market sample and should not be
 
 \annexsection{D}{Benchmark Definitions}{Benchmark Definitions}
 
-Deterministic benchmarks are regenerated under the same universe, cash assumption, cost schedule, and evaluation window as the TD3 candidates. This matching is essential because the thesis evaluates whether the learning candidate remains competitive against clean comparators rather than against weak or mismatched baselines.
+Deterministic benchmarks are regenerated under the same universe, cash assumption, cost schedule, and evaluation window as the TD3 candidates. This matching is essential: the learning candidate must be compared with clean comparators, not weak or mismatched baselines.
 
 \begin{table}[H]
 \centering
@@ -817,11 +942,11 @@ Limitation & Statistical tests reduce overstatement, but they do not create inde
 \end{tabularx}
 \end{table}
 
-These tests are interpreted as guardrails. They do not invalidate ranking competitiveness, but they prevent a ranking result from being converted into a stronger alpha or superiority claim.
+These tests are guardrails. They do not invalidate ranking competitiveness, but they prevent a ranking result from being converted into a stronger alpha or superiority claim.
 
 \annexsection{F}{Regime and Feasibility Diagnostics}{Regime, Mandate and Pareto Diagnostics}
 
-The regime, mandate and Pareto diagnostics evaluate whether selected strategies remain interpretable under market-state variation and practical constraints. They are diagnostic selection tools, not standalone proof of superiority.
+The regime, mandate and Pareto diagnostics evaluate whether selected strategies remain interpretable under market-state variation and practical constraints. They are diagnostic tools, not standalone proof of superiority.
 
 \begin{table}[H]
 \centering
@@ -840,7 +965,24 @@ Diagnostic scores & Mandate-aware and robust scores support selection diagnostic
 \end{tabularx}
 \end{table}
 
-The practical interpretation is intentionally conservative. A candidate may be ranking-competitive while still failing hard mandate filters, depending on a cash assumption, or occupying a tradeoff frontier rather than dominating all metrics.
+The practical interpretation is conservative. A candidate may be ranking-competitive while still failing hard mandate filters, depending on a cash assumption, or occupying a tradeoff frontier rather than dominating all metrics.
+
+\begin{table}[H]
+\centering
+\caption{Annex hard mandate-filter thresholds}
+\scriptsize
+\begin{tabularx}{\textwidth}{L{0.20\textwidth}rrrrY}
+\toprule
+\textbf{Profile} & \textbf{Max DD} & \textbf{Max ann. vol.} & \textbf{Min eff. assets} & \textbf{Max avg. turnover} & \textbf{Interpretation} \\
+\midrule
+Conservative & -0.10 & 0.10 & 3.00 & 0.05 & Tight drawdown, volatility, diversification, and implementation-discipline limits. \\
+Moderate & -0.15 & 0.15 & 2.30 & 0.10 & Balanced drawdown, volatility, diversification, and turnover limits. \\
+Aggressive & -0.25 & 0.25 & 1.50 & 0.20 & Looser risk, diversification, and turnover limits for higher-risk profiles. \\
+\bottomrule
+\end{tabularx}
+\vspace{2pt}
+\parbox{\textwidth}{\scriptsize\textit{Note: Max-weight caps are structural TD3 experiment constraints, not official mandate-filter thresholds. Concentration is represented here by the effective-assets minimum.}}
+\end{table}
 
 \annexsection{G}{Execution and Training Diagnostics}{Execution-Spread Stress and\\Training-Budget Convergence}
 
@@ -865,7 +1007,7 @@ Interpretation & Both checks affect practical interpretation, but neither conver
 
 \annexsection{H}{Reproducibility Artifacts}{Reproducibility and Project Outputs}
 
-This annex lists the main reproducibility artifacts supporting the thesis. The paths refer to the project folder used to generate the thesis evidence.
+This annex lists the main reproducibility artifacts supporting the thesis. The paths refer to the project folder used for the empirical work.
 
 \begin{table}[H]
 \centering
@@ -875,17 +1017,94 @@ This annex lists the main reproducibility artifacts supporting the thesis. The p
 \toprule
 \textbf{Artifact type} & \textbf{Known project files or folders} \\
 \midrule
-Project folder & \path{/Users/thiagoherrera/Desktop/portfolio_drl_td3} \\
+Project root & Repository root for the thesis project; paths below are relative to this root. \\
 Data preparation scripts & \path{src/data/build_dataset.py}; \path{src/data/build_macro_dataset.py}; \path{src/data/build_realtime_macro_dataset.py}; \path{src/data/prepare_dataset.py} \\
 TD3 training scripts & \path{src/train/train_td3.py}; \path{src/models/td3_agent.py}; \path{src/models/actor.py}; \path{src/models/critic.py} \\
 Benchmark scripts & \path{src/backtest/benchmarks.py}; \path{src/backtest/dynamic_allocation_benchmarks.py}; \path{src/backtest/performance_metrics.py} \\
 Statistical validation scripts & \path{src/analysis/statistical_validation_report.py}; \path{src/analysis/white_reality_check_report.py} \\
 Robustness scripts & \path{src/analysis/regime_analysis_report.py}; \path{src/analysis/mandate_profile_comparison_report.py}; \path{src/analysis/asset_specific_constraint_pareto_report.py}; \path{src/analysis/execution_spread_robustness_report.py}; \path{src/analysis/training_budget_convergence_report.py} \\
 Output tables & \path{outputs/tables/asset_specific_cost_full_final_report/}; \path{outputs/tables/asset_specific_cost_benchmark_comparison/}; \path{outputs/tables/asset_specific_cost_statistical_validation/}; \path{outputs/tables/asset_specific_cost_white_reality_check/}; \path{outputs/tables/asset_specific_cost_regime_analysis/}; \path{outputs/tables/asset_specific_cost_constraint_pareto/}; \path{outputs/tables/asset_specific_cost_mandate_profile_comparison/} \\
-Generated thesis source & \path{paper/main.tex}; \path{paper/main.pdf} \\
+Generated thesis source & \path{tfm/main.tex}; \path{tfm/main.pdf} \\
 \bottomrule
 \end{tabularx}
 \end{table}
+
+\annexsection{I}{Core Implementation Logic}{Core Implementation Logic}
+
+This annex records the implementation logic needed to reproduce the main empirical interpretation. It is intentionally compact: the authoritative implementation remains in the project files listed in Annex H, while the blocks below document the portfolio mechanics, matched evaluation protocol, and statistical validation workflow used to interpret the evidence.
+
+\textbf{Feasible action, cost, net return, and reward logic}
+
+\begin{lstlisting}
+Input:
+    raw action a_t from the deterministic policy
+    previous drifted portfolio weights w_prev_drifted
+    next-period asset returns r_next
+    asset-specific transaction cost rates kappa
+
+w_t = projected version of a_t on the long-only simplex
+
+turnover_i = abs(w_t[i] - w_prev_drifted[i]) for each asset i
+transaction_cost_t = sum_i(kappa[i] * turnover_i)
+
+gross_return_t = sum_i(w_t[i] * r_next[i])
+net_return_t = gross_return_t - transaction_cost_t
+
+portfolio_value_t = portfolio_value_prev * (1 + net_return_t)
+running_peak_t = max(running_peak_prev, portfolio_value_t)
+drawdown_t = portfolio_value_t / running_peak_t - 1
+
+reward_t = net_return_t minus the configured drawdown penalty
+store transition using feasible weights and net-return reward
+\end{lstlisting}
+
+\textbf{Walk-forward and benchmark-matched evaluation protocol}
+
+\begin{lstlisting}
+For each cash protocol in {Zero-CASH, BIL-CASH}:
+    Build the same investable universe, cost assumptions, and date windows.
+
+    For each walk-forward split:
+        Train candidate TD3 policies only on the training window.
+        Select candidates using the predefined diagnostic score stack.
+        Evaluate selected candidates out-of-sample without exploration noise.
+
+        Regenerate deterministic benchmarks on the same:
+            asset universe
+            cash protocol
+            transaction-cost convention
+            rebalance frequency
+            train/test window
+
+    Aggregate out-of-sample results by candidate, cap, seed, and split.
+    Interpret TD3 only against matched benchmark evidence.
+\end{lstlisting}
+
+\textbf{Statistical validation workflow}
+
+\begin{lstlisting}
+Build the searched TD3 candidate set from the final evaluation outputs.
+
+For each selected TD3 candidate and clean benchmark comparator:
+    Compute paired out-of-sample return differentials.
+    Estimate the Sharpe-difference statistic.
+    Bootstrap paired return histories to obtain:
+        confidence interval for Sharpe difference
+        probability that the selected TD3 candidate beats the comparator
+
+Across the searched candidate set:
+    Apply White Reality Check to candidate return differentials.
+    Report the search-adjusted p-value.
+
+Interpretation rule:
+    ranking competitiveness may be reported when rankings support it;
+    statistical superiority is not claimed when intervals include zero
+    or White Reality Check does not reject the null.
+\end{lstlisting}
+
+\begin{flushleft}
+The corresponding source areas are \path{src/env/portfolio_env.py}, \path{src/utils/action_projection.py}, \path{src/backtest/}, and \path{src/analysis/}. These references are sufficient to locate the reproducibility logic without exposing machine-specific paths.
+\end{flushleft}
 
 % Manual verification needed: confirm whether the university has a newer official MECOFIN Word template, because the supplied .doc file resolves locally as an HTML 404 page rather than a usable template file.
 

@@ -1,221 +1,98 @@
-# Portfolio DRL TD3 - Realistic Evaluation of DRL Portfolio Claims
+# Falsification-Oriented Evaluation of DRL Portfolio Allocation
 
-This repository contains a research case study on TD3 for cross-asset portfolio
-allocation. The point is not to present TD3 as a trading system. The point is to
-test whether deep reinforcement learning portfolio claims survive a stricter
-evaluation protocol: realistic transaction costs, explicit cash assumptions,
-matched deterministic benchmarks, out-of-sample validation, and statistical
-checks for searched strategy performance.
+*A cross-asset TD3 case study with trading costs, explicit cash assumptions,
+matched benchmarks, and statistical controls.*
 
-The current paper is titled:
+Financial DRL results often depend on convenient evaluation choices hidden
+behind the final Sharpe ratio. I built this project to make those choices
+explicit and test whether the conclusions survived them.
 
-> Evaluating DRL Portfolio Claims under Realistic Cross-Asset Frictions: A TD3
-> Case Study with Costs, Cash, Matched Benchmarks, and Statistical Validation
+TD3 is the case study, not the contribution. It remained competitive in a few
+descriptive comparisons, but it did not win the full benchmark universe.
+Several favorable conclusions also disappeared after I corrected the date
+alignment and the aggregation across training seeds.
 
-The final answer is cautious. Selected TD3 candidates can be competitive under
-mandate-aware and robust diagnostic rankings, but the evidence does not support
-a clean statistical superiority claim over deterministic benchmarks. Bootstrap
-Sharpe-difference intervals cross zero. White Reality Check does not support a
-strong alpha claim. The main contribution is the evaluation discipline, not a
-deployable trading signal.
+**Paper:** [PDF](paper/main.pdf) · [LaTeX](paper/main.tex) ·
+[validation notes](paper/README.md)
 
-## Why This Project Exists
+## Findings
 
-DRL finance results can look stronger than they are when the evaluation setup is
-too loose. Common problems include weak benchmarks, ambiguous cash handling,
-simplified transaction costs, model-search bias, limited seed testing, and
-little statistical validation.
-
-This repo stress-tests a TD3 portfolio allocator under those conditions. It asks
-what remains after the backtest is forced through a more skeptical evidence
-stack.
-
-## Research Question
-
-Can a disciplined evaluation protocol distinguish statistically credible and
-practically feasible DRL portfolio performance from apparent backtest strength?
-
-## What Is Being Tested
-
-The learning model is TD3, used as a continuous-action portfolio allocator. At a
-weekly decision frequency, the agent chooses long-only portfolio weights over a
-compact cross-asset universe:
-
-| Asset | Role in the allocation problem |
+| Question | Result |
 | --- | --- |
-| `SPY` | Equity / growth risk |
-| `TLT` | Duration / interest-rate risk |
-| `GLD` | Real safe-haven / hard-asset exposure |
-| `BTC-USD` | Digital alternative / speculative convexity |
-| `CASH` / `BIL` | Defensive liquidity / optionality |
+| Does TD3 lead the combined ranking? | No. Buy-and-hold GLD ranks first under both cash protocols. |
+| Is any TD3 candidate descriptively competitive? | Yes, within limits. V3 ranks fourth by mandate-aware score under Zero-CASH and V7 seventh under BIL-CASH. Both rank tenth by canonical Sharpe. |
+| Is statistical superiority established? | No. Both paired bootstrap ranges include zero, and White Reality Check does not reject its null. |
+| Does an aggregate TD3 candidate pass a tested mandate? | No. Three deterministic benchmarks pass the aggressive profile. |
+| Does cash treatment affect selection? | Yes. The highest mandate-aware TD3 changes from V3 to V7. |
+| Are any TD3 candidates Pareto-relevant? | Conditionally. V3/V4 remain on both Zero-CASH frontiers; under BIL-CASH, V3 remains on both and V8 on the full frontier only. |
+| Do execution assumptions matter? | Yes. Added spread assumptions weaken selected TD3 histories more than Trend SPY/CASH. |
+| Was 60 episodes obviously insufficient? | No clear evidence. Longer budgets do not consistently improve the selected cases. |
 
-The project evaluates two cash protocols:
+“Not statistically superior” does not mean “useless,” and Pareto membership
+does not mean “best.” The evidence supports limited descriptive claims, not
+deployable alpha or universal DRL superiority.
 
-- `Zero-CASH`: synthetic zero-return cash sleeve with 0 bps cash transaction
-  cost.
-- `BIL-CASH`: short-term Treasury ETF proxy for cash, with 2 bps cash
-  transaction cost.
+## Experiment
 
-The corrected cost schedule uses asset-specific transaction costs:
+| Item | Design |
+| --- | --- |
+| Assets | `SPY`, `TLT`, `GLD`, `BTC-USD`, and `CASH`/`BIL` |
+| Portfolio decision | Weekly, long-only weights with concentration constraints |
+| TD3 grid | 5 feature families × 4 caps × 10 seeds × 4 walk-forward folds |
+| Scale | 800 TD3 histories per cash protocol; they share one market record and are not independent samples |
+| Final comparison | 5 selected TD3 candidates and 14 deterministic rule-based benchmarks |
+| Cash and costs | Zero-CASH or a BIL proxy; asset-specific transaction costs from 0 to 10 bps |
+| Matched window | 228 Fridays, 2022-01-07 through 2026-05-15 |
 
-- `SPY`, `TLT`, `GLD`: 2 bps
-- `BTC-USD`: 10 bps
-- `CASH`: 0 bps under Zero-CASH, 2 bps under BIL-CASH
-
-## Evaluation Stack
-
-The final paper separates ranking, statistical credibility, and practical
-feasibility. Those are different claims.
-
-The evaluation stack includes:
-
-- out-of-sample walk-forward evaluation
-- multiple random seeds and folds
-- asset-specific transaction costs
-- explicit Zero-CASH and BIL-CASH assumptions
-- regenerated deterministic benchmarks under matching assumptions
-- bootstrap Sharpe-difference intervals
-- White Reality Check for searched candidate performance
-- mandate and Pareto feasibility analysis
-- regime dependence analysis
-- execution-spread stress tests
-- training-budget convergence checks
-
-## Benchmarks
-
-The benchmark set is deliberately not weak. It includes static allocations,
-single-asset buy-and-hold exposures, momentum rules, risk-off rules, risk
-parity, and rolling Markowitz-style optimizers.
-
-Deterministic benchmarks used in the final corrected comparison include:
-
-- `60_40_SPY_TLT`
-- `BuyHold_BTC-USD`
-- `BuyHold_GLD`
-- `BuyHold_SPY`
-- `BuyHold_TLT`
-- `Equal_Weight`
-- `Equal_Weight_Risky`
-- `defensive_risk_off_12p`
-- `momentum_winner_12p`
-- `risk_adjusted_momentum_winner_12p_12p`
-- `rolling_markowitz_long_only_52p`
-- `rolling_markowitz_min_variance_52p`
-- `rolling_risk_parity_inverse_vol_12p`
-- `trend_spy_cash_12p`
-
-## Main Findings
-
-The findings are intentionally modest:
-
-- TD3 can be competitive under some mandate-aware and robust diagnostic
-  rankings.
-- TD3 does not establish statistical superiority over the deterministic
-  benchmarks in the final validation layer.
-- `trend_spy_cash_12p` remains a serious benchmark comparator in both cash
-  protocols.
-- Cash assumptions matter. Zero-CASH and BIL-CASH select different preferred
-  TD3 candidates.
-- Costs and execution-spread assumptions materially affect interpretation.
-- No strategy passes all hard canonical mandate filters in the final
-  constraint-first analysis.
-- More training does not automatically improve the selected candidates; the
-  convergence check does not show that the 60-episode protocol is obviously
-  undertrained.
-- The value of the repo is the evaluation protocol and the traceable research
-  workflow, not a claim that TD3 is a reliable trading edge.
-
-## What This Repo Demonstrates
-
-For reviewers, quant researchers, and recruiters, the useful part of this repo
-is the research discipline around the model:
-
-- PyTorch TD3 implementation for continuous portfolio weights
-- portfolio environment design with feasible action handling
-- net-return-first accounting with transaction costs
-- feature-family experimentation across financial, macro, volatility, and
-  hybrid states
-- walk-forward validation across seeds and folds
-- deterministic benchmark regeneration under matched assumptions
-- bootstrap and White Reality Check validation
-- mandate-aware, robust-score, Pareto, regime, and execution-friction reporting
-- evidence traceability documentation for paper tables and figures
-- a paper workflow that links narrative claims back to source files
-
-## What This Repo Does Not Claim
-
-This repository does not claim:
-
-- that TD3 reliably beats deterministic portfolio benchmarks
-- that the result is statistically dominant after model search
-- that the code is a production trading system
-- that this is investment advice
-- that the asset universe is a complete global allocation universe
-- that the backtest models taxes, custody, intraday liquidity, order-book depth,
-  or full market impact
-- that the results have been live-forward validated
-
-## Repository Map
+The benchmarks cover buy-and-hold, equal weight, 60/40, momentum, risk-off,
+risk parity, rolling Markowitz, and Trend SPY/CASH. The evidence stack is:
 
 ```text
-configs/      experiment configuration files
-data/         raw, interim, and processed data files
-docs/         research notes, paper framing, and evidence traceability
-notebooks/    notebook placeholder area
-outputs/      generated experiment and report artifacts
-paper/        LaTeX manuscript, rendered PDF, references, and paper notes
-scripts/      data, recovery, and robustness helper scripts
-src/          implementation code
-tests/        unittest coverage for data, env, TD3, benchmarks, and reports
+candidate search → walk-forward tests → matched ranking → bootstrap/WRC
+→ mandate filters → Pareto/regime analysis → execution/training diagnostics
 ```
 
-Important implementation areas:
+A high rank is only a ranking result. It does not settle statistical credibility
+or practical feasibility.
 
-```text
-src/models/        actor, critic, TD3 agent
-src/env/           portfolio environment
-src/train/         TD3 training and exploration
-src/data/          datasets, features, macro data, walk-forward splits
-src/backtest/      benchmarks, metrics, policy evaluation
-src/analysis/      final reports, audits, statistical validation, robustness
-src/costs/         spread-cost utilities
-src/risk/          mandate profiles and penalties
-```
+## Two corrections that changed the result
 
-## Paper And Evidence Traceability
+### Temporal alignment
 
-Because this project went through several experiment iterations, final paper
-claims are documented through source-map and audit files under `docs/`. Readers
-who want to verify table or figure lineage should start with:
+The original combined table mixed TD3 and benchmark metrics from different
+evaluation horizons. The corrected pipeline intersects every strategy on the
+same 228 Friday observations. Rankings, scores, mandate checks, and Pareto
+membership now come only from those matched histories.
 
-- `docs/final_output_source_map.md`
-- `docs/final_paper_full_audit.md`
+### Seed aggregation
 
-Some heavy experiment artifacts are not intended to be regenerated from the
-README. The paper and audit docs identify the relevant final evidence files.
+Averaging ten policy return paths by date created a synthetic diversified path
+and reduced volatility by roughly 18–34%. It was neither the expected outcome
+of training one policy nor an implemented ten-agent portfolio. The final method
+concatenates four out-of-sample folds inside each seed, calculates metrics on
+each complete seed history, and then aggregates those metrics across ten seeds.
+Average and median return paths remain diagnostics only.
 
-## How To Read The Paper
+The reporting also separates canonical Sharpe, the paired report's historical
+`CAGR / annualized volatility` ratio, and the White Reality Check statistic on
+weekly return differentials. Their formulas and estimands are recorded in the
+[seed-aggregated metadata](outputs/paper_seed_aggregated_comparison/metadata/methodology.json).
 
-The polished research narrative is in:
+## Repository map
 
-- `paper/main.pdf`
-- `paper/main.tex`
+| Path | Contents |
+| --- | --- |
+| [`paper/`](paper/) | Manuscript, PDF, figures, and build notes |
+| [`src/models/`](src/models/), [`src/env/`](src/env/), [`src/train/`](src/train/) | TD3 agent, portfolio environment, and training logic |
+| [`src/experiments/`](src/experiments/) | Walk-forward, seed, feature, and concentration experiments |
+| [`src/backtest/`](src/backtest/), [`src/analysis/`](src/analysis/) | Benchmarks, metrics, statistical tests, constraints, Pareto, and audits |
+| [`scripts/`](scripts/), [`tests/`](tests/) | Rebuild entry points, validators, and regression tests |
+| [`outputs/paper_aligned_comparison/`](outputs/paper_aligned_comparison/) | Exact-date histories and comparison lineage |
+| [`outputs/paper_seed_aggregated_comparison/`](outputs/paper_seed_aggregated_comparison/) | Per-seed metrics, rankings, diagnostics, metadata, and paper fragments |
 
-The paper explains the motivation, methodology, results, and interpretation.
-The docs explain traceability:
+## Reproduction
 
-- `docs/paper_results_narrative.md`
-- `docs/paper_reporting_layers.md`
-- `docs/paper_claim_vs_evidence.md`
-- `docs/final_output_source_map.md`
-- `docs/output_lineage_audit.md`
-
-Read the paper for the argument. Read the source-map docs when checking whether
-a table or claim is supported by final evidence.
-
-## Reproducibility And Usage
-
-The repository has a Python dependency file:
+Create the environment from the repository root:
 
 ```bash
 python3 -m venv .venv
@@ -223,20 +100,84 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Run the test suite:
+### Validate committed results
+
+With the packaged output directories present, these checks do not need the
+external source histories:
 
 ```bash
-.venv/bin/python -m unittest discover tests
+PYTHONPATH=. .venv/bin/python scripts/validate_paper_aligned_comparison.py \
+  --output-dir outputs/paper_aligned_comparison
+
+PYTHONPATH=. .venv/bin/python scripts/validate_paper_seed_aggregated_comparison.py \
+  --output-dir outputs/paper_seed_aggregated_comparison
 ```
 
-The paper is available directly at `paper/main.pdf`, with the LaTeX source in
-`paper/main.tex`.
+The validators fail on index mismatches, missing or duplicate observations,
+incorrect aggregation order, or downstream rankings that do not match their
+packaged inputs.
 
-Heavy final experiments are documented through the paper and evidence
-traceability files under `docs/`. They are not presented here as a one-command
-production pipeline.
+### Rebuild from original sources
 
-## License And Use
+Full regeneration requires an external history bundle that is not fully stored
+in this repository. Supply a root containing the BIL TD3 histories, both
+benchmark-history sets, and the referenced statistical outputs:
 
-This is research code for portfolio-allocation evaluation. It is not financial
-advice, not a trading recommendation, and not a production execution system.
+```bash
+PYTHONPATH=. .venv/bin/python scripts/build_paper_aligned_comparison.py \
+  --repo-root . \
+  --external-root /path/to/portfolio_drl_outputs
+
+PYTHONPATH=. .venv/bin/python scripts/build_paper_seed_aggregated_comparison.py \
+  --repo-root . \
+  --external-root /path/to/portfolio_drl_outputs
+```
+
+The second build validates and reuses the aligned package. Neither command
+retrains TD3.
+
+### Focused tests and paper build
+
+```bash
+PYTHONPATH=. .venv/bin/python -m unittest discover \
+  -s tests -p 'test_paper_aligned_comparison.py' -v
+
+PYTHONPATH=. .venv/bin/python -m unittest discover \
+  -s tests -p 'test_paper_seed_aggregated_comparison.py' -v
+
+tectonic -o paper paper/main.tex
+```
+
+For the full argument and evidence trail, see the [paper](paper/main.pdf), its
+[source](paper/main.tex), the [build notes](paper/README.md), and the
+[final evidence audit](docs/final_paper_full_audit.md).
+
+## Implementation
+
+- The experiment runner crosses feature families, concentration caps, folds,
+  and seeds without treating repeated histories as independent market samples.
+- The alignment layer requires identical timestamps for every strategy before
+  recomputing metrics or scores.
+- The portfolio environment applies long-only constraints and charges
+  asset-specific costs on weight changes.
+- The benchmark and analysis code separates ranking from block-bootstrap,
+  White Reality Check, mandate, Pareto, regime, and execution evidence.
+- Generated packages record source hashes, formulas, estimands, and operation
+  order; validators and tests check the paper's dependency chain.
+
+## Limitations
+
+- The universe is compact, mainly U.S.-centric, and observed over one market
+  history. Seeds are training repetitions, not new market samples.
+- TD3 is the only primary DRL algorithm tested. Deterministic benchmarks have
+  no comparable training-seed distribution.
+- Mandate thresholds are test profiles, not universal investor rules.
+- Spread stress is a proxy. There is no market-impact model, order-book
+  simulation, capacity analysis, or live-forward validation.
+- Some source histories needed for full regeneration remain external.
+
+This is research code, not investment advice or a production trading system.
+
+I did not build the evaluation to make TD3 win. I built it to find out which
+claims survived after removing the assumptions that made the result look
+better. Fewer did.

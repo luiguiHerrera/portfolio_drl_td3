@@ -1,0 +1,77 @@
+{
+  "generated_at_utc": "2026-07-16T17:21:52.450152+00:00",
+  "runner": "scripts/build_paper_seed_aggregated_comparison.py",
+  "module": "src.analysis.paper_seed_aggregated_comparison",
+  "git_commit": "137f6b04d4cf931ec9237797dd007beecc10d8ee",
+  "prerequisite_aligned_package": "outputs/paper_aligned_comparison",
+  "primary_estimand": "expected_seed_performance_of_the_training_algorithm",
+  "primary_td3_aggregation": "mean_of_metrics_across_ten_full_oos_seed_histories",
+  "operation_order": [
+    "concatenate four disjoint OOS folds within seed",
+    "compute each metric on each 228-date seed history",
+    "take the arithmetic mean of the ten seed-level metric values for ranking",
+    "report median, sample standard deviation, min, max, p10 and p90 separately"
+  ],
+  "prohibited_substitution": "metric(datewise_mean_return_path) is not mean(metric(seed))",
+  "average_return_path": {
+    "method": "datewise_mean_of_net_returns_across_ten_seed_policies",
+    "role": "synthetic diagnostic only",
+    "not_a_single_policy": true,
+    "not_an_ex_ante_selected_policy": true,
+    "not_a_fully_implemented_ensemble": true,
+    "cost_interpretation": "net returns, turnover and costs were computed per policy before averaging; they were not recomputed from netted average weights"
+  },
+  "median_return_path": {
+    "method": "datewise_median_of_net_returns_across_ten_seed_policies_diagnostic_only",
+    "role": "return-only diagnostic; not deployable"
+  },
+  "benchmark_asymmetry": {
+    "td3": "distribution over ten training seeds on one market path",
+    "benchmarks": "one deterministic historical path and no training-seed distribution",
+    "benchmark_seed_dispersion": "unavailable, represented as neutral/NaN rather than zero",
+    "robust_score_status": "retained with unchanged weights as a diagnostic only; not primary evidence of TD3-versus-benchmark superiority"
+  },
+  "canonical_sharpe": {
+    "name": "annualized_arithmetic_mean_to_sample_standard_deviation_sharpe",
+    "formula": "weekly arithmetic mean / sample std(ddof=1) * sqrt(52)",
+    "risk_free_rate": 0.0,
+    "nan_treatment": "drop missing returns before calculation",
+    "ranking_input": "mean of ten per-seed canonical Sharpe values for TD3"
+  },
+  "pairwise_legacy_ratio": {
+    "name": "cagr_to_annualized_volatility_ratio",
+    "source_field": "sharpe",
+    "formula": "CAGR / (weekly sample std(ddof=1) * sqrt(52))",
+    "numerically_comparable_to_canonical_sharpe": false,
+    "input_path_role": "datewise average-return synthetic path"
+  },
+  "white_reality_check": {
+    "statistic_name": "max_mean_weekly_net_return_differential",
+    "formula": "sqrt(T) * max mean weekly candidate-minus-benchmark net return differential",
+    "uses_cagr_to_volatility_ratio": false
+  },
+  "protocols": {
+    "zero_cash": {
+      "n_td3_strategies": 5,
+      "n_benchmarks": 14,
+      "n_strategies": 19,
+      "n_seeds_per_td3": 10,
+      "common_observations": 228,
+      "common_start_date": "2022-01-07",
+      "common_end_date": "2026-05-15",
+      "cash_bps": 0.0,
+      "cash_return_assumption": "synthetic zero return"
+    },
+    "bil_cash": {
+      "n_td3_strategies": 5,
+      "n_benchmarks": 14,
+      "n_strategies": 19,
+      "n_seeds_per_td3": 10,
+      "common_observations": 228,
+      "common_start_date": "2022-01-07",
+      "common_end_date": "2026-05-15",
+      "cash_bps": 2.0,
+      "cash_return_assumption": "BIL proxy return"
+    }
+  }
+}

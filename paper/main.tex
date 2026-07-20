@@ -32,7 +32,7 @@
   citecolor=black,
   urlcolor=black,
   pdfauthor={},
-  pdftitle={Evaluating DRL Portfolio Claims under Realistic Cross-Asset Frictions}
+  pdftitle={Evaluating DRL Portfolio Claims under Explicit Cross-Asset Frictions}
 }
 
 \setlength{\parindent}{0pt}
@@ -42,18 +42,20 @@
 \captionsetup{font=small,labelfont=bf}
 \renewcommand{\arraystretch}{1.18}
 \emergencystretch=2em
+\Urlmuskip=0mu plus 1mu\relax
 
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 \newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
 \newcommand{\cashzero}{Zero-CASH}
 \newcommand{\cashbil}{BIL-CASH}
+\input{../outputs/paper_seed_aggregated_comparison/paper/seed_results_macros.tex}
 \definecolor{stackborder}{RGB}{70,78,88}
 \definecolor{stackfill}{RGB}{246,247,248}
 \definecolor{stackdark}{RGB}{225,229,234}
 
-\title{\textbf{Evaluating DRL Portfolio Claims under Realistic Cross-Asset Frictions}\\
-\large A TD3 Case Study with Costs, Cash, Matched Benchmarks, and Statistical Validation}
+\title{\textbf{Evaluating DRL Portfolio Claims under Explicit Cross-Asset Frictions}\\
+\large A TD3 Case Study with Costs, Cash, Benchmark Diagnostics, and Statistical Validation}
 \author{}
 \date{}
 
@@ -62,11 +64,7 @@
 \maketitle
 
 \begin{abstract}
-Financial deep reinforcement learning (DRL) portfolio results are often difficult to interpret because performance depends not only on the learning algorithm, but also on the evaluation protocol used around it. Weak benchmarks, simplified transaction costs, ambiguous cash treatment, candidate-search bias, and limited statistical validation can make a strategy appear stronger than it is.
-
-This paper proposes and applies a falsification-oriented evaluation protocol for cross-asset DRL portfolio claims, using TD3 as the empirical case study. The experiment uses a compact and interpretable wealth-allocation universe composed of five economic sleeves: equity growth, interest-rate duration, real safe-haven exposure, digital alternative risk, and defensive liquidity, proxied by SPY, TLT, GLD, BTC-USD, and CASH. TD3 candidates are evaluated under weekly long-only allocation, asset-specific transaction costs, explicit \cashzero{} and \cashbil{} protocols, regenerated deterministic benchmarks, and out-of-sample walk-forward testing. The ranking layer is separated from statistical validation through bootstrap Sharpe-difference intervals and White Reality Check. Additional robustness layers examine mandate and Pareto feasibility, regime dependence, execution-spread stress, and training-budget convergence.
-
-The results show that ranking competitiveness survives under this corrected evaluation stack, but the evidence does not support a claim of statistical superiority over clean deterministic benchmarks. Cash assumptions, transaction costs, execution spreads, and hard feasibility filters materially affect model selection and interpretation. The main contribution is therefore not an algorithmic modification to TD3 or a deployable alpha claim. It is a disciplined evaluation framework showing how DRL portfolio claims change when competitiveness, statistical superiority, and practical feasibility are treated as separate questions.
+Financial deep reinforcement learning (DRL) portfolio results are difficult to interpret when weak benchmarks, simplified trading frictions, ambiguous cash treatment, and candidate search are compressed into a single backtest ranking. This paper proposes a falsification-oriented evaluation framework that separates ranking competitiveness, statistical credibility, and practical feasibility, using TD3 as a case-study learner rather than as an algorithmic contribution. The empirical test bed contains SPY, TLT, GLD, BTC-USD, and CASH under weekly long-only allocation, asset-specific transaction costs, explicit \cashzero{} and \cashbil{} protocols, deterministic benchmarks, and four walk-forward folds. All combined-ranking strategies are evaluated on the same \AlignedWeeks{} out-of-sample Fridays. TD3 metrics are computed on each complete seed history before taking their mean across ten seeds; deterministic benchmarks retain one aligned path. BuyHold GLD leads both combined rankings. The best TD3 by mandate-aware score is \ZeroBestTDThreeLabel{} under \cashzero{}, at ranks \ZeroBestTDThreeMandateRank{} and \ZeroBestTDThreeSharpeRank{} by mandate-aware score and canonical Sharpe; under \cashbil{}, \BilBestTDThreeLabel{} ranks \BilBestTDThreeMandateRank{} and \BilBestTDThreeSharpeRank{}, respectively. Pairwise mean-path bootstrap ranges cross zero, and White Reality Check does not support superiority for the retained five-candidate sets. No seed-aggregated TD3 passes a tested hard mandate profile, although three deterministic benchmarks pass the aggressive profile. The contribution is therefore an evaluation framework for delimiting claims, not a new TD3 variant or deployable alpha result. Generalization is limited by a compact mainly U.S. test bed, one historical market path, training-seed dispersion, and simplified execution modeling.
 \end{abstract}
 
 \section{Introduction}
@@ -80,18 +78,22 @@ The empirical setting is a compact and interpretable wealth-allocation universe 
 The central research question is:
 
 \begin{quote}
-\emph{Can a disciplined evaluation protocol distinguish statistically credible and practically feasible DRL portfolio performance from apparent backtest strength?}
+\emph{Can a falsification-oriented evaluation framework distinguish ranking competitiveness, statistical credibility, and practical feasibility in TD3-based cross-asset portfolio allocation?}
 \end{quote}
 
-This paper addresses that question using TD3 as a continuous-control empirical test case. TD3 is well suited for portfolio-weight decisions, but the focus of the paper is the evaluation protocol surrounding the model: how benchmarks are matched, how cash is treated, how costs are imposed, how candidate search is controlled, and how ranking results are separated from statistical and practical claims.
+This paper addresses that question using TD3 as a continuous-control empirical test case. TD3 is well suited for portfolio-weight decisions, but the focus of the paper is the evaluation protocol surrounding the model: how benchmark comparability is audited, how cash is treated, how costs are imposed, how candidate search is controlled, and how ranking results are separated from statistical and practical claims.
 
-The paper answers the research question through a falsification-oriented evaluation protocol. TD3 candidates are trained and evaluated in a weekly long-only portfolio environment with asset-specific costs and two explicit cash protocols: \cashzero{} and \cashbil{}. Deterministic benchmarks are regenerated under the same asset universe, cost schedule, cash assumption, and evaluation window. Candidate ranking is then separated from statistical validation using bootstrap Sharpe-difference intervals and White Reality Check. Additional layers examine mandate and Pareto feasibility, regime dependence, execution-spread robustness, and training-budget convergence.
+The paper answers the research question through a falsification-oriented evaluation protocol. TD3 candidates are trained and evaluated in a weekly long-only portfolio environment with asset-specific costs and two explicit cash protocols: \cashzero{} and \cashbil{}. Deterministic benchmarks use the same asset universe, cost schedule, and cash assumption. The comparison layer intersects every strategy with the exact \AlignedWeeks{}-date TD3 out-of-sample index before recomputing metrics, scores, mandates, and Pareto frontiers. The subsequent bootstrap and White Reality Check address sampling uncertainty and retained-set search. Additional layers examine regime dependence, execution-spread sensitivity, and training-budget diagnostics.
 
-The evidence leads to a deliberately cautious interpretation. Under the corrected evaluation stack, selected learning candidates can rank above regenerated deterministic benchmarks in the combined ranking layer. However, the statistical validation layer does not support a claim of dominance over clean benchmarks. Cash assumptions, transaction costs, execution spreads, and hard feasibility filters materially affect model selection and interpretation. The main result is therefore not that the case study wins or fails. The main result is that realistic evaluation changes what can be responsibly claimed from DRL portfolio experiments.
+The evidence leads to a deliberately cautious interpretation. The highest-ranked TD3 changes from V3 under \cashzero{} to V7 under \cashbil{}, but neither learning candidate leads its combined universe or reaches the upper canonical-Sharpe ranks. The statistical layer does not support dominance over Trend SPY/CASH. Cash assumptions therefore affect TD3 selection, while hard filters admit only three benchmarks under the aggressive profile. The main result is not that the case study wins or fails, but that explicit evaluation layers expose the boundary of each claim.
 
-The paper makes four contributions. First, it proposes a matched evaluation protocol for DRL-based cross-asset allocation with explicit cash assumptions and asset-specific costs. Second, it regenerates deterministic benchmarks under the same assumptions used for the TD3 case study, avoiding unmatched comparisons. Third, it separates ranking competitiveness from statistical superiority through bootstrap Sharpe-difference intervals and White Reality Check. Fourth, it adds practical robustness layers covering mandate feasibility, Pareto tradeoffs, regime dependence, execution-spread stress, and training-budget convergence.
+The paper makes four contributions. First, it specifies an evaluation hierarchy for DRL-based cross-asset allocation with explicit cash assumptions and asset-specific costs. Second, it provides an exact-date comparison layer with source hashes, aligned histories, and executable checks that prevent horizon mismatch. Third, it separates ranking from pairwise uncertainty and retained-set evidence through block-bootstrap ranges and White Reality Check. Fourth, it adds practical diagnostic layers covering mandate feasibility, Pareto tradeoffs, regime dependence, execution-spread stress, and training-budget sensitivity.
 
-The contribution is a disciplined evaluation framework for interpreting DRL portfolio evidence. Under this framework, competitiveness, statistical dominance, and practical feasibility are treated as separate claims rather than collapsed into a single backtest ranking.
+The contribution is a disciplined evaluation framework for interpreting DRL portfolio evidence. Under this framework, competitiveness, statistical credibility, and practical feasibility are treated as separate claims rather than collapsed into a single backtest ranking.
+
+\subsection{Empirical Propositions}
+
+Five compact propositions organize the tests. \textbf{P1} asks whether at least one TD3 candidate remains ranking-competitive against deterministic benchmarks under common financial and date assumptions. \textbf{P2} asks whether any observed ranking advantage survives pairwise sampling uncertainty and candidate-set data-snooping control. \textbf{P3} asks whether cash treatment and additional execution frictions change selection or economic interpretation. \textbf{P4} asks whether a favorable ranking also satisfies hard practical constraints. \textbf{P5} asks whether regime and training-budget diagnostics narrow the apparent robustness of the selected policies. These propositions define an evidentiary sequence; none treats a first-place diagnostic rank as sufficient evidence of statistical superiority or deployability.
 
 \section{Related Literature and Research Gap}
 
@@ -99,9 +101,9 @@ The contribution is a disciplined evaluation framework for interpreting DRL port
 
 Portfolio allocation is a natural application of reinforcement learning because portfolio weights are sequential decisions and realized performance depends on the interaction between returns, costs, and previous allocations. Earlier portfolio theory formalized mean-variance tradeoffs, performance evaluation, and dynamic portfolio choice \citep{markowitz1952,sharpe1966,merton1969,merton1971}. DRL extends this setting by learning allocation rules from historical state variables rather than specifying a parametric return model.
 
-TD3 is an established continuous-control actor-critic algorithm built on deterministic policy gradients, twin critics, delayed actor updates, target networks, and target policy smoothing \citep{silver2014,lillicrap2015,fujimoto2018}. Its continuous-action structure is suitable for portfolio-weight decisions, which makes it a useful empirical case study for evaluating DRL portfolio claims under realistic conditions.
+Twin Delayed Deep Deterministic Policy Gradient (TD3) is an established continuous-control actor-critic algorithm built on deterministic policy gradients, twin critics, delayed actor updates, target networks, and target policy smoothing \citep{silver2014,lillicrap2015,fujimoto2018}. Its continuous-action structure is suitable for portfolio-weight decisions, which makes it a useful empirical case study for evaluating DRL portfolio claims under explicit financial assumptions.
 
-Prior work has already studied recurrent reinforcement learning for trading, model-free DRL portfolio management, FinRL-style trading frameworks, risk-aware portfolio rewards, correlation-aware DRL portfolio selection, and TD3 portfolio-selection models \citep{moody2001,jiang2017,almahdi2017,liu2020finrl,zhao2023correlation,jiang2024td3,jiang2025multiperiod}. The question here is narrower and more severe: whether apparent DRL portfolio advantages remain credible when realistic evaluation layers are imposed together.
+Prior work has already studied recurrent reinforcement learning for trading, model-free DRL portfolio management, FinRL-style trading frameworks, risk-aware portfolio rewards, correlation-aware DRL portfolio selection, and TD3 portfolio-selection models \citep{moody2001,jiang2017,almahdi2017,liu2020finrl,zhao2023correlation,jiang2024td3,jiang2025multiperiod}. The question here is narrower and more severe: which apparent DRL portfolio advantages remain defensible when explicit evaluation layers are imposed together.
 
 \subsection{Multi-Asset and Crypto/Gold Portfolio Allocation}
 
@@ -123,11 +125,11 @@ This paper makes cash explicit. The \cashzero{} protocol treats cash as a synthe
 
 Financial model selection is vulnerable to data snooping. When many candidate policies are trained and evaluated, the best observed strategy may look strong because of the search process rather than because of a reliable economic edge. White's Reality Check directly addresses data-snooping risk, while Deflated Sharpe and related backtest-overfitting work motivate caution when interpreting searched strategy performance \citep{white2000,bailey2014,lopezdeprado2020mlam}.
 
-This paper uses bootstrap Sharpe-difference intervals and White Reality Check p-values as statistical guardrails. These tests do not replace economic interpretation, but they prevent ranking results from being overstated as statistical dominance.
+This paper uses pairwise bootstrap risk-adjusted-return ranges and White Reality Check p-values as statistical guardrails. These tests do not replace economic interpretation, but they prevent ranking results from being overstated as statistical dominance.
 
 \subsection{Research Gap and Literature Positioning}
 
-The research gap is not any single ingredient in isolation---TD3, Bitcoin, transaction costs, cash, or statistical testing. Each appears in adjacent literatures. The gap lies in how these ingredients are combined and interpreted: few DRL portfolio studies jointly impose matched benchmarks, explicit cash assumptions, asset-specific frictions, statistical validation, and practical robustness layers before translating performance into claims.
+The research gap is not any single ingredient in isolation---TD3, Bitcoin, transaction costs, cash, or statistical testing. Each appears in adjacent literatures. The gap lies in how these ingredients are combined and interpreted: few DRL portfolio studies jointly audit benchmark comparability, explicit cash assumptions, asset-specific frictions, statistical validation, and practical robustness layers before translating performance into claims.
 
 \begin{table}[H]
 \centering
@@ -145,13 +147,13 @@ DRL portfolio allocation & Trains reinforcement-learning agents to map market st
 TD3-based portfolio studies & Uses TD3 as a continuous-control allocator for portfolio weights or trading actions. & The algorithmic choice can be foregrounded more than the evidentiary discipline around the backtest. & A TD3 evaluation framed as a stress test of claims rather than as a claim of TD3 novelty. \\
 Multi-asset allocation with Bitcoin and alternative assets & Studies diversification, hedge behavior, and allocation across conventional and alternative assets. & Including alternative assets does not by itself resolve benchmark matching, cash treatment, or model-selection bias. & An interpretable cross-asset test bed where alternative-risk exposure is evaluated under matched financial assumptions. \\
 Portfolio studies with transaction costs and practical frictions & Adds trading costs, constraints, turnover analysis, or implementation frictions. & Frictions are often examined as isolated adjustments rather than as part of a unified validation stack. & Joint treatment of asset-specific costs, explicit cash protocols, execution-spread stress, and feasibility filters. \\
-Robustness and statistical evaluation in quantitative finance & Uses bootstrap methods, data-snooping controls, and robustness checks to discipline performance claims. & These tools are not always integrated into DRL portfolio model selection and benchmark comparison. & A falsification-oriented pipeline linking searched TD3 candidates, regenerated benchmarks, bootstrap Sharpe differences, White Reality Check, and practical robustness layers. \\
+Robustness and statistical evaluation in quantitative finance & Uses bootstrap methods, data-snooping controls, and robustness checks to discipline performance claims. & These tools are not always integrated into DRL portfolio model selection and benchmark comparison. & A falsification-oriented pipeline linking searched TD3 candidates, aligned benchmarks, pairwise bootstrap ranges, White Reality Check, and practical robustness layers. \\
 \bottomrule
 \end{tabularx}
 \end{adjustbox}
 \end{table}
 
-The contribution is therefore the integrated evaluation design. This paper asks whether apparent DRL portfolio advantages, instantiated through a TD3 case study, remain competitive, statistically credible, and practically feasible after matched benchmarks, asset-specific frictions, explicit cash assumptions, statistical validation, and robustness layers are imposed together.
+The contribution is therefore the integrated evaluation design. This paper asks whether apparent DRL portfolio advantages, instantiated through a TD3 case study, remain competitive, statistically credible, and practically feasible after benchmark diagnostics, asset-specific frictions, explicit cash assumptions, date-aligned statistical validation, and robustness layers are imposed together.
 
 \section{Data and Asset Universe}
 
@@ -176,6 +178,8 @@ CASH & Defensive liquidity / optionality & Allows the policy to reduce risky exp
 \end{table}
 
 The resulting universe is compact and deliberately incomplete. It excludes credit, real estate, broad commodities, international equities, taxes, custody costs, and investor-specific liabilities. These exclusions keep the empirical setting interpretable while making clear that the design is a controlled test bed, not a complete investable universe.
+
+Adjusted-close prices are aligned to Friday observations and converted to simple weekly returns. The underlying return files span 9 January 2015 to 15 May 2026; usable candidate histories begin later when feature availability and the one-period information lag remove early rows. State variables available through (t-1) determine weights for (t), and the next weekly return is then realized. This timing convention, together with the expanding walk-forward splits reported in Appendix~\ref{app:protocol-detail}, reduces look-ahead risk without creating independent market histories.
 
 The cash dimension is implemented through two protocols.
 
@@ -202,14 +206,14 @@ The two protocols are not interchangeable. They define different investable envi
 
 At each weekly decision date, the agent selects long-only portfolio weights over SPY, TLT, GLD, BTC-USD, and CASH. Weights sum to one across all available sleeves, but risky-asset exposure can fall below one because CASH is part of the investable universe.
 
-Portfolio performance is measured after transaction costs. Let \(w_{t,i}^{target}\) be the target weight in asset \(i\) at week \(t\), \(w_{t,i}^{drifted}\) be the pre-trade drifted weight after market movement, \(r_{t,i}\) be the asset return, and \(c_i\) be the asset-specific transaction cost rate. The gross portfolio return is:
+Portfolio performance is measured after transaction costs. Let \(w_{t,i}^{target}\) be the target weight in asset \(i\) at week \(t\), \(w_{t-1,i}^{target}\) the previously executed target weight, \(r_{t,i}\) the asset return, and \(c_i\) the asset-specific one-way cost rate. The final histories use target-to-prior-target turnover rather than post-return drifted weights. The gross portfolio return is:
 \begin{equation}
 R^{gross}_t = \sum_i w^{target}_{t,i} r_{t,i}.
 \end{equation}
 
 The transaction cost is:
 \begin{equation}
-C_t = \sum_i c_i \left|w^{target}_{t,i} - w^{drifted}_{t,i}\right|.
+C_t = \sum_i c_i \left|w^{target}_{t,i} - w^{target}_{t-1,i}\right|.
 \end{equation}
 
 The net financial return is:
@@ -231,16 +235,16 @@ Portfolio actions are projected consistently before execution and storage so tha
 
 \subsection{Reward}
 
-The reward uses net financial return after full transaction costs and an active drawdown penalty:
+The reward uses net financial return after transaction costs and a unit-weight current-drawdown penalty. With \(M_t=\max_{s\leq t}V_s\), current drawdown severity is \(DD_t=\max(0,1-V_t/M_t)\), and the final configuration uses:
 \begin{equation}
-reward_t = R^{net}_t - drawdown\_penalty_t.
+reward_t = R^{net}_t - DD_t.
 \end{equation}
 
-Transaction costs therefore affect both realized performance and the training signal. Turnover and concentration are not added as direct reward penalties. They are evaluated through transaction costs, max-weight caps, diagnostics, mandate profiles, and Pareto analysis. This separation is important because the paper does not train directly on the final custom evaluation scores.
+Transaction costs therefore affect both realized performance and the training signal. The return and drawdown coefficients are one; direct turnover and concentration coefficients are zero, and mandate/cash penalties are disabled. Turnover and concentration are evaluated through costs, max-weight caps, diagnostics, mandate profiles, and Pareto analysis. The paper does not train on the final custom evaluation scores.
 
 \subsection{Feature Families}
 
-The experiment evaluates multiple TD3 feature families rather than one manually selected state representation. The objective is to test which independently trained state specification survives a common evaluation protocol.
+The experiment evaluates multiple TD3 feature families rather than one manually selected state representation. The objective is to test which independently trained state specification survives a common evaluation protocol; volatility-state variants use generalized autoregressive conditional heteroskedasticity (GARCH) information \citep{bollerslev1986}.
 
 \begin{table}[htbp]
 \centering
@@ -257,16 +261,18 @@ V4 GARCH & Financial state plus fitted GARCH-style volatility features. & Tests 
 V5 no-vol & Ablation excluding a volatility feature block. & Tests whether simpler non-volatility states remain competitive. \\
 V6 financial & Parsimonious financial state with renamed score-like indicators. & Tests compact financial state representation. \\
 V7 macro+GARCH & Clean no-DXY macro state plus GARCH features. & Tests whether GARCH improves the clean macro specification. \\
-V8 EWMA/GARCH & EWMA/GARCH volatility hybrid. & Tests alternative volatility-state construction. \\
+V8 EWMA/GARCH & Exponentially weighted moving average (EWMA)/GARCH volatility hybrid. & Tests alternative volatility-state construction. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Short candidate labels are used for readability; full feature-family identifiers are reported in the project outputs. The clean macro/as-of pipeline excludes DXY because a full-window fresh true-vintage dollar proxy is not available without fallback, discontinuation, or current-vintage relabeling. CPI year-over-year is computed before weekly alignment. Heuristic probability-like V6 features are treated as scores rather than calibrated probabilities. Mechanical duplicate features are removed. PCA was audited but is not used as the default state representation.
+Short candidate labels are used for readability; full feature-family identifiers are reported in the project outputs. The clean macro/as-of pipeline excludes the U.S. Dollar Index (DXY) because a full-window fresh true-vintage dollar proxy is not available without fallback, discontinuation, or current-vintage relabeling. CPI year-over-year is computed before weekly alignment. Heuristic probability-like V6 features are treated as scores rather than calibrated probabilities. Mechanical duplicate features are removed. Principal component analysis (PCA) was audited but is not used as the default state representation.
+
+The registry in Table~\ref{tab:feature-families} records the broader candidate-design space. The final corrected 800-history grid per cash protocol is narrower and fully enumerated: V3, V4, V5, V7, and V8, crossed with four concentration settings (uncapped, 0.50, 0.70, and 0.80), ten seeds, and four folds. V2 and V6 remain reference designs in the broader registry but are not counted in that 800-history final grid. This distinction prevents the candidate registry from being confused with the final comparison sample.
 
 \section{Falsification-Oriented Evaluation Protocol}
 
-The learning setup above defines the case study. The methodological contribution lies in the evaluation stack imposed around it. The final corrected protocol is moderate but systematic: it evaluates the learning candidates against realistic frictions rather than against weak evaluation assumptions.
+The learning setup above defines the case study. The methodological contribution lies in the evaluation stack imposed around it. The protocol makes its frictions and remaining comparability limits explicit rather than treating one ranking as sufficient evidence.
 
 \subsection{Protocol System Overview}
 
@@ -299,11 +305,11 @@ The learning setup above defines the case study. The methodological contribution
 \node[item] (c5) at (-5.00,-3.68) {cash protocols};
 \node[item] (c6) at (-5.00,-4.23) {asset-specific costs};
 
-\node[title] at (0,-0.82) {Matched evaluation engine};
+\node[title] at (0,-0.82) {Comparison and validation engine};
 \node[core] (e1) at (0,-1.60) {walk-forward evaluation};
 \node[core] (e2) at (0,-2.28) {benchmark regeneration};
-\node[core] (e3) at (0,-2.96) {same universe / cash};
-\node[core] (e4) at (0,-3.64) {same cost / window};
+\node[core] (e3) at (0,-2.96) {same universe / cash / cost};
+\node[core] (e4) at (0,-3.64) {date alignment in statistical layer};
 \draw[softarrow] (e1) -- (e2);
 \draw[softarrow] (e2) -- (e3);
 \draw[softarrow] (e3) -- (e4);
@@ -330,11 +336,17 @@ The learning setup above defines the case study. The methodological contribution
 \draw[arrow] (filterbox.south) |- (evidencebox.east);
 \draw[arrow] (evidencebox.south) -- (interpret.north);
 \end{tikzpicture}
-\caption{Experimental protocol as an evidence system. Apparent DRL portfolio strength is converted into an evidence hierarchy through matched benchmark evaluation, ranking, statistical validation, practical feasibility checks, and robustness layers. The figure emphasizes that the paper's contribution is the evaluation protocol rather than the TD3 case-study algorithm.}
+\caption{Experimental protocol as an evidence system. Apparent DRL portfolio strength is challenged through benchmark diagnostics, date-aligned statistical validation, practical feasibility checks, and robustness layers. These layers are interpretation gates and do not feed back into training or retrospectively replace the candidates used at earlier layers.}
 \label{fig:protocol-overview}
 \end{figure}
 
-Figure~\ref{fig:protocol-overview} summarizes the order of evidence used to interpret the DRL case-study performance without treating a high ranking as sufficient proof of superiority. The contribution lies in this integrated evaluation pipeline rather than in TD3 itself. The case-study algorithm provides a continuous-control portfolio allocator, but the paper's central object is the discipline imposed around it: matched benchmarks, explicit cash protocols, asset-specific frictions, data-snooping controls, and feasibility-oriented robustness checks.
+Figure~\ref{fig:protocol-overview} summarizes the order of evidence used to interpret the DRL case-study performance without treating a high ranking as sufficient proof of superiority. The contribution lies in this evaluation hierarchy rather than in TD3 itself. Exact date matching now occurs before the combined ranking and is retained through the statistical and practical layers.
+
+\subsection{Comparison and Validation Rules}
+
+The fourteen deterministic benchmarks are generated from the same weekly return files under the same cash protocol, universe, and cost schedule. They cover buy-and-hold sleeves, equal-weight portfolios, 60/40 allocation, defensive risk-off, momentum, risk-adjusted momentum, rolling Markowitz, rolling minimum variance, inverse-volatility risk parity, and Trend SPY/CASH; Appendix~\ref{app:protocol-detail} gives the complete registry. Their causal full-history signals, weights, returns, and costs are preserved, but reported rows are selected by exact timestamp intersection with the TD3 out-of-sample index. Each TD3 seed concatenates its four disjoint test folds to the same \AlignedWeeks{} dates. Every nonlinear metric is computed on each complete seed history first; the primary TD3 row is the arithmetic mean of the ten resulting metric values, with dispersion retained separately. This estimates expected performance over a random training seed. The date-wise mean return path is retained only as a synthetic diagnostic: it is neither one selected policy nor an implemented ten-agent ensemble.
+
+The pre-existing statistical layer uses the same \AlignedWeeks{} dates but a different object: fold/seed TD3 returns are averaged by date before resampling. Its pairwise bootstrap therefore describes the synthetic average-return path, not the distribution of a randomly trained single policy. It uses 1,000 replications and 12-week blocks and does not adjust for candidate selection. Its legacy source field called ``Sharpe'' is renamed here the \emph{CAGR-to-annualized-volatility ratio}; the combined ranking instead uses the canonical weekly arithmetic mean divided by sample standard deviation, annualized by $\sqrt{52}$. The two estimators are not numerically interchangeable. White Reality Check does not use either ratio: it applies 2,000 centered 8-week block-bootstrap replications to weekly candidate-minus-benchmark net-return differentials over five retained policies. It adjusts only for that retained universe, not all 20 feature-cap configurations, and its p-value is not pair-specific. Because even the mechanically diversified mean path fails to support superiority, the evidence cannot establish a stronger expected-seed claim; a hierarchical seed-and-time inference design remains future work.
 
 \begin{table}[htbp]
 \centering
@@ -348,14 +360,15 @@ Component & Design \\
 Frequency & Weekly \\
 Asset universe & SPY, TLT, GLD, BTC-USD, CASH \\
 Allocation & Long-only, fully invested across available sleeves \\
-Seeds & 10 in main corrected experiments \\
-Folds & 4 \\
+Return-file window & 9 January 2015--15 May 2026; usable rows depend on feature alignment \\
+Walk-forward design & Four expanding-window folds; one-year validation blocks and tests for 2022, 2023, 2024, and 2025--15 May 2026 \\
+Final corrected grid & Five feature families $\times$ four cap settings $\times$ ten seeds $\times$ four folds \\
 Episodes & 60 \\
 TD3 histories per cash assumption & 800 \\
 Benchmarks per cash assumption & 14 \\
 Cash assumptions & \cashzero{} and \cashbil{} \\
 Costs & Asset-specific transaction costs \\
-Statistical validation & Bootstrap Sharpe differences and White Reality Check \\
+Statistical validation & 228 aligned weeks; pairwise bootstrap and five-candidate White Reality Check \\
 Additional robustness & Regime analysis, mandate/Pareto feasibility, execution-spread stress, training-budget convergence \\
 \bottomrule
 \end{tabularx}
@@ -363,37 +376,37 @@ Additional robustness & Regime analysis, mandate/Pareto feasibility, execution-s
 
 The 800 histories per cash assumption should not be interpreted as 800 independent market samples. They share the same historical period, folds, and asset universe. Their purpose is to assess candidate, cap, seed, and fold behavior under a systematic evaluation protocol.
 
-Because the project contains several reporting layers, the word ``best'' changes meaning across sections. Table~\ref{tab:reporting-layers} defines the layers and prevents ranking results from being confused with statistical or practical feasibility claims.
+Because the project contains several reporting layers, the word ``best'' changes meaning across sections. Table~\ref{tab:reporting-layers} defines the layers and prevents descriptive ranking results from being confused with statistical or practical feasibility claims.
 
 \begin{table}[H]
 \centering
-\caption{Reporting layers and questions answered.}
+\caption{Evidence layers and claim boundaries.}
 \label{tab:reporting-layers}
-\footnotesize
-\setlength{\tabcolsep}{4pt}
-\renewcommand{\arraystretch}{1.16}
-\begin{tabularx}{\textwidth}{L{0.22\textwidth} Y Y Y}
+\scriptsize
+\setlength{\tabcolsep}{3.2pt}
+\renewcommand{\arraystretch}{1.12}
+\begin{tabularx}{\textwidth}{L{0.15\textwidth} L{0.19\textwidth} L{0.18\textwidth} Y Y}
 \toprule
-Layer & Question answered & Main output & What it does not prove \\
+Layer & Question & Evidence & What it establishes & What it does not establish \\
 \midrule
-Learning-candidate selection & Which specification and cap performs best inside the searched learning-candidate universe? & Selected TD3 case-study candidate by cash protocol. & It does not compare the learning candidate with deterministic benchmarks. \\
-Benchmark-matched ranking & How do selected learning candidates rank against regenerated benchmarks under matching cost and cash assumptions? & Top case-study and benchmark ranking. & It does not establish statistical superiority. \\
-Bootstrap / White Reality Check & Does the top searched learning candidate statistically outperform clean benchmarks? & Sharpe-difference intervals and WRC p-values. & It does not invalidate ranking competitiveness; it rejects overclaiming. \\
-Regime analysis & Is performance broad-based or regime-specific? & Regime-level winners and metric slices. & It does not prove all-weather dominance. \\
-Mandate / Pareto analysis & Which strategies remain credible under hard constraints and multi-metric tradeoffs? & Mandate pass/fail and Pareto frontier results. & It does not make custom scores sufficient evidence. \\
-Execution-spread robustness & How sensitive are selected histories to additional spread assumptions? & Return and Sharpe degradation under stress spreads. & It is not a new model-selection layer. \\
-Training-budget convergence & Does the 60-episode budget look obviously undertrained? & Comparison across 30/60/100/150 episodes. & It does not prove the globally optimal training length. \\
+TD3 screening & Which specification and cap lead inside the searched TD3 set? & Within-TD3 metrics and diagnostic scores. & Internal candidate selection. & Benchmark superiority. \\
+Combined diagnostic ranking & How do selected TD3 policies rank on common dates? & Standard and diagnostic metrics over the same 228 timestamps. & Exact-window descriptive competitiveness. & Statistical superiority or live performance. \\
+Statistical validation & Is the apparent edge distinguishable from uncertainty and search? & Pairwise mean-path CAGR-to-volatility bootstrap and weekly-return-differential WRC. & The supported statistical claim. & Expected-seed inference, practical feasibility, or live performance. \\
+Regime diagnostics & Is performance broad-based? & Regime-level metric leaders. & Historical state dependence. & All-weather robustness. \\
+Mandate / Pareto & Do strategies satisfy constraints and tradeoffs? & Hard filters and aligned frontiers. & Feasibility under tested thresholds and conditional non-dominance. & Universal suitability. \\
+Spread stress & Does less favorable execution alter results? & Post-training return and Sharpe degradation. & Sensitivity to the tested spreads. & A new selected policy or live execution quality. \\
+Training budget & Does 60 episodes look obviously insufficient? & 30/60/100/150-episode comparison. & A diagnostic against obvious undertraining. & Global optimization or convergence. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
 \section{Evaluation Results: Ranking and Statistical Evidence}
 
-\subsection{Learning-Candidate Selection}
+\subsection{Which TD3 Candidate Leads the Internal Screening?}
 
 The first result is evaluated within the searched learning-candidate universe. This layer asks which TD3 case-study variant and cap are strongest before deterministic benchmarks are introduced. It is useful for understanding policy behavior, but it is not evidence that the learning approach beats benchmarks.
 
-Under \cashzero{}, the TD3-only winner is V5 no-vol cap 0.50, with mandate-aware score 0.601124 and robust score 0.696702. Under \cashbil{}, the TD3-only winner is V8 EWMA/GARCH cap 0.70, with mandate-aware score 0.660435 and robust score 0.749958.
+Under \cashzero{}, V5 no-vol cap 0.50 is selected by the within-TD3 diagnostic layer, with mandate-aware score 0.601124 and robust score 0.696702. Under \cashbil{}, that layer selects V8 EWMA/GARCH cap 0.70, with mandate-aware score 0.660435 and robust score 0.749958.
 
 Mandate-aware and robust scores are diagnostic selection summaries. Financial interpretation relies primarily on standard metrics and statistical validation.
 
@@ -425,89 +438,94 @@ Rows are taken from the final corrected cap-sensitivity outputs. Mean transactio
 
 The fact that the selected learning candidate changes across cash assumptions is itself informative. Cash modeling is not a cosmetic detail; it changes the allocation environment and can change model selection.
 
-\subsection{Benchmark-Matched Ranking}
+\subsection{What Does the Combined Diagnostic Ranking Show?}
 
-The second layer compares selected learning candidates with deterministic benchmarks regenerated under matching cost and cash assumptions. This is the first layer in which the DRL case study competes directly against benchmark strategies.
+The second layer places the five pre-selected TD3 candidate-cap policies beside fourteen deterministic benchmarks under matching dates, costs, and cash assumptions. Every metric in this layer uses the same \AlignedWeeks{} timestamps from \AlignedStartDate{} to \AlignedEndDate{}; equality of indices is checked before scoring.
 
-Under \cashzero{}, V3 clean macro cap 0.70 is the top mandate-aware TD3 candidate and remains highly ranked by robust score, but it is not the top robust or Sharpe strategy. Under \cashbil{}, V7 macro+GARCH cap 0.80 ranks first under both mandate-aware and robust diagnostic scores. Trend SPY/CASH is retained as the primary clean benchmark comparator for statistical validation, not as the best benchmark on every standard metric.
+BuyHold GLD ranks first by mandate-aware score, robust score, and canonical Sharpe under both cash protocols. Under \cashzero{}, \ZeroBestTDThreeLabel{} is the best TD3 by mandate-aware score at rank \ZeroBestTDThreeMandateRank{} of 19 and rank \ZeroBestTDThreeSharpeRank{} by canonical Sharpe. Under \cashbil{}, \BilBestTDThreeLabel{} is the best TD3 at mandate-aware rank \BilBestTDThreeMandateRank{} and canonical-Sharpe rank \BilBestTDThreeSharpeRank{}. Neither TD3 point estimate exceeds Trend SPY/CASH after metrics are computed per seed. Rolling long-only Markowitz has the highest annualized return among the displayed leaders, with larger drawdown and volatility.
 
-This result supports ranking competitiveness under diagnostic scores. It does not support unconditional superiority. Several deterministic benchmarks rank strongly by return, Sharpe, or robust score, so the statistical validation layer determines whether the apparent advantage is reliable.
+The seed-aggregated ranking therefore supports only limited diagnostic competitiveness. V3 reaches fourth by mandate-aware score under \cashzero{}, while V7 reaches seventh under \cashbil{}; both rank tenth by canonical Sharpe. Deterministic benchmarks occupy the leading standard-metric and combined positions. Robust and mandate-aware scores remain cross-sectional diagnostics and do not establish statistical superiority.
 
 \begin{table}[htbp]
 \centering
-\caption{Selected learning candidates and clean benchmark comparator.}
+\caption{Seed-aggregated combined-ranking leaders and the Trend comparator. TD3 entries are means of metrics computed on ten complete 228-date seed histories; benchmarks use one deterministic aligned history. Rank is mandate-aware rank within the corresponding 19-strategy cash-protocol universe.}
 \label{tab:combined-ranking}
 \footnotesize
 \setlength{\tabcolsep}{5pt}
 \renewcommand{\arraystretch}{1.16}
 \begin{adjustbox}{max width=\textwidth}
-\begin{tabular}{@{}lllrrrrrr@{}}
+\begin{tabular}{@{}lllrrrrrrr@{}}
 \toprule
-Cash & Strategy & Type & \makecell{Ann.\\ret.} & \makecell{Ann.\\vol.} & Sharpe & \makecell{Max\\DD} & \makecell{Mandate-\\aware} & Robust \\
+Cash & Strategy & Type & Rank & \makecell{Ann.\\ret.} & \makecell{Ann.\\vol.} & Sharpe & \makecell{Max\\DD} & \makecell{Mandate-\\aware} & Robust \\
 \midrule
-\cashzero{} & V3 clean macro cap 0.70 & Selected TD3 & 0.0869 & 0.1143 & 0.9234 & -0.1040 & 0.6606 & 0.7473 \\
-\cashzero{} & Trend SPY/CASH & Clean benchmark comparator & 0.0979 & 0.1136 & 0.8802 & -0.1782 & 0.4831 & 0.6169 \\
-\cashbil{} & V7 macro+GARCH cap 0.80 & Selected TD3 & 0.1065 & 0.1270 & 1.1415 & -0.1030 & 0.6902 & 0.7797 \\
-\cashbil{} & Trend SPY/CASH & Clean benchmark comparator & 0.1024 & 0.1135 & 0.9169 & -0.1730 & 0.4778 & 0.6042 \\
-\bottomrule
+\input{../outputs/paper_seed_aggregated_comparison/paper/seed_combined_table_rows.tex}
 \end{tabular}
 \end{adjustbox}
 \end{table}
 
-Combined-ranking metrics are taken from the final corrected benchmark-comparison outputs. The table reports ranking metrics only; statistical validation is reported separately below. Short strategy labels are used for readability; full candidate identifiers are reported in the project outputs. The deterministic benchmark set contains the following fourteen rules:
+Table~\ref{tab:combined-ranking} is generated from the validated seed-aggregated package rather than transcribed manually. The complete ranking, per-seed metrics, aggregation audit, and source lineage are stored under \texttt{outputs/paper\_seed\_aggregated\_comparison/}. The earlier exact-date package remains preserved as a diagnostic record of the average-return-path convention.
 
-\begin{center}
-\scriptsize
-\setlength{\tabcolsep}{6pt}
-\begin{tabularx}{0.94\textwidth}{@{}L{0.45\textwidth}L{0.45\textwidth}@{}}
-\texttt{60\_40\_SPY\_TLT} & \texttt{BuyHold\_BTC-USD} \\
-\texttt{BuyHold\_GLD} & \texttt{BuyHold\_SPY} \\
-\texttt{BuyHold\_TLT} & \texttt{Equal\_Weight} \\
-\texttt{Equal\_Weight\_Risky} & \texttt{defensive\_risk\_off\_12p} \\
-\texttt{momentum\_winner\_12p} & \texttt{risk\_adjusted\_momentum\_winner\_12p\_12p} \\
-\texttt{rolling\_markowitz\_long\_only\_52p} & \texttt{rolling\_markowitz\_min\_variance\_52p} \\
-\texttt{rolling\_risk\_parity\_inverse\_vol\_12p} & \texttt{trend\_spy\_cash\_12p} \\
-\end{tabularx}
-\end{center}
+\subsection{What Survives Date-Aligned Statistical Validation?}
 
-The clean macro specification is important because it uses as-of macro discipline and excludes DXY from the preferred final macro path. The GARCH-augmented V7 specification becomes the \cashbil{} combined-ranking winner, but that does not imply that GARCH universally improves TD3 policy quality.
+Statistical validation is the central cautionary layer. Table~\ref{tab:stat-validation} reports the existing pairwise row for the highest mandate-aware TD3 under each protocol: V3 versus Trend under \cashzero{} and V7 versus Trend under \cashbil{}. These rows were not recomputed; they use the synthetic date-wise average return path and are not selection-adjusted. White Reality Check separately asks whether the best weekly mean-return differential among five retained candidate-cap policies survives correction over that retained set. It does not use the CAGR-to-volatility ratio.
 
-\subsection{Statistical Validation}
-
-Statistical validation is the central cautionary layer. It asks whether the top searched learning candidate is reliably better than the clean benchmark after sampling uncertainty and model search are considered.
-
-The validation layer is deliberately conservative. Bootstrap Sharpe-difference intervals include zero, and White Reality Check p-values do not support statistical superiority for the searched learning candidate. The White Reality Check column reports search-adjusted candidate-set evidence rather than a pair-specific bootstrap p-value. This is not a side note. It is one of the main findings.
+The pairwise 5th--95th percentile ranges include zero, and White Reality Check p-values do not support superiority for the retained five-candidate universe. The WRC correction does not cover all 20 feature-cap configurations considered upstream. The two columns therefore answer different questions and neither supports a strong alpha claim.
 
 \begin{table}[htbp]
 \centering
-\caption{Bootstrap Sharpe differences and White Reality Check.}
+\caption{Pairwise CAGR-to-volatility bootstrap ranges and retained-set White Reality Check.}
 \label{tab:stat-validation}
 \footnotesize
 \setlength{\tabcolsep}{4pt}
 \renewcommand{\arraystretch}{1.22}
 \begin{tabularx}{\textwidth}{@{}L{0.10\textwidth} Y C{0.09\textwidth} C{0.15\textwidth} C{0.08\textwidth} C{0.09\textwidth} L{0.20\textwidth}@{}}
 \toprule
-Cash & Comparison & \makecell{Sharpe\\delta} & \makecell{Bootstrap\\CI} & \makecell{P\\(beats)} & \makecell{WRC\\p-value} & Interpretation \\
+Cash & Comparison & \makecell{Bootstrap\\mean $\Delta$} & \makecell{5--95\\pct. range} & \makecell{P\\(beats)} & \makecell{WRC\\p-value} & Interpretation \\
 \midrule
-\cashzero{} & TD3 V3 clean macro cap 0.70 vs Trend SPY/CASH & 0.1559 & [-0.6011, 0.9767] & 0.629 & 0.7136 & No statistical superiority claim is supported. \\
-\cashbil{} & TD3 V7 macro+GARCH cap 0.80 vs Trend SPY/CASH & 0.1170 & [-0.7172, 0.9963] & 0.588 & 0.6767 & No statistical superiority claim is supported. \\
-\bottomrule
+\input{../outputs/paper_seed_aggregated_comparison/paper/named_statistical_table_rows.tex}
 \end{tabularx}
 \vspace{0.35em}
-\parbox{0.94\textwidth}{\footnotesize\emph{Note:} Bootstrap rows report pair-specific Sharpe-difference intervals against Trend SPY/CASH. WRC p-values are candidate-set, search-adjusted tests against the same clean benchmark; they should not be read as pair-specific p-values for only the displayed bootstrap row.}
+\parbox{0.94\textwidth}{\footnotesize\emph{Note:} The pairwise report's legacy field named ``Sharpe'' is the CAGR-to-annualized-volatility ratio; the dots and first numeric column are bootstrap mean differences, not observed point differences. It is neither the canonical Sharpe in Table~\ref{tab:combined-ranking} nor the WRC statistic. Pairwise rows use 1,000 replications with 12-week blocks and the synthetic mean path. WRC uses 2,000 replications with 8-week blocks over weekly return differentials for five retained TD3 candidates. No bootstrap or WRC value is rerun.}
 \end{table}
 
-Short strategy labels are used for readability; full candidate identifiers are reported in the project outputs.
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[x=4.5cm,y=0.72cm]
+    \draw[-{Latex[length=2mm]},line width=0.4pt] (-0.82,0) -- (1.05,0) node[right,font=\scriptsize] {CAGR/vol. difference};
+    \foreach \x/\lab in {-0.8/-0.8,-0.4/-0.4,0/0,0.4/0.4,0.8/0.8} {
+        \draw[line width=0.3pt] (\x,0.07) -- (\x,-0.07);
+        \node[below,font=\scriptsize] at (\x,-0.07) {\lab};
+    }
+    \draw[dashed,line width=0.35pt] (0,-0.1) -- (0,2.55);
+    \node[above,font=\scriptsize] at (0,2.55) {zero};
 
-The intervals cross zero and the WRC p-values are high. The appropriate conclusion is not that the learning approach fails, but that the corrected evidence does not justify a strong alpha claim. The ranking result remains informative, yet the benchmark remains statistically credible.
+    \node[anchor=east,font=\scriptsize] at (-0.84,2.0) {\cashzero{}};
+    \draw[line width=0.65pt] (\ZeroBootstrapLower,2.0) -- (\ZeroBootstrapUpper,2.0);
+    \draw[line width=0.5pt] (\ZeroBootstrapLower,1.87) -- (\ZeroBootstrapLower,2.13);
+    \draw[line width=0.5pt] (\ZeroBootstrapUpper,1.87) -- (\ZeroBootstrapUpper,2.13);
+    \fill (\ZeroBootstrapMeanDelta,2.0) circle (1.45pt);
+
+    \node[anchor=east,font=\scriptsize] at (-0.84,1.1) {\cashbil{}};
+    \draw[line width=0.65pt] (\BilBootstrapLower,1.1) -- (\BilBootstrapUpper,1.1);
+    \draw[line width=0.5pt] (\BilBootstrapLower,0.97) -- (\BilBootstrapLower,1.23);
+    \draw[line width=0.5pt] (\BilBootstrapUpper,0.97) -- (\BilBootstrapUpper,1.23);
+    \fill (\BilBootstrapMeanDelta,1.1) circle (1.45pt);
+\end{tikzpicture}
+\caption{Pairwise bootstrap 5th--95th percentile ranges for differences in the report-specific CAGR-to-annualized-volatility ratio. Both ranges cross zero; dots mark bootstrap mean differences. These are not 95\% confidence intervals and should not be read as the retained-set White Reality Check.}
+\label{fig:bootstrap-sharpe-ci}
+\end{figure}
+
+Figure~\ref{fig:bootstrap-sharpe-ci} makes pairwise mean-path uncertainty visible. Short strategy labels are used for readability; full candidate identifiers are reported in the project outputs. The \cashzero{} values are taken unchanged from the existing V3 pairwise output and the \cashbil{} values from the existing V7 output; neither is recomputed from the expected-seed canonical Sharpe values in Table~\ref{tab:combined-ranking}.
+
+The ranges cross zero and the WRC p-values are high. The appropriate conclusion is not that the learning approach fails, but that the aligned evidence does not justify a strong alpha or superiority claim.
 
 \section{Robustness and Practical Feasibility}
 
-\subsection{Regime Analysis}
+\subsection{Is Performance Broad-Based Across Regimes?}
 
 Regime analysis asks whether performance is broad-based or concentrated in particular market environments. The final corrected regime-winner evidence is split by cash protocol and remains mixed: TD3 case-study candidates lead in selected \cashzero{} slices, while deterministic benchmarks and momentum-style rules win many regimes, especially under \cashbil{}.
 
-This reinforces the cautious interpretation. The learning approach can be regime-competitive, but it is not an all-weather dominant allocator. Regime dependence is especially important because a strategy that ranks well on average can still be practically fragile if performance is concentrated in a narrow set of historical conditions.
+Figure~\ref{fig:regime-winners} summarizes the mixed regime evidence and reinforces the cautious interpretation. Within the post-2022 slices in which both strategy types are observed, learning candidates lead some cells but are not all-weather dominant. Regime dependence is especially important because a strategy that ranks well on average can still be practically fragile if performance is concentrated in a narrow set of historical conditions. The COVID shock/recovery and post-COVID liquidity rows predate the TD3 out-of-sample histories and contain only the 14 deterministic benchmarks; their winners are therefore benchmark-only by construction and are not evidence that TD3 lost those regimes.
 
 \begin{figure}[H]
 \centering
@@ -556,16 +574,16 @@ Recent / late test window & Risk-adj. mom. & Risk-adj. mom. & Momentum & Risk-ad
 \end{adjustbox}
 
 \vspace{0.35em}
-\parbox{0.94\textwidth}{\footnotesize\emph{Note:} Cells report the strategy with the strongest metric within each regime in the final corrected cash-specific regime summaries. TD3 case-study candidates appear in selected \cashzero{} slices, while deterministic benchmarks and momentum-style rules remain strongest in several regimes.}
-\caption{Regime winners by evaluation metric under \cashzero{} and \cashbil{}. Cells report the strategy with the strongest metric within each regime. The table shows that no strategy dominates across regimes: selected learning candidates appear in some slices, while deterministic benchmarks and momentum-style rules remain strongest in several regimes.}
+\parbox{0.94\textwidth}{\footnotesize\emph{Note:} Cells report the strategy with the strongest metric within each regime in the final corrected cash-specific summaries. The COVID shock/recovery and post-COVID liquidity rows use 14 benchmark strategies only because the TD3 out-of-sample histories start on 7 January 2022; other rows use the strategies available on their dates.}
+\caption{Regime winners by evaluation metric under \cashzero{} and \cashbil{}. No strategy dominates the post-2022 slices. The two pre-2022 rows are benchmark-only comparisons and cannot be used to infer TD3 performance in those regimes.}
 \label{fig:regime-winners}
 \end{figure}
 
-\subsection{Mandate and Pareto Analysis}
+\subsection{Do Competitive Candidates Satisfy Practical Constraints?}
 
-Mandate analysis evaluates whether strategies satisfy hard practical constraints rather than only ranking by a smooth score. Hard mandate infeasibility is treated as a feasibility warning: the tested universe contains strategies that are competitive by ranking or Pareto tradeoff, but none satisfy all canonical hard constraints simultaneously. The constraints are demanding, and even benchmarks struggle to satisfy all of them at once.
+Mandate analysis evaluates whether seed-aggregated strategy metrics satisfy hard practical constraints rather than only ranking by a smooth score. No strategy passes the conservative or moderate profile. Under each cash protocol, \AggressiveFeasibleCount{} deterministic benchmarks---rolling long-only Markowitz, rolling minimum variance, and 60/40 SPY/TLT---pass the aggressive profile; \TDThreeFeasibleCount{} seed-aggregated TD3 candidates pass any profile. At the individual-run level, 3 of 10 BIL V3 seeds and 1 of 10 BIL V7 seeds pass the aggressive profile, but no TD3 passes consistently across seeds. This is a feasibility diagnostic under normative test thresholds, not a universal suitability judgment.
 
-The selected learning candidates remain Pareto-competitive in several tradeoff views, but they are not universally mandate-feasible. This distinction matters for practical interpretation. A strategy can be competitive under standard metrics and still fail hard investor constraints.
+Pareto evidence is less restrictive than hard feasibility. V3 and V4 lie on both reported frontiers under \cashzero{}. Under \cashbil{}, V3 lies on both frontiers and V8 on the full frontier only. V7 does not remain on either seed-aggregated frontier. Pareto membership is therefore supported conditionally on the chosen objectives, but it does not override failed hard filters or establish statistical superiority.
 
 \begin{table}[htbp]
 \centering
@@ -578,39 +596,53 @@ The selected learning candidates remain Pareto-competitive in several tradeoff v
 \toprule
 Evaluation & Finding & Interpretation \\
 \midrule
-Hard mandate filters & No strategy satisfies all constraints. & Practical feasibility remains unresolved under strict canonical filters. \\
-Mandate scoring & Rolling min-var dominates conservative/moderate profiles; V3 appears as best TD3/aggressive candidate in \cashbil{}. & Mandate preference depends on profile and cash assumption. \\
-Pareto analysis & Selected case-study candidates remain on or near the frontier with benchmarks. & The learning candidate is competitive but tradeoff-dependent. \\
-Overall interpretation & No single strategy is universally feasible and dominant. & Competitiveness must be separated from deployability. \\
+Hard mandate filters & No TD3 passes; three benchmarks pass the aggressive profile in each protocol. & Tested TD3 practical feasibility is not supported. \\
+Mandate scoring & Rolling min-var leads conservative/moderate; rolling long-only Markowitz leads aggressive. & Winners are identical across cash protocols; scores remain normative diagnostics. \\
+Pareto analysis & Zero-CASH has V3/V4 on both frontiers; BIL-CASH has V3 on both and V8 on the full frontier only. & Conditional tradeoff competitiveness, not universal feasibility. \\
+Overall interpretation & BuyHold GLD leads the combined score, while different benchmarks pass hard filters. & Ranking leadership, feasibility, and Pareto membership remain separate claims. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\subsection{Execution-Spread Robustness}
+\subsection{How Sensitive Are Results to Additional Execution Spreads?}
 
-Execution-spread robustness is a reporting-only post-training stress test. It does not retrain TD3 and does not create new final winners. Its purpose is to test whether selected histories are sensitive to additional spread assumptions.
+Execution-spread robustness is a reporting-only post-training proxy stress test. It does not retrain TD3 and does not create new final winners. Its purpose is to test whether selected histories are sensitive to explicit additional spread assumptions, not to estimate live execution quality.
 
 The selected learning candidates degrade more than the simple trend/cash benchmark. Under stress spreads, \cashzero{} TD3 V3 clean macro cap 0.70 has an annualized return delta of -0.0139 and Sharpe delta of -0.1321. \cashbil{} TD3 V7 macro+GARCH cap 0.80 has an annualized return delta of -0.0128 and Sharpe delta of -0.1180. The Trend SPY/CASH benchmark has a Sharpe delta around -0.0132.
 
-This does not invalidate ranking competitiveness, but it shows that execution realism changes the economic interpretation of selected policies.
+Figure~\ref{fig:execution-spread-sharpe-degradation} shows the same comparison. It is a sensitivity result for the retained V3/V7 histories, not a re-ranking of the aligned 19-strategy universes. The stress scenario uses base half-spreads of 3, 5, 5, 50, and 0 bps for SPY, TLT, GLD, BTC-USD, and CASH, respectively. These are scaled around each history's median 12-week rolling portfolio volatility with $\beta=0.5$ and applied to stored asset-level target-to-prior-target turnover. They are proxy assumptions, not observed quotes, market impact, or an account-specific cost estimate.
 
-\subsection{Training-Budget Convergence}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.82\textwidth]{execution_spread_sharpe_degradation.pdf}
+\caption{Change in Sharpe ratio under a reporting-only post-training proxy-spread stress. The selected TD3 histories degrade more than Trend SPY/CASH in both cash protocols. The exercise revalues existing histories; it neither uses quote-level spreads nor retrains policies or selects new winners.}
+\label{fig:execution-spread-sharpe-degradation}
+\end{figure}
 
-Training-budget convergence checks whether the 60-episode protocol appears obviously undertrained. The convergence run covers 320 histories: 4 candidates, 4 training budgets, 5 seeds, and 4 folds, across 30, 60, 100, and 150 episodes.
+\subsection{Does the 60-Episode Budget Look Obviously Insufficient?}
 
-The evidence does not show that 60 episodes is materially undertrained for the selected candidate-cap pairs. In the convergence output, zero rows support undertraining of the 60-episode budget; three selected candidate-cap pairs have their best Sharpe at 60 episodes, while the remaining V5 no-volatility \cashzero{} pair peaks at 30 episodes. Additional training does not improve the selected pairs and, in several cases, degrades Sharpe or increases turnover.
+Training-budget convergence checks whether the 60-episode protocol appears obviously undertrained. The convergence run covers 320 repeated histories: 4 candidates, 4 training budgets, 5 seeds, and 4 folds, across 30, 60, 100, and 150 episodes. These histories share the same market record and are not 320 independent market samples.
+
+Under the pre-specified diagnostic thresholds---0.10 in Sharpe, 0.03 in absolute max drawdown, and 25\% in relative turnover versus 60 episodes---the evidence does not show that 60 episodes is materially undertrained for the selected candidate-cap pairs. Zero rows support undertraining of the 60-episode budget; three pairs have their best Sharpe at 60 episodes, while the V5 no-volatility \cashzero{} pair peaks at 30 episodes. Additional training does not improve the selected pairs and, in several cases, degrades Sharpe or increases turnover. Figure~\ref{fig:training-budget-sharpe-convergence} shows the two candidates used in the main benchmark comparison.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.82\textwidth]{training_budget_sharpe_convergence.pdf}
+\caption{Training-budget Sharpe diagnostic for two main-comparison TD3 candidates, based on five seeds and four related walk-forward folds per budget. The 60-episode setting is not flagged as obviously undertrained, but the non-monotone paths do not establish global convergence or optimality.}
+\label{fig:training-budget-sharpe-convergence}
+\end{figure}
 
 \section{Discussion}
 
 \subsection{What the Evaluation Stack Reveals}
 
-The main lesson from the experiment is not that TD3 wins or fails. The main lesson is that the interpretation of a DRL portfolio result changes materially as evaluation layers are added. A candidate that looks strong in a ranking exercise becomes more ambiguous once benchmark matching, cash treatment, transaction costs, statistical validation, mandate feasibility, regime dependence, spread stress, and training-budget checks are imposed. This is the central methodological point of the paper: realistic evaluation separates three claims that are often collapsed into one another---ranking competitiveness, statistical credibility, and practical feasibility.
+The main lesson from the experiment is not that TD3 wins or fails. The main lesson is that the interpretation of a DRL portfolio result changes materially as evaluation layers are added. Exact-window regeneration replaces the previous TD3-led ordering with BuyHold GLD leadership; computing metrics before seed aggregation then removes the artificial risk smoothing of the average-return path and moves the best TD3 canonical Sharpe to tenth in both protocols. Statistical diagnostics, hard feasibility, Pareto membership, regime dependence, spread stress, and training-budget checks answer different questions about the same case study. Ranking competitiveness, statistical credibility, practical feasibility, and the economic object being measured cannot be collapsed into one result.
 
-Under that stack, ranking competitiveness is preserved in a narrower and more precise sense. The selected DRL candidates lead relevant mandate-aware or robust diagnostic rankings, remain Pareto-competitive in several practical tradeoff views, and lead in selected regime slices. These findings are informative because they survive a more demanding evaluation protocol, not because they establish a deployable alpha claim.
+Under that stack, ranking competitiveness is supported only in a limited diagnostic sense. V3 ranks fourth by mandate-aware score under \cashzero{} and V7 ranks seventh under \cashbil{}, but both rank tenth by canonical Sharpe and neither exceeds Trend SPY/CASH. The displayed pairwise mean-path ranges cross zero and retained-set WRC p-values are high. The Pareto members are different TD3 candidates and remain conditional on the objective set. None of these findings can be converted into an alpha or deployment claim.
 
 \subsection{What the Evaluation Stack Rejects}
 
-The boundary of the result is equally important. Bootstrap intervals include zero and White Reality Check p-values do not support statistical superiority for the searched learning candidate. No strategy satisfies every hard mandate filter. Selected case-study histories are more sensitive to additional spread assumptions than the Trend SPY/CASH benchmark, and cash assumptions change the selected case-study candidate.
+The boundary of the result is equally important. Mean-path bootstrap ranges include zero and White Reality Check p-values do not support statistical superiority for the retained five-candidate set. These diagnostics do not constitute inference on the expected-seed metric distribution. No seed-aggregated TD3 candidate passes a hard mandate profile. Selected case-study histories are more sensitive to additional spread assumptions than Trend SPY/CASH. The cash assumption changes both the prior within-TD3 selection and the highest-ranked seed-aggregated TD3, from V3 under \cashzero{} to V7 under \cashbil{}.
 
 \subsection{Why Benchmarks Matter}
 
@@ -626,7 +658,7 @@ Practical feasibility is not implied by a favorable ranking. The mandate, Pareto
 
 The main contribution is a falsification-oriented evaluation framework for DRL portfolio allocation. The paper shows how the interpretation of a DRL portfolio result changes when the case-study learner is evaluated through costs, cash assumptions, benchmark regeneration, statistical validation, mandate/Pareto feasibility, regime analysis, execution-spread stress, and convergence checks.
 
-The evidence supports a cautious claim: the learning approach is competitive under the corrected protocol, but its apparent ranking edge should not be converted into an alpha claim.
+The evidence supports a bounded claim: selected TD3 candidates remain visible in the mandate-aware ranking and on tested Pareto frontiers, but no TD3 leads the combined universe, reaches the leading canonical-Sharpe positions, passes a hard mandate profile consistently, or establishes statistical superiority.
 
 This separation is the paper's main contribution: it turns a single backtest ranking into a structured evidence hierarchy.
 
@@ -639,42 +671,103 @@ This separation is the paper's main contribution: it turns a single backtest ran
 \renewcommand{\arraystretch}{1.22}
 \begin{tabularx}{\textwidth}{@{}L{0.25\textwidth} L{0.13\textwidth} Y@{}}
 \toprule
-Claim & Supported? & Evidence \\
+Claim & Assessment & Evidence \\
 \midrule
-Ranking competitiveness survives. & Yes & Selected case-study candidates lead relevant mandate-aware/robust diagnostic rankings, while deterministic benchmarks remain strong under standard return and Sharpe metrics. \\
-Statistical superiority is established. & No & Bootstrap confidence intervals include zero and WRC p-values do not support superiority. \\
-Cash assumption matters. & Yes & \cashzero{} and \cashbil{} select different learning candidates and diagnostic-ranking leaders. \\
-60 episodes is undertrained. & No evidence & Longer training budgets do not materially improve selected candidate performance and can increase turnover or reduce Sharpe. \\
-Execution assumptions matter. & Yes & Stress spreads degrade selected learning candidates more than the Trend SPY/CASH benchmark. \\
-Hard mandate feasibility is achieved. & No & No strategy passes all hard canonical mandate filters. \\
-The learning candidate is Pareto-competitive. & Yes & Selected case-study candidates remain on or near relevant tradeoff frontiers. \\
-Custom scores are sufficient. & No & Scores are diagnostic; standard metrics and statistical validation remain necessary. \\
-Benchmarks are weak. & No & Regenerated deterministic benchmarks remain strong comparators. \\
+Ranking competitiveness. & Limited support & V3 ranks fourth by mandate-aware score under \cashzero{} and V7 seventh under \cashbil{}, but both rank tenth by canonical Sharpe; BuyHold GLD ranks first. \\
+Statistical superiority. & Not supported & Both displayed bootstrap ranges include zero; retained-five-candidate WRC p-values do not reject the search-adjusted null. \\
+Cash assumption matters. & Supported for selection & The prior TD3 selection changes from V5 to V8, and the highest-ranked seed-aggregated TD3 changes from V3 under \cashzero{} to V7 under \cashbil{}. \\
+60 episodes is undertrained. & No evidence & Longer budgets do not materially improve the selected pairs and can increase turnover or reduce Sharpe. \\
+Execution assumptions matter. & Supported & Stress spreads degrade selected learning candidates more than Trend SPY/CASH. \\
+Hard TD3 feasibility. & Not supported & No TD3 passes any tested profile; three deterministic benchmarks pass the aggressive profile in each protocol. \\
+Pareto competitiveness. & Conditional support & V3/V4 enter both \cashzero{} frontiers; under \cashbil{}, V3 enters both and V8 the full frontier only, conditional on the declared objectives. \\
+Custom scores are sufficient. & Not supported & Scores are diagnostic; standard metrics and statistical validation remain necessary. \\
+Benchmarks are weak. & Not supported & Regenerated deterministic benchmarks remain strong comparators across metrics and regimes. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
 \section{Limitations}
 
-The asset universe is compact and U.S.-centric. It excludes credit, real estate, broad commodities beyond gold, international equities, taxes, custody constraints, liabilities, and investor-specific withdrawal needs. BTC-USD is highly idiosyncratic and may not represent digital assets more broadly.
+The compact universe makes allocations interpretable but limits external validity. It is mainly U.S.-centric, omits credit, real estate, international equities, and broad commodities beyond gold, and uses one idiosyncratic crypto asset. Synthetic CASH and BIL are alternative liquidity approximations, not interchangeable definitions of a risk-free asset or a complete representation of operational cash.
 
-Execution modeling remains approximate. The protocol includes asset-specific transaction costs and an additional spread robustness layer, but it does not model full order-book depth, market impact, intraday liquidity, broker-specific routing, or tax-aware execution.
+The study observes one market history. Expanding walk-forward folds and multiple random seeds test temporal and training variation, but the folds remain related and repeated TD3 histories are not independent market samples. TD3 is also the only DRL learner examined. The findings therefore evaluate this framework through one algorithmic case study; they do not establish that the same ranking or sensitivity patterns hold for other learners, reward designs, or historical samples.
 
-Custom mandate-aware and robust scores are diagnostic selection tools, not standalone academic proof. Standard metrics, hard mandate filters, Pareto analysis, bootstrap validation, and White Reality Check remain necessary to interpret results.
+Candidate flexibility and benchmark flexibility are not identical. The TD3 layer searches feature families, caps, seeds, and folds, whereas the deterministic rules use pre-specified constructions. White Reality Check covers five retained candidate-cap policies per cash protocol, not all 20 feature-cap configurations in the final grid. Its conclusion also depends on the benchmark comparator, return differential, and resampling design, and cannot correct for every earlier research choice. Similarly, mandate thresholds are normative stress tests rather than universal investor requirements, and Pareto membership depends on the selected objectives.
 
-The evaluation uses one historical sample. Walk-forward folds and multiple seeds improve robustness, but they do not create independent market histories. The study also does not include live-forward paper trading or production deployment.
+Exact date alignment removes the previous horizon mismatch but does not create independent market observations. For each candidate, four folds are concatenated within seed and nonlinear metrics are computed separately on ten complete OOS histories before their arithmetic mean is taken. This estimates expected performance over training seeds, not the result of one deployable policy. The synthetic date-wise average path reduces individual-policy volatility by roughly 18--34\% across the selected candidates and is therefore retained only as a diversification diagnostic. Its net returns, turnover, and costs are averages of quantities already computed in separate policies; they are not recomputed from netted ensemble weights. Deterministic benchmarks have no training-seed distribution. Their missing seed dispersion is treated as unavailable and neutral rather than zero in the stability component, but the robust and mandate-aware scores remain diagnostic rather than a primary TD3-versus-benchmark claim. Benchmark signals, weights, and costs are retained from their causal full histories and filtered to the common window; their first aligned row preserves pre-window benchmark position state.
 
-Finally, the training-budget convergence check supports the use of 60 episodes for this research design, but it does not prove that the chosen budget is globally optimal. A larger publication-grade replication could extend the convergence analysis to more seeds and a broader candidate set.
+The pairwise bootstrap report uses both a different economic object and a different risk-adjusted-return estimator from the combined ranking: the synthetic mean path and CAGR divided by annualized volatility, rather than the mean across per-seed canonical Sharpe values. Its ranges remain internally pairwise and unchanged, but their numerical summaries cannot be reconciled directly with Table~\ref{tab:combined-ranking}. White Reality Check is separate again: it resamples centered weekly return differentials and does not use either ratio. A hierarchical inference procedure that jointly preserves seed and serial dependence has not been implemented.
+
+Execution remains approximate. Asset-specific transaction costs and the spread stress make turnover economically visible, but they omit market impact, order-book depth, latency, capacity, routing, taxes, custody, and live-forward execution. The training-budget analysis is only a diagnostic against obvious undertraining over four tested budgets; non-monotone Sharpe paths do not prove global convergence. These limits restrict deployment and generalization claims without negating the value of the evaluation hierarchy.
 
 \section{Conclusion}
 
-This paper evaluates whether DRL-based dynamic allocation claims remain credible under realistic cross-asset portfolio evaluation, using TD3 as the empirical case study. The corrected protocol includes asset-specific transaction costs, explicit \cashzero{} and \cashbil{} assumptions, regenerated deterministic benchmarks, statistical validation, mandate and Pareto feasibility, regime analysis, execution-spread robustness, and training-budget convergence.
+This paper asks whether a falsification-oriented framework can separate claims that a conventional backtest often conflates. On an exact \AlignedWeeks{}-date comparison with metrics computed before seed aggregation, BuyHold GLD leads both combined rankings. V3 is the best TD3 by mandate-aware score under \cashzero{} at rank four and V7 under \cashbil{} at rank seven; both rank tenth by canonical Sharpe. Pairwise mean-path ranges cross zero and White Reality Check does not support superiority for the retained five-candidate set. No seed-aggregated TD3 passes a tested hard mandate profile. V3/V4 enter both \cashzero{} Pareto frontiers; under \cashbil{}, V3 enters both and V8 the full frontier only.
 
-The evidence is deliberately conservative. Selected learning candidates lead relevant diagnostic rankings under the corrected benchmark-matched framework, while bootstrap Sharpe-difference validation and White Reality Check prevent a stronger statistical superiority claim. Cash and execution assumptions materially affect model selection, and hard constraints reveal a practical feasibility gap.
-
-Under the corrected protocol, the learning approach is best understood as a competitive research candidate for dynamic allocation, not as a statistically dominant trading strategy. The main result is not that DRL fails, but that realistic evaluation materially changes what can be claimed from DRL portfolio experiments.
+The strongest defensible conclusion is therefore methodological. Current evidence supports only bounded diagnostic ranking and Pareto claims; it does not support statistical superiority or consistent hard TD3 feasibility under the tested rules. The paper's contribution is the evaluation protocol, exact-date and seed-level reproducibility layer, and disciplined boundary around claims, not a new TD3 method or a deployable return advantage.
 
 \bibliographystyle{plainnat}
 \bibliography{references}
+
+\clearpage
+\appendix
+
+\section{Protocol and Reproducibility Detail}
+\label{app:protocol-detail}
+
+Table~\ref{tab:walk-forward-folds} records the expanding-window design. Feature alignment can move the first usable training row beyond the nominal start; validation and test boundaries remain fixed.
+
+\begin{table}[htbp]
+\centering
+\caption{Corrected walk-forward folds.}
+\label{tab:walk-forward-folds}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}L{0.08\textwidth} L{0.26\textwidth} L{0.24\textwidth} Y@{}}
+\toprule
+Fold & Training window & Validation window & Out-of-sample test window \\
+\midrule
+F1 & 3 Apr. 2015--25 Dec. 2020 & 1 Jan.--31 Dec. 2021 & 7 Jan.--30 Dec. 2022 \\
+F2 & 3 Apr. 2015--31 Dec. 2021 & 7 Jan.--30 Dec. 2022 & 6 Jan.--29 Dec. 2023 \\
+F3 & 3 Apr. 2015--30 Dec. 2022 & 6 Jan.--29 Dec. 2023 & 5 Jan.--27 Dec. 2024 \\
+F4 & 3 Apr. 2015--29 Dec. 2023 & 5 Jan.--27 Dec. 2024 & 3 Jan. 2025--15 May 2026 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The corrected grid crosses V3, V4, V5, V7, and V8 with the uncapped, 0.50, 0.70, and 0.80 cap settings, seeds 7, 21, 42, 84, 101, 123, 202, 303, 404, and 505, and four folds. Its 800 histories per cash protocol share one market record and are not independent observations. Actions are projected to the capped long-only simplex before execution and replay storage; metrics use net returns after asset-specific costs. Test histories initialize at equal weights and a portfolio value of 100,000.
+
+The fourteen comparators are buy-and-hold SPY, TLT, GLD, and BTC-USD; equal weight with and without CASH; 60/40 SPY/TLT; defensive risk-off; momentum; risk-adjusted momentum; rolling long-only Markowitz; rolling minimum variance; inverse-volatility risk parity; and Trend SPY/CASH. Their original causal histories retain any permitted pre-window indicator warm-up and position state. Comparison rows are selected by exact intersection with the TD3 index, never by taking the last 228 rows. Every aligned output contains \AlignedWeeks{} observations from \AlignedStartDate{} to \AlignedEndDate{}, with zero duplicate dates and zero missing returns.
+
+Candidate identifiers serve different pre-specified reporting roles. The prior within-TD3 diagnostic selection uses V5 cap 0.50 under \cashzero{} and V8 cap 0.70 under \cashbil{}. Under metrics-then-average, the best combined-ranking TD3 by mandate-aware score is V3 cap 0.70 under \cashzero{} and V7 cap 0.80 under \cashbil{}; Table~\ref{tab:stat-validation} displays their already-existing Trend pairwise rows without rerunning the bootstrap. The best WRC mean-return differential remains V7 cap 0.80 in both protocols because WRC uses the synthetic mean-return differential matrix rather than the seed-aggregated ranking. The retained WRC universes are {V3 0.70, V7 0.80, V4 0.70, V8 uncapped, V5 0.50} for \cashzero{} and {V7 0.80, V3 0.70, V8 0.70, V4 0.80, V5 0.70} for \cashbil{}. These roles are defined by different estimands and are not retrospective seed selection.
+
+\subsection{Statistical and Practical Decision Rules}
+
+For the pairwise bootstrap, TD3 returns are averaged by date, aligned with the benchmark over \AlignedWeeks{} weeks, and resampled jointly using 1,000 replications and 12-week blocks. The reported range is the 5th--95th percentile difference in the \emph{CAGR-to-annualized-volatility ratio}; it is not a 95\% confidence interval, a canonical Sharpe interval, or expected-seed inference. White Reality Check applies 2,000 centered block-bootstrap replications with 8-week blocks to the weekly candidate-minus-benchmark net-return matrix. Its statistic is $\sqrt{T}$ times the largest candidate mean return differential; it does not use the CAGR-to-volatility ratio. Its null concerns the retained five-policy TD3 set, not the full 20-configuration grid. A high p-value fails to reject that null; the result is candidate-set dependent and is not an SPA test.
+
+The reporting-only robust score retains its fixed weighted composite of DSR (0.30), cross-sectionally normalized Sortino (0.20), Calmar (0.20), max drawdown (0.15), stability (0.10), and discipline (0.05). Stability combines inverse normalized Sharpe dispersion (0.70) and normalized worst drawdown (0.30); discipline combines cash, turnover, and diversification diagnostics with weights 0.50, 0.30, and 0.20. TD3 seed dispersion and worst-seed drawdown are observed across ten full \AlignedWeeks{}-date histories. A deterministic benchmark has no comparable training-seed distribution, so its dispersion is missing and receives the neutral normalization value rather than an automatic zero-dispersion bonus. DSR uses the median of ten TD3 seed values and the single aligned benchmark history. The mandate-aware score retains its original drawdown multiplier and zero below $d=-0.30$. These scores remain diagnostics; canonical metrics are the primary cross-type comparison.
+
+Hard feasibility is separate from diagnostic scores. Table~\ref{tab:mandate-thresholds} gives normative test profiles, not universal suitability standards. Experimental max-weight caps are not mandate thresholds.
+
+\begin{table}[H]
+\centering
+\caption{Hard mandate thresholds used for feasibility diagnostics.}
+\label{tab:mandate-thresholds}
+\footnotesize
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Profile & \makecell{Max\\drawdown} & \makecell{Max ann.\\volatility} & \makecell{Min effective\\assets} & \makecell{Max average\\turnover} \\
+\midrule
+Conservative & -0.10 & 0.10 & 3.00 & 0.05 \\
+Moderate & -0.15 & 0.15 & 2.30 & 0.10 \\
+Aggressive & -0.25 & 0.25 & 1.50 & 0.20 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Execution-spread stress only revalues selected histories after training. The clean, conservative, and stress scenario base half-spreads for {SPY, TLT, GLD, BTC-USD, CASH} are {0.25, 0.50, 0.50, 3, 0}, {1, 2, 2, 15, 0}, and {3, 5, 5, 50, 0} bps. For each history, a 12-week rolling portfolio-volatility proxy scales these bases around its median with $\beta=0.5$; spread cost is the product of the resulting asset half-spread and stored asset-level target-to-prior-target turnover. This is a quote-free sensitivity proxy and excludes market impact.
+
+The budget diagnostic compares 30, 60, 100, and 150 episodes for four candidate/cash cases, seeds 7, 21, 42, 84, and 101, and four related folds (320 histories). Materiality thresholds are 0.10 Sharpe, 0.03 absolute max drawdown, and 25\% relative turnover versus 60 episodes. It tests for obvious undertraining at 60 episodes, not a globally optimal budget or 320 independent replications.
+
+The primary reproducibility package is stored in \texttt{outputs/paper\_seed\_aggregated\_comparison/}. It includes all 100 complete TD3 seed histories, per-seed metrics, cross-seed summaries, synthetic mean/median-path diagnostics, diversification and cost audits, seed-aggregated rankings, hard filters, mandate profiles, Pareto tables, named statistical formulas, source SHA-256 hashes, and executable validation. The earlier \texttt{outputs/paper\_aligned\_comparison/} package remains preserved as the validated date-alignment prerequisite and average-path audit record.
 
 \end{document}

@@ -1,0 +1,77 @@
+{
+  "method": "exact timestamp intersection anchored to canonical TD3 OOS index",
+  "no_tail_selection": true,
+  "no_forward_fill": true,
+  "no_extrapolation": true,
+  "no_source_overwrite": true,
+  "protocols": {
+    "zero_cash": {
+      "cash_bps": 0.0,
+      "cash_return_assumption": "synthetic zero return",
+      "n_td3_strategies": 5,
+      "n_benchmarks": 14,
+      "n_strategies": 19,
+      "common_observations": 228,
+      "common_start_date": "2022-01-07",
+      "common_end_date": "2026-05-15",
+      "frequency": "weekly Friday",
+      "timezone_kind": "naive",
+      "selected_td3": [
+        {
+          "base_candidate": "V3_real_macro_vintage_clean_no_dxy",
+          "cap_label": "0p70"
+        },
+        {
+          "base_candidate": "V4_real_garch_current",
+          "cap_label": "0p70"
+        },
+        {
+          "base_candidate": "V5_no_volatility_block",
+          "cap_label": "0p50"
+        },
+        {
+          "base_candidate": "V7_real_macro_vintage_clean_no_dxy_garch",
+          "cap_label": "0p80"
+        },
+        {
+          "base_candidate": "V8_ewma_garch_vol_current",
+          "cap_label": "uncapped"
+        }
+      ]
+    },
+    "bil_cash": {
+      "cash_bps": 2.0,
+      "cash_return_assumption": "BIL proxy return",
+      "n_td3_strategies": 5,
+      "n_benchmarks": 14,
+      "n_strategies": 19,
+      "common_observations": 228,
+      "common_start_date": "2022-01-07",
+      "common_end_date": "2026-05-15",
+      "frequency": "weekly Friday",
+      "timezone_kind": "naive",
+      "selected_td3": [
+        {
+          "base_candidate": "V3_real_macro_vintage_clean_no_dxy",
+          "cap_label": "0p70"
+        },
+        {
+          "base_candidate": "V4_real_garch_current",
+          "cap_label": "0p80"
+        },
+        {
+          "base_candidate": "V5_no_volatility_block",
+          "cap_label": "0p70"
+        },
+        {
+          "base_candidate": "V7_real_macro_vintage_clean_no_dxy_garch",
+          "cap_label": "0p80"
+        },
+        {
+          "base_candidate": "V8_ewma_garch_vol_current",
+          "cap_label": "0p70"
+        }
+      ]
+    }
+  }
+}

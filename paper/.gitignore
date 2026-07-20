@@ -10,3 +10,7 @@
 
 # Keep the final compiled manuscript PDF
 !main.pdf
+
+# Keep publication figures transferred into the paper bundle
+!figures/execution_spread_sharpe_degradation.pdf
+!figures/training_budget_sharpe_convergence.pdf

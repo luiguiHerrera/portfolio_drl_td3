@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "n_strategies_compared_per_protocol": {
+    "bil_cash": 19,
+    "zero_cash": 19
+  },
+  "common_observations": 228,
+  "common_start_date": "2022-01-07",
+  "common_end_date": "2026-05-15",
+  "frequency": "weekly Friday",
+  "all_indices_identical": "PASS",
+  "duplicate_dates": 0,
+  "missing_values": 0,
+  "metrics_derived_from_aligned_histories": "PASS",
+  "ranking_derived_from_aligned_metrics": "PASS",
+  "mandates_derived_from_aligned_metrics": "PASS",
+  "pareto_derived_from_aligned_metrics": "PASS",
+  "metadata_consistent_with_csv": "PASS"
+}

@@ -1,0 +1,29 @@
+{
+  "method": "reuse validated exact 228-date alignment; no date regeneration",
+  "prerequisite_validation": "PASS",
+  "no_source_overwrite": true,
+  "protocols": {
+    "zero_cash": {
+      "n_td3_strategies": 5,
+      "n_benchmarks": 14,
+      "n_strategies": 19,
+      "n_seeds_per_td3": 10,
+      "common_observations": 228,
+      "common_start_date": "2022-01-07",
+      "common_end_date": "2026-05-15",
+      "cash_bps": 0.0,
+      "cash_return_assumption": "synthetic zero return"
+    },
+    "bil_cash": {
+      "n_td3_strategies": 5,
+      "n_benchmarks": 14,
+      "n_strategies": 19,
+      "n_seeds_per_td3": 10,
+      "common_observations": 228,
+      "common_start_date": "2022-01-07",
+      "common_end_date": "2026-05-15",
+      "cash_bps": 2.0,
+      "cash_return_assumption": "BIL proxy return"
+    }
+  }
+}

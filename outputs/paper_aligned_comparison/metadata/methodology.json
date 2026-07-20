@@ -1,0 +1,202 @@
+{
+  "generated_at_utc": "2026-07-16T16:31:04.625675+00:00",
+  "runner": "scripts/build_paper_aligned_comparison.py",
+  "module": "src.analysis.paper_aligned_comparison",
+  "git_commit": "137f6b04d4cf931ec9237797dd007beecc10d8ee",
+  "expected_observations": 228,
+  "periods_per_year": 52,
+  "initial_value": 100000.0,
+  "date_alignment": {
+    "canonical_index": "union of four TD3 OOS folds after exact per-seed validation",
+    "operation": "timestamp intersection, never tail-row selection",
+    "expected_frequency": "weekly Friday",
+    "no_forward_fill": true,
+    "no_extrapolation": true,
+    "benchmark_warm_up": "Benchmark signals and costs are retained from their original causal full histories; only reported rows are filtered to the common OOS index."
+  },
+  "td3_aggregation": {
+    "per_seed": "four disjoint OOS folds concatenated to the same 228 timestamps",
+    "reported_history": "arithmetic mean by date across ten aligned seeds",
+    "seeds": [
+      7,
+      21,
+      42,
+      84,
+      101,
+      123,
+      202,
+      303,
+      404,
+      505
+    ],
+    "independence_warning": "Folds, seeds, candidates and histories share one market record and are not independent economic realizations."
+  },
+  "return_metrics": {
+    "source": "src.backtest.evaluate_policy and src.backtest.performance_metrics",
+    "return_column": "financial_net_return",
+    "risk_free_rate": 0.0
+  },
+  "robust_score": {
+    "weights": {
+      "dsr_score": 0.3,
+      "sortino_score": 0.2,
+      "calmar_score": 0.2,
+      "drawdown_score": 0.15,
+      "stability_score": 0.1,
+      "discipline_score": 0.05
+    },
+    "dsr_trials": 25,
+    "td3_dsr": "median DSR across ten full 228-date aligned seed histories",
+    "benchmark_dsr": "DSR of the single 228-date aligned history",
+    "stability": "TD3 seed Sharpe dispersion and worst seed drawdown; deterministic benchmark dispersion is zero",
+    "normalization_scope": "separate 19-strategy universe inside each cash protocol"
+  },
+  "mandate_aware_score": {
+    "drawdown_buckets": {
+      "clean_mandate": "max_drawdown >= -0.20",
+      "eligible_yellow": "-0.25 <= max_drawdown < -0.20",
+      "eligible_red": "-0.30 <= max_drawdown < -0.25",
+      "not_eligible": "max_drawdown < -0.30"
+    },
+    "multiplier": "max(0, 1 - abs(drawdown)/(1-abs(drawdown)))"
+  },
+  "hard_mandates": {
+    "conservative": {
+      "profile_name": "conservative",
+      "max_drawdown": -0.1,
+      "max_annualized_volatility": 0.1,
+      "min_effective_assets": 3.0,
+      "max_average_turnover": 0.05,
+      "description": "Low-risk mandate with tight drawdown, volatility, diversification, and implementation-discipline limits."
+    },
+    "moderate": {
+      "profile_name": "moderate",
+      "max_drawdown": -0.15,
+      "max_annualized_volatility": 0.15,
+      "min_effective_assets": 2.3,
+      "max_average_turnover": 0.1,
+      "description": "Balanced mandate with moderate drawdown, volatility, diversification, and turnover constraints."
+    },
+    "aggressive": {
+      "profile_name": "aggressive",
+      "max_drawdown": -0.25,
+      "max_annualized_volatility": 0.25,
+      "min_effective_assets": 1.5,
+      "max_average_turnover": 0.2,
+      "description": "Higher-risk mandate with looser drawdown, volatility, diversification, and turnover constraints."
+    }
+  },
+  "pareto": {
+    "full_objectives": {
+      "sharpe": "max",
+      "annualized_return": "max",
+      "calmar": "max",
+      "drawdown_severity": "min",
+      "average_turnover": "min",
+      "mean_transaction_cost": "min",
+      "average_max_weight": "min",
+      "average_effective_number_of_assets": "max"
+    },
+    "reduced_objectives": {
+      "sharpe": "max",
+      "drawdown_severity": "min",
+      "average_turnover": "min",
+      "average_max_weight": "min",
+      "average_effective_number_of_assets": "max"
+    },
+    "numeric_tolerance": 0.0,
+    "ties": "exact ties do not dominate one another"
+  },
+  "transaction_costs_bps": {
+    "SPY": 2.0,
+    "TLT": 2.0,
+    "GLD": 2.0,
+    "BTC-USD": 10.0,
+    "CASH": {
+      "zero_cash": 0.0,
+      "bil_cash": 2.0
+    }
+  },
+  "td3_experiment": {
+    "episodes": 60,
+    "feature_families": [
+      "V3",
+      "V4",
+      "V5",
+      "V7",
+      "V8"
+    ],
+    "cap_selection": "legacy within-TD3 best_by_mandate_aware_score, fixed before aligned benchmark ranking",
+    "no_retraining": true
+  },
+  "protocols": {
+    "zero_cash": {
+      "cash_bps": 0.0,
+      "cash_return_assumption": "synthetic zero return",
+      "n_td3_strategies": 5,
+      "n_benchmarks": 14,
+      "n_strategies": 19,
+      "common_observations": 228,
+      "common_start_date": "2022-01-07",
+      "common_end_date": "2026-05-15",
+      "frequency": "weekly Friday",
+      "timezone_kind": "naive",
+      "selected_td3": [
+        {
+          "base_candidate": "V3_real_macro_vintage_clean_no_dxy",
+          "cap_label": "0p70"
+        },
+        {
+          "base_candidate": "V4_real_garch_current",
+          "cap_label": "0p70"
+        },
+        {
+          "base_candidate": "V5_no_volatility_block",
+          "cap_label": "0p50"
+        },
+        {
+          "base_candidate": "V7_real_macro_vintage_clean_no_dxy_garch",
+          "cap_label": "0p80"
+        },
+        {
+          "base_candidate": "V8_ewma_garch_vol_current",
+          "cap_label": "uncapped"
+        }
+      ]
+    },
+    "bil_cash": {
+      "cash_bps": 2.0,
+      "cash_return_assumption": "BIL proxy return",
+      "n_td3_strategies": 5,
+      "n_benchmarks": 14,
+      "n_strategies": 19,
+      "common_observations": 228,
+      "common_start_date": "2022-01-07",
+      "common_end_date": "2026-05-15",
+      "frequency": "weekly Friday",
+      "timezone_kind": "naive",
+      "selected_td3": [
+        {
+          "base_candidate": "V3_real_macro_vintage_clean_no_dxy",
+          "cap_label": "0p70"
+        },
+        {
+          "base_candidate": "V4_real_garch_current",
+          "cap_label": "0p80"
+        },
+        {
+          "base_candidate": "V5_no_volatility_block",
+          "cap_label": "0p70"
+        },
+        {
+          "base_candidate": "V7_real_macro_vintage_clean_no_dxy_garch",
+          "cap_label": "0p80"
+        },
+        {
+          "base_candidate": "V8_ewma_garch_vol_current",
+          "cap_label": "0p70"
+        }
+      ]
+    }
+  }
+}

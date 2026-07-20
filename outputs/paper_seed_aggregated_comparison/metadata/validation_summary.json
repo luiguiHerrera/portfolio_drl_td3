@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "primary_estimand": "expected_seed_performance_of_the_training_algorithm",
+  "primary_td3_aggregation": "mean_of_metrics_across_ten_full_oos_seed_histories",
+  "n_strategies_compared_per_protocol": {
+    "bil_cash": 19,
+    "zero_cash": 19
+  },
+  "td3_seed_histories": 100,
+  "common_observations_per_seed": 228,
+  "duplicate_dates": 0,
+  "missing_values": 0,
+  "per_seed_metrics_recomputed": "PASS",
+  "metrics_computed_before_seed_aggregation": "PASS",
+  "ranking_derived_from_seed_aggregated_metrics": "PASS",
+  "mandates_derived_from_seed_aggregated_metrics": "PASS",
+  "pareto_derived_from_seed_aggregated_metrics": "PASS",
+  "canonical_sharpe_and_legacy_ratio_distinct": "PASS",
+  "wrc_return_differential_distinct_from_legacy_ratio": "PASS",
+  "benchmark_seed_dispersion_not_imputed_as_zero": "PASS"
+}

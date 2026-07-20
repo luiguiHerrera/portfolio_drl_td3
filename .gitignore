@@ -23,6 +23,12 @@ data/processed/
 
 # Outputs generados
 outputs/
+!outputs/
+outputs/*
+!outputs/paper_aligned_comparison/
+!outputs/paper_aligned_comparison/**
+!outputs/paper_seed_aggregated_comparison/
+!outputs/paper_seed_aggregated_comparison/**
 reports/
 tmp/
 

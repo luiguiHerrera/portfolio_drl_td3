@@ -51,3 +51,6 @@ paper/*.fdb_latexmk
 paper/*.fls
 paper/*.synctex.gz
 paper/*.xdv
+tfm/MECOFIN_tfm_acuerdo_bilateral_uhu.pdf
+tfm/MECOFIN_tfm_visto_bueno_tutor_uhu.pdf
+tfm/TFM_Luigui_Herrera_Final.pdf

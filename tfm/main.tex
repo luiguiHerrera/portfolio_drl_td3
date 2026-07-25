@@ -187,7 +187,7 @@ The general objective of this thesis is to develop and apply a falsification-ori
 
 The specific objectives are:
 
-\begin{enumerate}[label=\arabic*.,leftmargin=*]
+\begin{enumerate}[label=\arabic*.,leftmargin=*,itemsep=2pt,parsep=0pt,topsep=4pt]
     \item To construct a compact and interpretable cross-asset allocation universe composed of equity growth, duration risk, real safe-haven exposure, digital alternative risk, and defensive liquidity sleeves.
     \item To implement a weekly long-only TD3 portfolio allocation environment with feasible portfolio weights, asset-specific transaction costs, explicit cash treatment, and net-return-based learning.
     \item To compare TD3 candidates against deterministic benchmarks regenerated under the same asset universe, cash assumptions, cost schedule, and evaluation window.
@@ -609,7 +609,7 @@ This evidence supports H4. Practical feasibility depends on mandate constraints 
 
 \subsection{Execution-Spread Robustness}
 
-Execution-spread robustness is a reporting-only post-training stress test. It does not retrain TD3 and does not create new final winners. Its purpose is to test whether selected histories are sensitive to additional spread assumptions.
+Execution-spread robustness is evaluated after training as a reporting-only sensitivity check. The stress test leaves the TD3 policies, selection procedure, and final winners unchanged; it only revalues the selected histories under less favorable spread assumptions to assess their execution sensitivity.
 
 The selected learning candidates are more sensitive to the spread stress than the Trend SPY/CASH benchmark. Under stress spreads, Zero-CASH TD3 V3 clean macro cap 0.70 has an annualized return delta of -0.0139 and Sharpe delta of -0.1321. BIL-CASH TD3 V7 macro+GARCH cap 0.80 has an annualized return delta of -0.0128 and Sharpe delta of -0.1180. The Trend SPY/CASH benchmark has a Sharpe delta around -0.0132. This does not invalidate ranking competitiveness, but it shows that execution realism changes the economic interpretation of selected policies.
 
@@ -1018,6 +1018,7 @@ This annex lists the main reproducibility artifacts supporting the thesis. The p
 \textbf{Artifact type} & \textbf{Known project files or folders} \\
 \midrule
 Project root & Repository root for the thesis project; paths below are relative to this root. \\
+Repository access & Available upon request. \\
 Data preparation scripts & \path{src/data/build_dataset.py}; \path{src/data/build_macro_dataset.py}; \path{src/data/build_realtime_macro_dataset.py}; \path{src/data/prepare_dataset.py} \\
 TD3 training scripts & \path{src/train/train_td3.py}; \path{src/models/td3_agent.py}; \path{src/models/actor.py}; \path{src/models/critic.py} \\
 Benchmark scripts & \path{src/backtest/benchmarks.py}; \path{src/backtest/dynamic_allocation_benchmarks.py}; \path{src/backtest/performance_metrics.py} \\
@@ -1033,77 +1034,46 @@ Generated thesis source & \path{tfm/main.tex}; \path{tfm/main.pdf} \\
 
 This annex records the implementation logic needed to reproduce the main empirical interpretation. It is intentionally compact: the authoritative implementation remains in the project files listed in Annex H, while the blocks below document the portfolio mechanics, matched evaluation protocol, and statistical validation workflow used to interpret the evidence.
 
-\textbf{Feasible action, cost, net return, and reward logic}
+\textbf{Procedure 1. Feasible action, cost, net return, and reward logic}
 
-\begin{lstlisting}
-Input:
-    raw action a_t from the deterministic policy
-    previous drifted portfolio weights w_prev_drifted
-    next-period asset returns r_next
-    asset-specific transaction cost rates kappa
+\begin{enumerate}[label=\arabic*.,leftmargin=*,itemsep=2pt,parsep=0pt,topsep=4pt]
+    \item Receive the raw action $a_t$ from the deterministic policy, the previous drifted portfolio weights, next-period asset returns, and asset-specific transaction-cost rates.
+    \item Project $a_t$ onto the long-only simplex to obtain the executed feasible weights $w_t$.
+    \item Compute asset-level turnover as the absolute difference between executed weights and previous drifted weights.
+    \item Compute transaction-cost drag as the turnover-weighted sum of asset-specific cost rates.
+    \item Compute gross portfolio return from $w_t$ and next-period asset returns.
+    \item Compute net portfolio return by subtracting transaction-cost drag from gross return.
+    \item Update portfolio value, running peak, and drawdown.
+    \item Compute the reward as net return adjusted by the configured drawdown penalty.
+    \item Store the transition using feasible weights and the net-return-based reward.
+\end{enumerate}
 
-w_t = projected version of a_t on the long-only simplex
+\textbf{Procedure 2. Walk-forward and benchmark-matched evaluation protocol}
 
-turnover_i = abs(w_t[i] - w_prev_drifted[i]) for each asset i
-transaction_cost_t = sum_i(kappa[i] * turnover_i)
+\begin{enumerate}[label=\arabic*.,leftmargin=*,itemsep=2pt,parsep=0pt,topsep=4pt]
+    \item For each cash protocol, build the same investable universe, cost assumptions, and date windows.
+    \item For each walk-forward split, train candidate TD3 policies only on the training window.
+    \item Select candidates using the predefined diagnostic score stack.
+    \item Evaluate selected candidates out-of-sample without exploration noise.
+    \item Regenerate deterministic benchmarks under the same asset universe, cash protocol, transaction-cost convention, rebalance frequency, and train/test window.
+    \item Aggregate out-of-sample results by candidate, cap, seed, and split.
+    \item Interpret TD3 only against matched benchmark evidence.
+\end{enumerate}
 
-gross_return_t = sum_i(w_t[i] * r_next[i])
-net_return_t = gross_return_t - transaction_cost_t
+\textbf{Procedure 3. Statistical validation workflow}
 
-portfolio_value_t = portfolio_value_prev * (1 + net_return_t)
-running_peak_t = max(running_peak_prev, portfolio_value_t)
-drawdown_t = portfolio_value_t / running_peak_t - 1
-
-reward_t = net_return_t minus the configured drawdown penalty
-store transition using feasible weights and net-return reward
-\end{lstlisting}
-
-\textbf{Walk-forward and benchmark-matched evaluation protocol}
-
-\begin{lstlisting}
-For each cash protocol in {Zero-CASH, BIL-CASH}:
-    Build the same investable universe, cost assumptions, and date windows.
-
-    For each walk-forward split:
-        Train candidate TD3 policies only on the training window.
-        Select candidates using the predefined diagnostic score stack.
-        Evaluate selected candidates out-of-sample without exploration noise.
-
-        Regenerate deterministic benchmarks on the same:
-            asset universe
-            cash protocol
-            transaction-cost convention
-            rebalance frequency
-            train/test window
-
-    Aggregate out-of-sample results by candidate, cap, seed, and split.
-    Interpret TD3 only against matched benchmark evidence.
-\end{lstlisting}
-
-\textbf{Statistical validation workflow}
-
-\begin{lstlisting}
-Build the searched TD3 candidate set from the final evaluation outputs.
-
-For each selected TD3 candidate and clean benchmark comparator:
-    Compute paired out-of-sample return differentials.
-    Estimate the Sharpe-difference statistic.
-    Bootstrap paired return histories to obtain:
-        confidence interval for Sharpe difference
-        probability that the selected TD3 candidate beats the comparator
-
-Across the searched candidate set:
-    Apply White Reality Check to candidate return differentials.
-    Report the search-adjusted p-value.
-
-Interpretation rule:
-    ranking competitiveness may be reported when rankings support it;
-    statistical superiority is not claimed when intervals include zero
-    or White Reality Check does not reject the null.
-\end{lstlisting}
+\begin{enumerate}[label=\arabic*.,leftmargin=*]
+    \item Build the searched TD3 candidate set from the final evaluation outputs.
+    \item For each selected TD3 candidate and clean benchmark comparator, compute paired out-of-sample return differentials.
+    \item Estimate the Sharpe-difference statistic for the selected comparison.
+    \item Bootstrap paired return histories to obtain the confidence interval for the Sharpe difference and the probability that the selected TD3 candidate beats the comparator.
+    \item Across the searched candidate set, apply White Reality Check to candidate return differentials.
+    \item Report the search-adjusted p-value.
+    \item Interpret ranking competitiveness only when rankings support it; do not claim statistical superiority when intervals include zero or White Reality Check does not reject the null.
+\end{enumerate}
 
 \begin{flushleft}
-The corresponding source areas are \path{src/env/portfolio_env.py}, \path{src/utils/action_projection.py}, \path{src/backtest/}, and \path{src/analysis/}. These references are sufficient to locate the reproducibility logic without exposing machine-specific paths.
+The corresponding source areas are \path{src/env/portfolio_env.py}, \path{src/utils/action_projection.py}, \path{src/backtest/}, and \path{src/analysis/}. Relative project paths are reported to make the implementation traceable across computing environments and to support independent reproducibility.
 \end{flushleft}
 
 % Manual verification needed: confirm whether the university has a newer official MECOFIN Word template, because the supplied .doc file resolves locally as an HTML 404 page rather than a usable template file.

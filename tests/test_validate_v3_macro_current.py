@@ -14,7 +14,20 @@ from src.analysis.validate_v3_macro_current import (
 )
 
 
+LOCAL_RETURNS_PATH = Path("data/processed/returns_weekly_latest.csv")
+LOCAL_MACRO_PATH = Path("data/processed/macro_weekly_latest.csv")
+LOCAL_PROCESSED_DATA_AVAILABLE = (
+    LOCAL_RETURNS_PATH.exists() and LOCAL_MACRO_PATH.exists()
+)
+
+requires_local_processed_data = unittest.skipUnless(
+    LOCAL_PROCESSED_DATA_AVAILABLE,
+    "requires local processed returns and macro datasets",
+)
+
+
 class ValidateV3MacroCurrentTests(unittest.TestCase):
+    @requires_local_processed_data
     def test_latest_macro_file_covers_latest_returns_end_date(self):
         returns = self._read_dated_csv("data/processed/returns_weekly_latest.csv")
         macro = self._read_dated_csv("data/processed/macro_weekly_latest.csv")
@@ -57,6 +70,7 @@ class ValidateV3MacroCurrentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "starts after returns_start"):
             validate_macro_coverage(coverage)
 
+    @requires_local_processed_data
     def test_validation_smoke_writes_outputs_and_has_no_missing_macro_values(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             result = validate_v3_macro_current(
@@ -72,6 +86,7 @@ class ValidateV3MacroCurrentTests(unittest.TestCase):
         self.assertEqual(int(summary["missing_aligned_macro_features"]), 0)
         self.assertGreater(int(summary["n_macro_features"]), 0)
 
+    @requires_local_processed_data
     def test_feature_dates_do_not_overrun_returns_dates(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             result = validate_v3_macro_current(
@@ -83,6 +98,7 @@ class ValidateV3MacroCurrentTests(unittest.TestCase):
         checks = result["alignment_checks"].set_index("check_name")
         self.assertEqual(checks.loc["features_do_not_overrun_returns", "status"], "pass")
 
+    @requires_local_processed_data
     def test_protocol_validation_and_test_windows_match_when_possible(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             result = validate_v3_macro_current(

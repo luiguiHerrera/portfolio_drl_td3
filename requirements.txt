@@ -1,10 +1,11 @@
 pandas
 numpy<2
 requests
+certifi
 matplotlib
 PyYAML
 scikit-learn
+scipy
 torch
 yfinance
-tqdm
 arch

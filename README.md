@@ -1,5 +1,7 @@
 # Falsification-Oriented Evaluation of DRL Portfolio Allocation
 
+[![CI](https://github.com/luiguiHerrera/drl-portfolio-evaluation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/luiguiHerrera/drl-portfolio-evaluation/actions/workflows/ci.yml)
+
 *A cross-asset TD3 case study with trading costs, explicit cash assumptions,
 matched benchmarks, and statistical controls.*
 

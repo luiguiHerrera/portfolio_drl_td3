@@ -92,13 +92,31 @@ weekly return differentials. Their formulas and estimands are recorded in the
 
 ## Reproduction
 
+### Default installation
+
 Create the environment from the repository root:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
+
+`requirements.txt` contains the direct dependencies and is the default public installation path.
+
+### Platform-specific dependency snapshots
+
+GitHub Actions validates the repository on Linux x86_64 with CPython 3.12 using `requirements_linux_py312_lock.txt` as a constraints file:
+
+```bash
+python -m pip install \
+  -r requirements.txt \
+  -c requirements_linux_py312_lock.txt
+```
+
+This snapshot is platform-specific and should not be treated as a generic cross-platform lock.
+
+`requirements_arm64_lock.txt` preserves the exact macOS ARM64 dependency snapshot used by the corresponding local research environment. It is likewise platform-specific.
 
 ### Validate committed results
 

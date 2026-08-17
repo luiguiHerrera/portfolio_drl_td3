@@ -26,6 +26,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Export resolved CI dependencies
+        run: |
+          python -m pip freeze > requirements_ci_lock.txt
+          cat requirements_ci_lock.txt
+
+      - name: Upload resolved CI dependencies
+        uses: actions/upload-artifact@v4
+        with:
+          name: requirements-ci-lock
+          path: requirements_ci_lock.txt
+          retention-days: 7
+
       - name: Run test suite
         run: |
           PYTHONPATH=. python -m unittest discover -s tests -v
